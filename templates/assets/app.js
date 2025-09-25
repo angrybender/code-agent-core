@@ -19,8 +19,15 @@ class SimpleChat {
         // Handle Ctrl+Enter to send message
         this.messageInput.addEventListener('keydown', (e) => {
             if (e.ctrlKey && e.key === 'Enter') {
+                const message = this.messageInput.value.trim();
                 e.preventDefault();
-                this.sendMessage();
+
+                if (message === '!!') {
+                    this.sendControl('stop');
+                }
+                else {
+                    this.sendMessage(message);
+                }
             }
         });
 
@@ -74,6 +81,9 @@ class SimpleChat {
             case 'error':
                 this.addMessage(data.message, 'error', data.timestamp);
                 break;
+            case 'warning':
+                this.addMessage(data.message, 'warning', data.timestamp);
+                break;
             case 'heartbeat':
                 break;
             case 'markdown':
@@ -85,9 +95,32 @@ class SimpleChat {
         }
     }
 
-    async sendMessage() {
-        const message = this.messageInput.value.trim();
+    async sendControl(command) {
+        // Clear input
+        this.messageInput.value = '';
+        this.messageInput.style.height = 'auto';
 
+        try {
+            const response = await fetch(APP_HOST + '/control', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ command: command, session_id: SESSION_ID })
+            });
+
+            const result = await response.json();
+
+            if (result.status !== 'success') {
+                this.addMessage(`Error: ${result.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error sending command:', error);
+            this.addMessage('Error: Failed to send command', 'error');
+        }
+    }
+
+    async sendMessage(message) {
         if (!message) {
             return;
         }

@@ -43,8 +43,14 @@ body {
 }
 
 .error-message {
-    background-color: #dc3545;
-    color: white;
+    background-color: #f2dede;
+    color: #a94442;
+    margin-right: auto;
+}
+
+.warning-message {
+    background-color: #fcf8e3;
+    color: #8a6d3b;
     margin-right: auto;
 }
 
@@ -147,5 +153,6 @@ body {
 }
 
 .finished-message {
-    background-color: #d4edda;
+    color: #3c763d;
+    background-color: #dff0d8;
 }
