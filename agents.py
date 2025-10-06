@@ -63,6 +63,7 @@ class BaseAgent:
 
         yield {
             'message': f"start {self.role}...",
+            'result': {},
             'type': "info",
         }
 
@@ -91,6 +92,7 @@ class BaseAgent:
                 logger.warning("MAX_STEP exceed!")
                 yield {
                     'message': "MAX_STEP exceed!",
+                    'result': {},
                     'type': "error",
                     'exit': True,
                 }
@@ -107,6 +109,7 @@ class BaseAgent:
                                             .replace(f'</{self.DEEP_THINK_TAG}>', '')
                     yield {
                         'message': think_output_msg,
+                        'result': {},
                         'type': "markdown",
                     }
 
@@ -137,6 +140,7 @@ class BaseAgent:
             if not current_tool_call and (max_skip_command <= 0 or not output['_output']):
                 yield {
                     'message': "Not commands (1), early stop",
+                    'result': {},
                     'type': "error",
                     'exit': True,
                 }
@@ -146,6 +150,7 @@ class BaseAgent:
 
                 yield {
                     'message': output['_output'],
+                    'result': {},
                     'type': "markdown",
                     'exit': True,
                 }
@@ -167,17 +172,20 @@ class BaseAgent:
             if tool_call_description['function'] == 'report':
                 yield {
                     'message': tool_call_description['args'][0],
+                    'result': {},
                     'type': "report",
                     'exit': True,
                 }
                 break
             else:
+                result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
                 yield {
                     'message': f"🔨 {tool_call_description['function']}: {tool_call_description['args'][0]}",
+                    'result': result,
                     'type': "info",
                     'exit': False,
                 }
-                result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
+
                 result_msg = {
                     'role': 'tool',
                     'tool_call_id': current_tool_call.id,

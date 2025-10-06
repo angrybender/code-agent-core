@@ -89,6 +89,9 @@ class SimpleChat {
             case 'markdown':
                 this.addMessage(data.message, 'markdown', data.timestamp);
                 break;
+            case 'html':
+                this.addMessage(data.message, 'html', data.timestamp);
+                break;
             default:
                 this.addMessage(data.message, 'bot', data.timestamp);
                 break;
@@ -168,6 +171,9 @@ class SimpleChat {
         const messageContent = document.createElement('div');
         if (type === 'markdown') {
             messageContent.innerHTML = marked.parse(message);
+        }
+        else if (type === 'html') {
+            messageContent.innerHTML = message;
         }
         else {
             messageContent.textContent = message;

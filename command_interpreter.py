@@ -16,15 +16,22 @@ class CommandInterpreter:
             'projectPath': self.project_root
         })
 
+        is_success = False
         if 'error' in content:
             result = content['error']
             result = result.replace(self.project_root, '')
         elif 'status' not in content:
             result = "ERROR: File not exists"
         else:
+            is_success = True
             result = content['status']
 
-        return {'result': result, 'exists': 'status' in content}
+        response = {'result': result, 'exists': 'status' in content}
+        if is_success:
+            response['tool_name'] = 'read'
+            response['file_path'] = file_path
+
+        return response
 
     def _command_list(self, path) -> dict:
         absolute_path = os.path.join(self.project_root, path)
@@ -38,7 +45,7 @@ class CommandInterpreter:
                 _path += '/'
             result.append(f"- {_path}")
 
-        return {'result': "\n".join(result)}
+        return {'result': "\n".join(result), 'tool_name': 'list_in_directory'}
 
     def _command_write(self, file_path, data) -> dict:
         # looking for file exists:
@@ -70,7 +77,17 @@ class CommandInterpreter:
             'projectPath': self.project_root
         })
 
-        return {'result': "True" if 'status' in content else "ERROR: " + content['error']}
+        result = {'result': "True" if 'status' in content else "ERROR: " + content['error']}
+        if 'status' in content:
+            result['tool_name'] = 'write'
+            result['file_path'] = file_path
+
+            if is_exist:
+                result['file_edit'] = True
+            else:
+                result['file_create'] = True
+
+        return result
 
     def _command_write_diff(self, file_path, str_find, str_replace):
         source_file = self._command_read(file_path)
@@ -91,7 +108,13 @@ class CommandInterpreter:
             'projectPath': self.project_root
         })
 
-        return {'result': "True" if 'status' in content else "ERROR: " + content['error']}
+        result = {'result': "True" if 'status' in content else "ERROR: " + content['error']}
+        if 'status' in content:
+            result['file_edit'] = True
+            result['tool_name'] = 'write_diff'
+            result['file_path'] = file_path
+
+        return result
 
     def execute(self, opcode: str, arguments) -> dict:
         try:

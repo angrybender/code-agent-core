@@ -36,6 +36,7 @@ body {
     text-align: right;
 }
 
+.html-message,
 .bot-message {
     background-color: #e9ecef;
     color: #333;
@@ -155,4 +156,13 @@ body {
 .finished-message {
     color: #3c763d;
     background-color: #dff0d8;
+}
+
+.html-message a.file_create:visited,
+.html-message a.file_create {
+    color: rgb(10, 88, 202);
+}
+.html-message a.file_edit:visited,
+.html-message a.file_edit {
+    color: green;
 }
