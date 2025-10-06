@@ -158,11 +158,15 @@ body {
     background-color: #dff0d8;
 }
 
+.html-message a {
+    cursor: pointer;
+}
+
 .html-message a.file_create:visited,
 .html-message a.file_create {
-    color: rgb(10, 88, 202);
+    color: green;
 }
 .html-message a.file_edit:visited,
 .html-message a.file_edit {
-    color: green;
+    color: rgb(10, 88, 202);
 }

@@ -36,6 +36,36 @@ class SimpleChat {
             this.messageInput.style.height = 'auto';
             this.messageInput.style.height = (this.messageInput.scrollHeight + 5) + 'px';
         });
+
+        // Handle clicks on A tags in chat messages
+        this.messagesContainer.addEventListener('click', (e) => {
+            const dom_element = e.target;
+
+            if (dom_element.tagName === 'A') {
+                e.stopPropagation();
+
+                try {
+                    if (dom_element.href.indexOf('#call:') > -1) {
+                        const command = dom_element.href.split('#call:')[1];
+                        window.cefQuery({
+                            request: command,
+                            onSuccess: (response) => {
+                              if (response.indexOf('error:') > -1) {
+                                this.addMessage(response, 'error');
+                              }
+                            },
+                            onFailure: (errorCode, errorMessage) => {
+                                this.addMessage("Error:" + errorMessage);
+                            }
+                          });
+                    }
+                } catch (e) {
+                    this.addMessage("Error:" + e);
+                }
+
+                return false;
+            }
+        });
     }
 
     connectSSE() {
@@ -47,7 +77,7 @@ class SimpleChat {
                     const data = JSON.parse(event.data);
                     this.handleServerMessage(data);
                 } catch (e) {
-                    console.error('Error parsing SSE message:', e);
+                    this.addMessage("Error:" + e);
                 }
             };
 

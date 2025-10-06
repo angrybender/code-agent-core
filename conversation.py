@@ -22,7 +22,7 @@ def agent_result_tpl(result: dict, message_type: str, message) -> dict:
         elif 'file_create' in result:
             css_class  = 'file_create'
 
-        message = f"🔨 {tool_name}: <a class='jide_open_file {css_class}' href='call:jide_open_file//{result['file_path']}'>{result['file_path']}</a>",
+        message = f"🔨 {tool_name}: <a class='jide_open_file {css_class}' href='#call:jide_open_file//{result['file_path']}'>{result['file_path']}</a>",
 
     return {
         'role': 'assistant',
