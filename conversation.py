@@ -17,12 +17,16 @@ def agent_result_tpl(result: dict, message_type: str, message) -> dict:
         message_type = 'html'
 
         css_class = ''
+        a_href = '#'
         if 'file_edit' in result:
             css_class = 'file_edit'
+            a_href = f"#call:jide_open_file//{result['file_path']}//{result['source_file_path']}"
+            result['file_name'] = result['file_name']
         elif 'file_create' in result:
             css_class  = 'file_create'
+            a_href = f"#call:jide_open_file//{result['file_path']}"
 
-        message = f"🔨 {tool_name}: <a class='jide_open_file {css_class}' href='#call:jide_open_file//{result['file_path']}'>{result['file_path']}</a>",
+        message = f"🔨 {tool_name}: <a class='jide_open_file {css_class}' href='{a_href}'>{result['file_name']}</a>",
 
     return {
         'role': 'assistant',

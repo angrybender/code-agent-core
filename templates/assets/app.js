@@ -42,25 +42,36 @@ class SimpleChat {
             const dom_element = e.target;
 
             if (dom_element.tagName === 'A') {
-                e.stopPropagation();
+                e.preventDefault();
+
+                // Check for Ctrl (Windows/Linux) or Cmd (Mac)
+                const isCtrlClick = event.ctrlKey || event.metaKey;
+
+                const isCallJava = dom_element.href.indexOf('#call:');
+                if (isCallJava == -1) {
+                    return false;
+                }
 
                 try {
-                    if (dom_element.href.indexOf('#call:') > -1) {
-                        const command = dom_element.href.split('#call:')[1];
-                        window.cefQuery({
-                            request: command,
-                            onSuccess: (response) => {
-                              if (response.indexOf('error:') > -1) {
-                                this.addMessage(response, 'error');
-                              }
-                            },
-                            onFailure: (errorCode, errorMessage) => {
-                                this.addMessage("Error:" + errorMessage);
-                            }
-                          });
+                    // JS->Java transport
+                    var command = dom_element.href.substr(isCallJava + 6).split('//');
+                    if (command[0] === 'jide_open_file' && isCtrlClick) {
+                        command[0] = 'jide_open_diff_file';
                     }
+
+                    window.cefQuery({
+                        request: command.join('//'),
+                        onSuccess: (response) => {
+                          if (response.indexOf('error:') > -1) {
+                            this.addMessage(response, 'error');
+                          }
+                        },
+                        onFailure: (errorCode, errorMessage) => {
+                            this.addMessage("Java error:" + errorMessage, 'error');
+                        }
+                      });
                 } catch (e) {
-                    this.addMessage("Error:" + e);
+                    this.addMessage("JS error:" + e, 'error');
                 }
 
                 return false;

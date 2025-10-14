@@ -49,7 +49,8 @@ class CommandInterpreter:
 
     def _command_write(self, file_path, data) -> dict:
         # looking for file exists:
-        is_exist = self._command_read(file_path)['exists']
+        source_file = self._command_read(file_path)
+        is_exist = source_file['exists']
         if is_exist:
             method = 'replace_file_text_by_path'
         else:
@@ -80,10 +81,12 @@ class CommandInterpreter:
         result = {'result': "True" if 'status' in content else "ERROR: " + content['error']}
         if 'status' in content:
             result['tool_name'] = 'write'
-            result['file_path'] = file_path
+            result['file_path'] = os.path.join(self.project_root, file_path)
+            result['file_name'] = file_path
 
             if is_exist:
                 result['file_edit'] = True
+                result['source_file_content'] = source_file['result']
             else:
                 result['file_create'] = True
 
@@ -112,7 +115,9 @@ class CommandInterpreter:
         if 'status' in content:
             result['file_edit'] = True
             result['tool_name'] = 'write_diff'
-            result['file_path'] = file_path
+            result['file_path'] = os.path.join(self.project_root, file_path)
+            result['file_name'] = file_path
+            result['source_file_content'] = source_file['result']
 
         return result
 
