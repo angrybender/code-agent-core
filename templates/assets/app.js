@@ -104,17 +104,14 @@ class SimpleChat {
             };
 
         } catch (error) {
-            console.error('Failed to connect SSE:', error);
             this.updateStatus('Failed to Connect', 'disconnected');
         }
     }
 
     handleServerMessage(data) {
-        this.updateStatus('Connected', 'connected');
-
         switch (data.type) {
             case 'status':
-                this.updateProjectStatus(data.message);
+                this.updateStatus(data.message, 'connected');
                 break;
             case 'end':
                 this.addMessage(data.message, 'finished', data.timestamp);
@@ -159,8 +156,7 @@ class SimpleChat {
                 this.addMessage(`Error: ${result.message}`, 'error');
             }
         } catch (error) {
-            console.error('Error sending command:', error);
-            this.addMessage('Error: Failed to send command', 'error');
+            this.addMessage('Error: Failed to send command, [' + error.message + ']', 'error');
         }
     }
 
@@ -194,9 +190,7 @@ class SimpleChat {
                 this.addMessage(`Error: ${result.message}`, 'error');
             }
         } catch (error) {
-            console.error('Error sending message:', error);
-            this.addMessage('Error: Failed to send message', 'error');
-            this.updateStatus('Send Error', 'disconnected');
+            this.addMessage('Error: Failed to send message, [' + error.message + ']', 'error');
         }
     }
 
@@ -233,12 +227,22 @@ class SimpleChat {
     }
 
     updateStatus(message, className) {
-        document.querySelector('#connection-status').className = `status ${className}`;
-        document.querySelector('#connection-status .connection').textContent = message;
-    }
-
-    updateProjectStatus(message) {
-        document.querySelector('#connection-status .project').textContent = message;
+        try {
+            // JS->Java transport
+            window.cefQuery({
+                request: 'jide_status//' + message + '//' + className,
+                onSuccess: (response) => {
+                  if (response.indexOf('error:') > -1) {
+                    this.addMessage(response, 'error');
+                  }
+                },
+                onFailure: (errorCode, errorMessage) => {
+                    this.addMessage("Java error:" + errorMessage, 'error');
+                }
+              });
+        } catch (e) {
+            this.addMessage("JS error:" + e, 'error');
+        }
     }
 }
 
