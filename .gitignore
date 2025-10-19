@@ -30,4 +30,3 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-.copilot_project.xml

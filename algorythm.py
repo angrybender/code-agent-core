@@ -25,7 +25,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 class Copilot:
-    PROJECT_DESCRIPTION = "./.copilot_project.xml"
+    PROJECT_DESCRIPTION = "./AGENTS.md"
     MAX_STEP = int(MAX_ITERATION)
     LOG_FILE = './conversations_log/log.log'
 
@@ -47,11 +47,15 @@ class Copilot:
         self.command_state = []
 
     def get_manifest(self, project_base_path: str):
-        _manifest_file = tool_call(IDE_MCP_HOST, 'get_file_text_by_path', {
-            'pathInProject': './.copilot_project.xml',
+        content = tool_call(IDE_MCP_HOST, 'get_file_text_by_path', {
+            'pathInProject': self.PROJECT_DESCRIPTION,
             'projectPath': project_base_path
-        })['status']
-        return parse_tags(_manifest_file, ['description'])
+        })
+
+        if 'error' in content or 'status' not in content:
+            return ''
+        else:
+            return content['status']
 
     def _init(self):
         assert 'project_base_path' in self.session, 'Session not contains `project_base_path`'
@@ -64,10 +68,9 @@ class Copilot:
 
         assert self.instruction, 'Empty instruction'
 
-        manifest = self.get_manifest(self.session['project_base_path'])
         self.manifest = {
             'base_path': self.session['project_base_path'],
-            'description': manifest['description'][0].strip(),
+            'description': self.get_manifest(self.session['project_base_path']).strip(),
             'files_structure': self._read_project_structure(self.session['project_base_path']),
         }
 
