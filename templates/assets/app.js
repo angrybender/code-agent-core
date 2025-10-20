@@ -1,4 +1,29 @@
 var APP_HOST = '';
+var IS_APP_ACTIVE = true;
+
+function onPluginShow() {
+    IS_APP_ACTIVE = true;
+}
+function onPluginHide() {
+    IS_APP_ACTIVE = false;
+}
+
+function JIDETransport(request, onSuccessCb, onFailureCb) {
+    if (!IS_APP_ACTIVE) {
+        return;
+    }
+
+    // JS->Java transport
+    window.cefQuery({
+        request: request,
+        onSuccess: (response) => {
+          if (onSuccessCb) onSuccessCb(response);
+        },
+        onFailure: (errorCode, errorMessage) => {
+            if (onFailureCb) onFailureCb(errorCode, errorMessage);
+        }
+    });
+}
 
 class SimpleChat {
     constructor() {
@@ -53,23 +78,18 @@ class SimpleChat {
                 }
 
                 try {
-                    // JS->Java transport
                     var command = dom_element.href.substr(isCallJava + 6).split('//');
                     if (command[0] === 'jide_open_file' && isCtrlClick) {
                         command[0] = 'jide_open_diff_file';
                     }
 
-                    window.cefQuery({
-                        request: command.join('//'),
-                        onSuccess: (response) => {
-                          if (response.indexOf('error:') > -1) {
-                            this.addMessage(response, 'error');
-                          }
-                        },
-                        onFailure: (errorCode, errorMessage) => {
+                    JIDETransport(
+                        command.join('//'),
+                        null,
+                         (errorCode, errorMessage) => {
                             this.addMessage("Java error:" + errorMessage, 'error');
                         }
-                      });
+                    );
                 } catch (e) {
                     this.addMessage("JS error:" + e, 'error');
                 }
@@ -228,20 +248,15 @@ class SimpleChat {
 
     updateStatus(message, className) {
         try {
-            // JS->Java transport
-            window.cefQuery({
-                request: 'jide_status//' + message + '//' + className,
-                onSuccess: (response) => {
-                  if (response.indexOf('error:') > -1) {
-                    this.addMessage(response, 'error');
-                  }
-                },
-                onFailure: (errorCode, errorMessage) => {
+            JIDETransport(
+                'jide_status//' + message + '//' + className,
+                null,
+                (errorCode, errorMessage) => {
                     this.addMessage("Java error:" + errorMessage, 'error');
                 }
-              });
+            );
         } catch (e) {
-            this.addMessage("JS error:" + e, 'error');
+            this.addMessage("[updateStatus] JS error:" + e, 'error');
         }
     }
 }
