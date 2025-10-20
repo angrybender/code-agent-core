@@ -17,7 +17,7 @@ function JIDETransport(request, onSuccessCb, onFailureCb) {
     window.cefQuery({
         request: request,
         onSuccess: (response) => {
-          if (onSuccessCb) onSuccessCb(response);
+            if (onSuccessCb) onSuccessCb(response);
         },
         onFailure: (errorCode, errorMessage) => {
             if (onFailureCb) onFailureCb(errorCode, errorMessage);
@@ -43,7 +43,10 @@ class SimpleChat {
     setupEventListeners() {
         // Handle Ctrl+Enter to send message
         this.messageInput.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key === 'Enter') {
+            // Check for Ctrl (Windows/Linux) or Cmd (Mac)
+            const isCtrlClick = e.ctrlKey || e.metaKey;
+
+            if (isCtrlClick && e.key === 'Enter') {
                 const message = this.messageInput.value.trim();
                 e.preventDefault();
 
