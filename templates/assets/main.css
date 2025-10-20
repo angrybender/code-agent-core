@@ -3,6 +3,7 @@ body {
     margin: 0 auto;
     background-color: #f5f5f5;
     font-size: 1.1em;
+    padding-top: 10px;
 }
 
 .chat-container {
