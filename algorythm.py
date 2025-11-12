@@ -5,7 +5,6 @@ import datetime
 
 import conversation
 from mcp_helper import tool_call
-from llm_parser import parse_tags
 from llm import llm_query
 from path_helper import get_relative_path
 from command_interpreter import CommandInterpreter
