@@ -133,6 +133,12 @@ class Copilot:
                 }
                 break
 
+            # merge multiply assistant messages to once
+            if len(conversation_log) >= 2:
+                if conversation_log[-1]['role'] == 'assistant' and conversation_log[-2]['role'] == 'assistant':
+                    conversation_log[-2]['content'] += "\n" + conversation_log[-1]['content']
+                    conversation_log = conversation_log[:-1]
+
             attempts = 5
             output = None
             while attempts > 0:
@@ -142,7 +148,7 @@ class Copilot:
 
                 conversation_log.append({
                     'role': 'user',
-                    'content': 'If you finished the work - call toos named `exit`! Down answer empty response!',
+                    'content': 'If you finished the work - call tool named `exit`! Dont answer with empty response!',
                 })
 
                 attempts -= 1

@@ -115,11 +115,6 @@ class BaseAgent:
                     conversation[-2]['content'] += "\n" + conversation[-1]['content']
                     conversation = conversation[:-1]
 
-                ## TODO DEBUG {
-                if conversation[-1]['role'] == 'assistant' and conversation[-2]['role'] == 'assistant':
-                    raise Exception("conversation[-1]['role'] == 'assistant' and conversation[-2]['role'] == 'assistant'")
-                ## TODO DEBUG }
-
             if self.thinking:
                 think_output = llm_query(conversation)
                 think_output = think_output.get('_output', '')
