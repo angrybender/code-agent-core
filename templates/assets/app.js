@@ -261,7 +261,7 @@ class SimpleChat {
         }
 
         this.messagesContainer.appendChild(messageDiv);
-        this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+        window.scrollTo(0, document.body.scrollHeight);
     }
 
     updateStatus(message, className) {
