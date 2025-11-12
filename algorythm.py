@@ -251,8 +251,6 @@ class Copilot:
 
             agent_step_counter += 1
 
-        yield conversation.get_terminal()
-
     def log(self, data, to_file=False):
         if type(data) is list or type(data) is dict:
             data = json.dumps(data, ensure_ascii=False, indent=4)

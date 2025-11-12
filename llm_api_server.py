@@ -10,6 +10,7 @@ import logging
 logger = logging.getLogger('APP')
 
 from algorythm import Copilot
+from conversation import get_terminal
 
 app = Flask(__name__)
 
@@ -67,6 +68,12 @@ class SessionsManaged:
 
         return self.sessions[session_id]['command']
 
+    def commit_command(self, session_id):
+        if session_id not in self.sessions:
+            return None
+
+        self.sessions[session_id]['command'] = None
+
     def commit_message(self, session_id):
         if session_id not in self.sessions:
             self._init_session(session_id)
@@ -87,10 +94,13 @@ def process_task(user_request: str, session_id: str):
         command = SESSION_MANAGER_INSTANCE.get_command(session_id)
         if command == 'stop':
             yield f"data: {json.dumps({'role': 'system', 'type': 'warning', 'message': '[BREAK]', 'timestamp': time.time()})}\n\n"
+            SESSION_MANAGER_INSTANCE.commit_command(session_id)
             break
 
         message['timestamp'] = time.time()
         yield f"data: {json.dumps(message)}\n\n"
+
+    yield f"data: {json.dumps(get_terminal())}\n\n"
 
 
 @app.route('/')

@@ -29,6 +29,7 @@ class SimpleChat {
     constructor() {
         this.messagesContainer = document.getElementById('chat-messages');
         this.userMessage = document.getElementById('user-request');
+        this.controlFlowStopBtn = document.getElementById('control-flow-stop');
         this.messageInput = document.getElementById('message-input');
         this.eventSource = null;
 
@@ -40,23 +41,39 @@ class SimpleChat {
         this.connectSSE();
     }
 
+    onStartConversation() {
+        document.getElementById('main-wrapper').classList.add('conversation-active');
+        this.controlFlowStopBtn.style.display = 'block';
+        this.messageInput.style.display = 'none';
+        this.userMessage.style.display = 'block';
+    }
+
+    onEndConversation() {
+        this.controlFlowStopBtn.style.display = 'none';
+        this.controlFlowStopBtn.classList.remove('loading');
+
+        this.messageInput.style.display = 'block';
+        this.userMessage.style.display = 'none';
+        document.getElementById('main-wrapper').classList.remove('conversation-active');
+    }
+
     setupEventListeners() {
         // Handle Ctrl+Enter to send message
         this.messageInput.addEventListener('keydown', (e) => {
             // Check for Ctrl (Windows/Linux) or Cmd (Mac)
             const isCtrlClick = e.ctrlKey || e.metaKey;
-
-            if (isCtrlClick && e.key === 'Enter') {
-                const message = this.messageInput.value.trim();
-                e.preventDefault();
-
-                if (message === '!!') {
-                    this.sendControl('stop');
-                }
-                else {
-                    this.sendMessage(message);
-                }
+            if (! (isCtrlClick && e.key === 'Enter')) {
+                return;
             }
+
+            const message = this.messageInput.value.trim();
+            this.sendMessage(message);
+        });
+
+        // Stop flow
+        this.controlFlowStopBtn.addEventListener('click', () => {
+            this.controlFlowStopBtn.classList.add('loading');
+            this.sendControl('stop');
         });
 
         // Auto-resize textarea
@@ -117,6 +134,7 @@ class SimpleChat {
 
             this.eventSource.onerror = (error) => {
                 this.updateStatus('Connection Error', 'disconnected');
+                this.onEndConversation();
 
                 // Attempt to reconnect after 3 seconds
                 setTimeout(() => {
@@ -128,6 +146,7 @@ class SimpleChat {
 
         } catch (error) {
             this.updateStatus('Failed to Connect', 'disconnected');
+            this.onEndConversation();
         }
     }
 
@@ -137,7 +156,8 @@ class SimpleChat {
                 this.updateStatus(data.message, 'connected');
                 break;
             case 'end':
-                this.addMessage(data.message, 'finished', data.timestamp);
+                // this.addMessage(data.message, 'finished', data.timestamp);
+                this.onEndConversation();
                 break;
             case 'error':
                 this.addMessage(data.message, 'error', data.timestamp);
@@ -160,10 +180,6 @@ class SimpleChat {
     }
 
     async sendControl(command) {
-        // Clear input
-        this.messageInput.value = '';
-        this.messageInput.style.height = 'auto';
-
         try {
             const response = await fetch(APP_HOST + '/control', {
                 method: 'POST',
@@ -191,10 +207,6 @@ class SimpleChat {
         // Add user message to chat
         this.addMessage(message, 'user');
 
-        // Clear input
-        this.messageInput.value = '';
-        this.messageInput.style.height = 'auto';
-
         // clear response container
         this.messagesContainer.innerHTML = '';
 
@@ -211,6 +223,9 @@ class SimpleChat {
 
             if (result.status !== 'success') {
                 this.addMessage(`Error: ${result.message}`, 'error');
+            }
+            else {
+                this.onStartConversation();
             }
         } catch (error) {
             this.addMessage('Error: Failed to send message, [' + error.message + ']', 'error');
