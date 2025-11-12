@@ -1,4 +1,3 @@
-import json
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -83,15 +82,20 @@ def llm_query(messages, tags=None, tools=None) -> dict|None:
             response = client.chat.completions.create(**options)
             content = response.choices[0].message.content.strip() if response.choices[0].message.content else ''
 
+            ## TODO DEBUG {
+            logger.debug("RESPONSE:")
+            logger.debug(response)
+            ## TODO DEBUG }
+
             if len(content) == 0 and tools and not response.choices[0].message.tool_calls:
-                raise Exception("Empty response")
+                return None
 
             if tags:
                 output = parse_tags(content, tags)
             else:
                 output = {}
 
-            output['_output'] = content
+            output['_output'] = content.split('<|end|>')[-1]
             if tools:
                 output['_tool_calls'] = response.choices[0].message.tool_calls
                 output['_message'] = response.choices[0].message

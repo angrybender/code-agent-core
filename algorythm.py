@@ -133,7 +133,27 @@ class Copilot:
                 }
                 break
 
-            output = llm_query(conversation_log, tools=supervisor_tools)
+            attempts = 5
+            output = None
+            while attempts > 0:
+                output = llm_query(conversation_log, tools=supervisor_tools)
+                if output:
+                    break
+
+                conversation_log.append({
+                    'role': 'user',
+                    'content': 'If you finished the work - call toos named `exit`! Down answer empty response!',
+                })
+
+                attempts -= 1
+
+            if not output:
+                yield {
+                    'message': 'Empty response of LLM',
+                    'type': "error",
+                }
+                break
+
             self.log("============= LLM OUTPUT =============", True)
 
             tool_call_description = None
