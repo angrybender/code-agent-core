@@ -18,27 +18,28 @@
     </script>
 </head>
 <body>
-    <div class="chat-container">
-        <div class="chat-header">
-            <div id="connection-status" class="status disconnected">
-                <span class="connection">Connecting...</span>
-                <span class="project"></span>
+    <div id="main-wrapper">
+        <div class="chat-container">
+            <div id="user-request"></div>
+
+            <div id="chat-messages" class="chat-messages"></div>
+
+            <div class="input-container">
+                <textarea
+                    id="message-input"
+                    class="message-input"
+                    placeholder="Type your message here... (Press Ctrl+Enter to send)"
+                    rows="4"
+                ></textarea>
             </div>
         </div>
-
-        <div id="user-request"></div>
-
-        <div id="chat-messages" class="chat-messages"></div>
-
-        <div class="input-container">
-            <textarea
-                id="message-input"
-                class="message-input"
-                placeholder="Type your message here... (Press Ctrl+Enter to send)"
-                rows="4"
-            ></textarea>
-        </div>
     </div>
+
+    <button class="default" id="control-flow-stop">
+        <span class="spinner-component"></span>
+        <span>STOP</span>
+        <span class="dummy"></span>
+    </button>
 
     <script>
         {% include 'assets/app.js' %}
