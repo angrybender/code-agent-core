@@ -39,6 +39,9 @@ class CommandInterpreter:
         if not os.path.exists(absolute_path):
             return {'result': 'ERROR: Path not exists'}
 
+        if not os.path.isdir(absolute_path):
+            return {'result': 'ERROR: this is a file'}
+
         result = []
         for _path in os.listdir(str(absolute_path)):
             if os.path.isdir(_path):
