@@ -191,6 +191,12 @@ button.default:disabled {
     color: rgb(10, 88, 202);
     text-decoration: none;
 }
+.html-message p {
+    margin-top: 0;
+}
+.html-message li {
+    margin-bottom: 5px;
+}
 
 #control-flow-stop {
     height: 40px;

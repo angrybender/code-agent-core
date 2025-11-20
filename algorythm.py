@@ -3,7 +3,6 @@ import os
 import glob
 import datetime
 
-import conversation
 from mcp_helper import tool_call
 from llm import llm_query
 from path_helper import get_relative_path
@@ -219,10 +218,7 @@ class Copilot:
                         agent_complete_report = 'Agent cant complete a work, try another approach: add more details, rewrite instruction for agent!' # TODO ???
                         is_agent_completes_work = True
 
-                    if 'tool_name' in agent_step['result']:
-                        yield conversation.agent_result_tpl(agent_step['result'], agent_step['type'], agent_step.get('message', ''))
-                    else:
-                        yield agent_step
+                    yield agent_step
 
                     if is_agent_completes_work:
                         break

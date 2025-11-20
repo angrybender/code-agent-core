@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger('APP')
 
 from algorythm import Copilot
-from conversation import get_terminal
+from conversation import get_terminal, agent_result_tpl, agent_result_of_all_active_tpl
 
 app = Flask(__name__)
 
@@ -90,6 +90,7 @@ SESSION_MANAGER_INSTANCE = SessionsManaged()
 def process_task(user_request: str, session_id: str):
     session = Copilot(user_request, SESSION_MANAGER_INSTANCE.get_session_data(session_id))
 
+    active_responses = []
     for message in session.run():
         command = SESSION_MANAGER_INSTANCE.get_command(session_id)
         if command == 'stop':
@@ -98,7 +99,17 @@ def process_task(user_request: str, session_id: str):
             break
 
         message['timestamp'] = time.time()
+
+        if 'tool_name' in message.get('result', {}):
+            active_responses.append({'type': 'files', 'message': message.copy()})
+            message = agent_result_tpl(message['result'], message['type'], message.get('message', ''))
+
         yield f"data: {json.dumps(message)}\n\n"
+
+    if active_responses:
+        msg = agent_result_of_all_active_tpl(active_responses)
+        if msg:
+            yield f"data: {json.dumps(agent_result_of_all_active_tpl(active_responses))}\n\n"
 
     yield f"data: {json.dumps(get_terminal())}\n\n"
 
