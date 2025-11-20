@@ -59,6 +59,13 @@ def llm_query(messages, tags=None, tools=None) -> dict|None:
             }
         ]
 
+    for message in messages:
+        if message['role'] == 'system':
+            message['role'] = 'developer'
+
+    if REASONING_EFFORT:
+        messages = [{'role': 'system', 'content': f'Reasoning: {REASONING_EFFORT}'}] + messages
+
     logger.debug(f"INPUT (with tools: {'Y' if tools else 'N'}):")
     for m in messages:
         logger.debug(m)
@@ -74,8 +81,8 @@ def llm_query(messages, tags=None, tools=None) -> dict|None:
         'tools': tools,
     }
 
-    if REASONING_EFFORT:
-        options['reasoning_effort'] = REASONING_EFFORT
+    # if REASONING_EFFORT:
+    #     options['reasoning_effort'] = REASONING_EFFORT
 
     for attempt in range(attempts):
         try:

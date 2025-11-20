@@ -175,16 +175,9 @@ class BaseAgent:
             elif not current_tool_call and output['_output']:
                 max_skip_command -= 1
 
-                yield {
-                    'message': output['_output'],
-                    'result': {},
-                    'type': "markdown",
-                    'exit': True,
-                }
-
                 conversation.append({
-                    'role': 'assistant',
-                    'content': output['_output'],
+                    'role': 'user',
+                    'content': 'If you finished the work - use tool `report`! Dont answer with empty tools!',
                 })
 
                 continue
@@ -254,6 +247,36 @@ class BaseAgent:
 class AnalyticAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
         return analytic_tools
+
+    def conversation_filter(self, conversation: list[dict]) -> list[dict]:
+        last_tool = ''
+        modified_conversation = []
+        for m in conversation:
+            modified_conversation.append(m)
+
+            if 'tool_calls' not in m:
+                continue
+
+            tool = m['tool_calls'][0]
+            _hash = tool.function.name + ':' + tool.function.arguments
+
+            if tool.function.name != 'read_file':
+                last_tool = _hash
+                continue
+
+            if _hash == last_tool:
+                modified_conversation.append({
+                    'role': 'tool',
+                    'tool_call_id': tool.id,
+                    'name': tool.function.name,
+                    'content': 'File has read above!',
+                })
+
+                return modified_conversation
+            else:
+                last_tool = _hash
+
+        return conversation
 
 class CoderAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
