@@ -25,13 +25,17 @@ function JIDETransport(request, onSuccessCb, onFailureCb) {
     });
 }
 
+const ON_USER_SCROLL_SEMAPHORE_TTL = 30; // seconds
+
 class SimpleChat {
     constructor() {
         this.messagesContainer = document.getElementById('chat-messages');
-        this.userMessage = document.getElementById('user-request');
         this.controlFlowStopBtn = document.getElementById('control-flow-stop');
         this.messageInput = document.getElementById('message-input');
         this.eventSource = null;
+
+        this.ON_USER_SCROLL_SEMAPHORE = false;
+        this.ON_USER_SCROLL_SEMAPHORE_TIMER = null;
 
         this.init();
     }
@@ -45,7 +49,6 @@ class SimpleChat {
         document.getElementById('main-wrapper').classList.add('conversation-active');
         this.controlFlowStopBtn.style.display = 'block';
         this.messageInput.style.display = 'none';
-        this.userMessage.style.display = 'block';
     }
 
     onEndConversation() {
@@ -53,8 +56,8 @@ class SimpleChat {
         this.controlFlowStopBtn.classList.remove('loading');
 
         this.messageInput.style.display = 'block';
-        this.userMessage.style.display = 'none';
         document.getElementById('main-wrapper').classList.remove('conversation-active');
+        window.scrollTo(0, document.body.scrollHeight);
     }
 
     setupEventListeners() {
@@ -116,6 +119,29 @@ class SimpleChat {
 
                 return false;
             }
+        });
+
+        // Handle user's scroll by mouse and turn off/on autoscroll
+        document.body.addEventListener('wheel', (event) => {
+            if (this.ON_USER_SCROLL_SEMAPHORE_TIMER) {
+                clearTimeout(this.ON_USER_SCROLL_SEMAPHORE_TIMER);
+            }
+
+            // if User scroll to bottom - turn on autoscroll
+            const scrollTop = window.scrollY;
+            const windowHeight = window.innerHeight;
+            const documentHeight = document.documentElement.scrollHeight;
+            const scrollPercentage = (scrollTop + windowHeight) / documentHeight;
+            if (scrollPercentage > 0.95) {
+                this.ON_USER_SCROLL_SEMAPHORE = false;
+                return true;
+            }
+
+            this.ON_USER_SCROLL_SEMAPHORE = true;
+            this.ON_USER_SCROLL_SEMAPHORE_TIMER = setTimeout(() => {
+                this.ON_USER_SCROLL_SEMAPHORE = false;
+                this.ON_USER_SCROLL_SEMAPHORE_TIMER = null;
+            }, ON_USER_SCROLL_SEMAPHORE_TTL*1000);
         });
     }
 
@@ -204,11 +230,11 @@ class SimpleChat {
             return;
         }
 
-        // Add user message to chat
-        this.addMessage(message, 'user');
-
         // clear response container
         this.messagesContainer.innerHTML = '';
+
+        // Add user message to chat
+        this.addMessage(message, 'user');
 
         try {
             const response = await fetch(APP_HOST + '/send_message', {
@@ -233,13 +259,16 @@ class SimpleChat {
     }
 
     addMessage(message, type, timestamp) {
+        let messageDivClassName = `message ${type}-message`;
+
         if (type === 'user') {
-            this.userMessage.innerHTML = message;
-            return;
+            type = 'html';
+            message = `<pre>${message}</pre>`;
+            messageDivClassName = "message html-message user-message";
         }
 
         const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${type}-message`;
+        messageDiv.className = messageDivClassName;
 
         const messageContent = document.createElement('div');
         if (type === 'markdown') {
@@ -261,7 +290,10 @@ class SimpleChat {
         }
 
         this.messagesContainer.appendChild(messageDiv);
-        window.scrollTo(0, document.body.scrollHeight);
+
+        if (!this.ON_USER_SCROLL_SEMAPHORE) {
+            window.scrollTo(0, document.body.scrollHeight);
+        }
     }
 
     updateStatus(message, className) {

@@ -71,6 +71,9 @@ button.default:disabled {
     margin-bottom: 20px;
     background-color: #fafafa;
 }
+.chat-messages pre {
+    white-space: pre-wrap;
+}
 
 .message {
     margin-bottom: 10px;
@@ -78,18 +81,27 @@ button.default:disabled {
     border-radius: 8px;
 }
 
-.user-message {
-    background-color: #007bff;
-    color: white;
-    margin-left: auto;
-    text-align: right;
-}
-
 .html-message,
 .bot-message {
     background-color: #e9ecef;
     color: #333;
     margin-right: auto;
+}
+
+.user-message {
+    font-size: 1.1em;
+    background-color: #fafafa;
+    border: 1px solid  #ddd;
+    padding-top: 0;
+    padding-bottom: 0;
+    position: relative;
+    padding-left: 35px;
+}
+.user-message::before {
+    content: "🧔";
+    position: absolute;
+    left: 6px;
+    top: 10px;
 }
 
 .error-message {
@@ -138,18 +150,6 @@ button.default:disabled {
     opacity: 0.7;
     margin-top: 5px;
     text-align: right;
-}
-
-#user-request {
-    border: 1px solid #ddd;
-    padding: 15px;
-    margin-bottom: 20px;
-    background-color: #fafafa;
-    border-radius: 5px;
-
-    font-family: monospace;
-    font-size: 120%;
-    white-space: pre-wrap;
 }
 
 .markdown-message {
@@ -220,10 +220,6 @@ button.default:disabled {
   border-color: #0d6efd;
   opacity: 0.65;
   cursor: not-allowed;
-}
-
-#user-request {
-    display: none;
 }
 
 #control-flow-stop {
