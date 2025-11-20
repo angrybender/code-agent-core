@@ -91,10 +91,11 @@ def process_task(user_request: str, session_id: str):
     session = Copilot(user_request, SESSION_MANAGER_INSTANCE.get_session_data(session_id))
 
     active_responses = []
+    force_stop = False
     for message in session.run():
         command = SESSION_MANAGER_INSTANCE.get_command(session_id)
         if command == 'stop':
-            yield f"data: {json.dumps({'role': 'system', 'type': 'warning', 'message': '[BREAK]', 'timestamp': time.time()})}\n\n"
+            force_stop = True
             SESSION_MANAGER_INSTANCE.commit_command(session_id)
             break
 
@@ -110,6 +111,9 @@ def process_task(user_request: str, session_id: str):
         msg = agent_result_of_all_active_tpl(active_responses)
         if msg:
             yield f"data: {json.dumps(agent_result_of_all_active_tpl(active_responses))}\n\n"
+
+    if force_stop:
+        yield f"data: {json.dumps({'role': 'system', 'type': 'warning', 'message': '[BREAK]', 'timestamp': time.time()})}\n\n"
 
     yield f"data: {json.dumps(get_terminal())}\n\n"
 
