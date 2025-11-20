@@ -37,6 +37,8 @@ class SimpleChat {
         this.ON_USER_SCROLL_SEMAPHORE = false;
         this.ON_USER_SCROLL_SEMAPHORE_TIMER = null;
 
+        this.IS_LAST_MESSAGE_SUCCESS = false;
+
         this.init();
     }
 
@@ -52,6 +54,10 @@ class SimpleChat {
     }
 
     onEndConversation() {
+        if (this.IS_LAST_MESSAGE_SUCCESS) {
+            this.messageInput.value = "";
+        }
+
         this.controlFlowStopBtn.style.display = 'none';
         this.controlFlowStopBtn.classList.remove('loading');
 
@@ -159,6 +165,7 @@ class SimpleChat {
             };
 
             this.eventSource.onerror = (error) => {
+                this.IS_LAST_MESSAGE_SUCCESS = false;
                 this.updateStatus('Connection Error', 'disconnected');
                 this.onEndConversation();
 
@@ -171,6 +178,7 @@ class SimpleChat {
             };
 
         } catch (error) {
+            this.IS_LAST_MESSAGE_SUCCESS = false;
             this.updateStatus('Failed to Connect', 'disconnected');
             this.onEndConversation();
         }
@@ -182,25 +190,29 @@ class SimpleChat {
                 this.updateStatus(data.message, 'connected');
                 break;
             case 'end':
-                // this.addMessage(data.message, 'finished', data.timestamp);
                 this.onEndConversation();
                 break;
             case 'error':
                 this.addMessage(data.message, 'error', data.timestamp);
+                this.IS_LAST_MESSAGE_SUCCESS = false;
                 break;
             case 'warning':
                 this.addMessage(data.message, 'warning', data.timestamp);
+                this.IS_LAST_MESSAGE_SUCCESS = false;
                 break;
             case 'heartbeat':
                 break;
             case 'markdown':
                 this.addMessage(data.message, 'markdown', data.timestamp);
+                this.IS_LAST_MESSAGE_SUCCESS = true;
                 break;
             case 'html':
                 this.addMessage(data.message, 'html', data.timestamp);
+                this.IS_LAST_MESSAGE_SUCCESS = true;
                 break;
             default:
                 this.addMessage(data.message, 'bot', data.timestamp);
+                this.IS_LAST_MESSAGE_SUCCESS = true;
                 break;
         }
     }
