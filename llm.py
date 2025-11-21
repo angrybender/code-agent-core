@@ -1,4 +1,3 @@
-import json
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -60,6 +59,13 @@ def llm_query(messages, tags=None, tools=None) -> dict|None:
             }
         ]
 
+    for message in messages:
+        if message['role'] == 'system':
+            message['role'] = 'developer'
+
+    if REASONING_EFFORT:
+        messages = [{'role': 'system', 'content': f'Reasoning: {REASONING_EFFORT}'}] + messages
+
     logger.debug(f"INPUT (with tools: {'Y' if tools else 'N'}):")
     for m in messages:
         logger.debug(m)
@@ -75,23 +81,28 @@ def llm_query(messages, tags=None, tools=None) -> dict|None:
         'tools': tools,
     }
 
-    if REASONING_EFFORT:
-        options['reasoning_effort'] = REASONING_EFFORT
+    # if REASONING_EFFORT:
+    #     options['reasoning_effort'] = REASONING_EFFORT
 
     for attempt in range(attempts):
         try:
             response = client.chat.completions.create(**options)
             content = response.choices[0].message.content.strip() if response.choices[0].message.content else ''
 
+            ## TODO DEBUG {
+            logger.debug("RESPONSE:")
+            logger.debug(response)
+            ## TODO DEBUG }
+
             if len(content) == 0 and tools and not response.choices[0].message.tool_calls:
-                raise Exception("Empty response")
+                return None
 
             if tags:
                 output = parse_tags(content, tags)
             else:
                 output = {}
 
-            output['_output'] = content
+            output['_output'] = content.split('<|end|>')[-1]
             if tools:
                 output['_tool_calls'] = response.choices[0].message.tool_calls
                 output['_message'] = response.choices[0].message

@@ -132,7 +132,33 @@ class Copilot:
                 }
                 break
 
-            output = llm_query(conversation_log, tools=supervisor_tools)
+            # merge multiply assistant messages to once
+            if len(conversation_log) >= 2:
+                if conversation_log[-1]['role'] == 'assistant' and conversation_log[-2]['role'] == 'assistant':
+                    conversation_log[-2]['content'] += "\n" + conversation_log[-1]['content']
+                    conversation_log = conversation_log[:-1]
+
+            attempts = 5
+            output = None
+            while attempts > 0:
+                output = llm_query(conversation_log, tools=supervisor_tools)
+                if output:
+                    break
+
+                conversation_log.append({
+                    'role': 'user',
+                    'content': 'If you finished the work - call tool named `exit`! Dont answer with empty response!',
+                })
+
+                attempts -= 1
+
+            if not output:
+                yield {
+                    'message': 'Empty response of LLM',
+                    'type': "error",
+                }
+                break
+
             self.log("============= LLM OUTPUT =============", True)
 
             tool_call_description = None
