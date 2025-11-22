@@ -1,5 +1,8 @@
 import os
 import json
+import hashlib
+import shutil
+import glob
 
 from jinja2 import Environment, BaseLoader
 
@@ -31,6 +34,7 @@ def _parse_tool_arguments(json_data: str):
 
 class BaseAgent:
     DEEP_THINK_TAG = 'work_plan'
+    STORAGE_PATH = './storage'
 
     def __init__(self, role: str, system_prompt: str, step_prompt: str, thinking: bool):
         self.system_prompt = system_prompt
@@ -44,6 +48,7 @@ class BaseAgent:
         self.role = role
         self.log_file = role
         self.thinking = thinking
+        self.storage_path = None
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
         return conversation
@@ -58,11 +63,16 @@ class BaseAgent:
         self.interpreter = CommandInterpreter(IDE_MCP_HOST, manifest['base_path'])
         self.log_file = log_file
 
+        self.storage_path = os.path.join(self.STORAGE_PATH, hashlib.sha256(manifest['base_path'].encode()).hexdigest())
+        if not os.path.exists(self.storage_path):
+            os.mkdir(self.storage_path)
+
     def run(self):
         assert self.instruction, 'Init() s required'
 
         yield {
             'message': f"start {self.role}...",
+            'result': {},
             'type': "info",
         }
 
@@ -91,6 +101,7 @@ class BaseAgent:
                 logger.warning("MAX_STEP exceed!")
                 yield {
                     'message': "MAX_STEP exceed!",
+                    'result': {},
                     'type': "error",
                     'exit': True,
                 }
@@ -107,6 +118,7 @@ class BaseAgent:
                                             .replace(f'</{self.DEEP_THINK_TAG}>', '')
                     yield {
                         'message': think_output_msg,
+                        'result': {},
                         'type': "markdown",
                     }
 
@@ -137,6 +149,7 @@ class BaseAgent:
             if not current_tool_call and (max_skip_command <= 0 or not output['_output']):
                 yield {
                     'message': "Not commands (1), early stop",
+                    'result': {},
                     'type': "error",
                     'exit': True,
                 }
@@ -146,6 +159,7 @@ class BaseAgent:
 
                 yield {
                     'message': output['_output'],
+                    'result': {},
                     'type': "markdown",
                     'exit': True,
                 }
@@ -167,17 +181,23 @@ class BaseAgent:
             if tool_call_description['function'] == 'report':
                 yield {
                     'message': tool_call_description['args'][0],
+                    'result': {},
                     'type': "report",
                     'exit': True,
                 }
                 break
             else:
+                result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
+                if 'file_edit' in result:
+                    result['source_file_path'] = self.cache_file(result['file_name'], result['source_file_content'])
+
                 yield {
                     'message': f"🔨 {tool_call_description['function']}: {tool_call_description['args'][0]}",
+                    'result': result,
                     'type': "info",
                     'exit': False,
                 }
-                result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
+
                 result_msg = {
                     'role': 'tool',
                     'tool_call_id': current_tool_call.id,
@@ -203,6 +223,14 @@ class BaseAgent:
 
         with open(self.log_file, "a", encoding='utf8') as f:
             f.write(data + "\n\n")
+
+    def cache_file(self, file_name: str, source_file_content: str) -> str:
+        source_file_content_path = os.path.join(self.storage_path, hashlib.sha256(file_name.encode()).hexdigest() + '.txt')
+        if not os.path.exists(source_file_content_path):
+            with open(source_file_content_path, 'w', encoding='utf8') as f:
+                f.write(source_file_content)
+
+        return os.path.abspath(source_file_content_path)
 
 
 class AnalyticAgent(BaseAgent):
@@ -251,6 +279,11 @@ class Agent:
     }
 
     STEP_PROMPT = './prompts/step.txt'
+
+    @staticmethod
+    def setUp():
+        for cache_path in glob.glob(os.path.join(BaseAgent.STORAGE_PATH, '*')):
+            shutil.rmtree(cache_path)
 
     @staticmethod
     def fabric(role) -> BaseAgent:

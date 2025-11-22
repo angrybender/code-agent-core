@@ -1,12 +1,9 @@
 import json
 import os
 import glob
-import time
 import datetime
 
-import conversation
 from mcp_helper import tool_call
-from llm_parser import parse_tags
 from llm import llm_query
 from path_helper import get_relative_path
 from command_interpreter import CommandInterpreter
@@ -26,21 +23,17 @@ logging.basicConfig(level=logging.INFO)
 
 
 class Copilot:
-    PROJECT_DESCRIPTION = "./.copilot_project.xml"
+    PROJECT_DESCRIPTION = "./AGENTS.md"
     MAX_STEP = int(MAX_ITERATION)
     LOG_FILE = './conversations_log/log.log'
 
-    def __init__(self, request):
-        self.request = request
+    def __init__(self, instruction: str, session: dict):
         self.output = []
-        self.conversation_id = None
         self.last_step = None
         self.last_tool = {}
         self.manifest = {}
-        self.instruction = ''
-        self.conversation_db = {
-            'executed_commands': [],
-        }
+        self.session = session
+        self.instruction = instruction
 
         self.interpreter = None
 
@@ -51,49 +44,32 @@ class Copilot:
 
         self.command_state = []
 
-    def get_id(self):
-        return self.conversation_id
+    def get_manifest(self, project_base_path: str):
+        content = tool_call(IDE_MCP_HOST, 'get_file_text_by_path', {
+            'pathInProject': self.PROJECT_DESCRIPTION,
+            'projectPath': project_base_path
+        })
 
-    def _load_db(self):
-        db_file = f'conversations_db/{self.conversation_id}.json'
-        if os.path.exists(db_file):
-            self.conversation_db = json.load(open(db_file, 'r', encoding='utf8'))
+        if 'error' in content or 'status' not in content:
+            return ''
         else:
-            with open(db_file, 'w', encoding='utf8') as f:
-                json.dump({
-                    'executed_commands': []
-                }, f, ensure_ascii=False, indent=4)
-
-    def get_manifest(self):
-        _manifest_file = tool_call(IDE_MCP_HOST, 'get_file_text_by_path', {'pathInProject': './.copilot_project.xml'})[
-            'status']
-        return parse_tags(_manifest_file, ['path', 'description', 'mcp'])
+            return content['status']
 
     def _init(self):
+        assert 'project_base_path' in self.session, 'Session not contains `project_base_path`'
+
         if not self.system_prompt:
             self.system_prompt = open('./prompts/supervisor_system.txt', 'r', encoding='utf8').read()
 
         if not self.prompt:
             self.prompt = open('./prompts/step.txt', 'r', encoding='utf8').read()
 
-        if self.instruction and self.conversation_id:
-            return
-
-        # first user's message contains instruction
-        for messages in self.request['messages']:
-            if messages['role'] == 'user':
-                self.instruction = messages['content']
-                break
-
         assert self.instruction, 'Empty instruction'
-        self.conversation_id = time.time()
 
-        manifest = self.get_manifest()
-        _project_base_path = manifest['path'][0].strip()
         self.manifest = {
-            'base_path': _project_base_path,
-            'description': manifest['description'][0].strip(),
-            'files_structure': self._read_project_structure(_project_base_path),
+            'base_path': self.session['project_base_path'],
+            'description': self.get_manifest(self.session['project_base_path']).strip(),
+            'files_structure': self._read_project_structure(self.session['project_base_path']),
         }
 
         self.output = []
@@ -101,7 +77,7 @@ class Copilot:
         self.executed_commands = []
         self.command_state = []
         self.agent_step = 1
-        self.interpreter = CommandInterpreter(IDE_MCP_HOST, _project_base_path)
+        self.interpreter = CommandInterpreter(IDE_MCP_HOST, self.session['project_base_path'])
 
     def _read_project_structure(self, base_path) -> list:
         result = []
@@ -117,11 +93,13 @@ class Copilot:
         return result
 
     def run(self):
-        self._init()
         yield {
             'message': f"start SUPERVISOR...",
             'type': "info",
         }
+
+        self._init()
+        Agent.setUp()
 
         with open(self.LOG_FILE, "w", encoding='utf8') as f:
             f.write(str(datetime.datetime.now()) + "\n\n")
@@ -241,6 +219,7 @@ class Copilot:
                         is_agent_completes_work = True
 
                     yield agent_step
+
                     if is_agent_completes_work:
                         break
             else:
@@ -266,8 +245,6 @@ class Copilot:
                     })
 
             agent_step_counter += 1
-
-        yield conversation.get_terminal()
 
     def log(self, data, to_file=False):
         if type(data) is list or type(data) is dict:
