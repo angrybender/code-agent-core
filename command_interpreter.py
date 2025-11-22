@@ -13,7 +13,7 @@ class CommandInterpreter:
     def _command_read(self, file_path) -> dict:
         content = tool_call(self.mcp_host, 'get_file_text_by_path', {
             'pathInProject': file_path,
-            'projectPath': self.project_root
+            'projectPath': self.project_root,
         })
 
         is_success = False
@@ -54,12 +54,7 @@ class CommandInterpreter:
         # looking for file exists:
         source_file = self._command_read(file_path)
         is_exist = source_file['exists']
-        if is_exist:
-            method = 'replace_file_text_by_path'
-        else:
-            method = 'create_new_file_with_text'
 
-        # trim wrapper
         if type(data) is dict or type(data) is list:
             # workaround for some stupid local LLM
             data = json.dumps(data, ensure_ascii=False, indent=4)
@@ -75,10 +70,11 @@ class CommandInterpreter:
 
         data = re.sub(r'```$', '', data)
 
-        content = tool_call(self.mcp_host, method, {
+        content = tool_call(self.mcp_host, 'create_new_file', {
             'pathInProject': file_path,
             'text': data.strip(),
-            'projectPath': self.project_root
+            'projectPath': self.project_root,
+            'overwrite': True,
         })
 
         result = {'result': "True" if 'status' in content else "ERROR: " + content['error']}
@@ -108,10 +104,11 @@ class CommandInterpreter:
         except PatchError as e:
             return {'result': f"ERROR: {e}"}
 
-        content = tool_call(self.mcp_host, 'replace_file_text_by_path', {
+        content = tool_call(self.mcp_host, 'create_new_file', {
             'pathInProject': file_path,
             'text': patched_file.strip(),
-            'projectPath': self.project_root
+            'projectPath': self.project_root,
+            'overwrite': True,
         })
 
         result = {'result': "True" if 'status' in content else "ERROR: " + content['error']}

@@ -1,17 +1,8 @@
-import requests
-import os
 import asyncio
-from dotenv import load_dotenv
+import os.path
+
 from mcp import ClientSession
 from mcp.client.sse import sse_client
-
-load_dotenv()
-MCP_CLIENT_TYPE = os.getenv('MCP_CLIENT_TYPE', 'sse')
-assert MCP_CLIENT_TYPE in ['sse', 'legacy'], '`MCP_CLIENT_TYPE` has invalid!'
-
-def _tool_call_legacy(path: str, name: str, args: dict = None) -> dict:
-    path = path.rstrip('/') + '/api/mcp/' + name
-    return requests.post(path, json=args if args else {}).json()
 
 async def _tool_call_sse(path: str, name: str, args: dict = None):
     async with sse_client(path) as (
@@ -23,21 +14,25 @@ async def _tool_call_sse(path: str, name: str, args: dict = None):
             return await session.call_tool(name, args)
 
 def tool_call(path: str, name: str, args: dict = None) -> dict:
-    if MCP_CLIENT_TYPE == 'legacy':
-        if args and 'projectPath' in args:
-            del args['projectPath']
-        return _tool_call_legacy(path, name, args)
-    else:
-        if name == 'replace_file_text_by_path' or name == 'create_new_file_with_text':
-            name = 'create_new_file'
-            args['overwrite'] = True
+    if name == 'get_file_text_by_path':
+        # jetbrains'mcp truncate big files
+        file_path = os.path.join(args['projectPath'], args['pathInProject'])
+        if not os.path.exists(file_path):
+            return {
+                'error': f"File: {args['pathInProject']} doesn't exist or can't be opened"
+            }
 
-        result = asyncio.run(_tool_call_sse(path, name, args))
-        if result.isError:
+        with open(file_path, 'r', encoding='utf8') as f:
             return {
-                'error': result.content[0].text
+                'status': f.read()
             }
-        else:
-            return {
-                'status': result.content[0].text
-            }
+
+    result = asyncio.run(_tool_call_sse(path, name, args))
+    if result.isError:
+        return {
+            'error': result.content[0].text
+        }
+    else:
+        return {
+            'status': result.content[0].text
+        }
