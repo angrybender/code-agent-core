@@ -20,7 +20,7 @@ tools = [
         "type":"function",
         "function":{
             "name": "list_in_directory",
-            "description": "List files and directories from path.\nResult contains list of files and directories (only first level), for directory name end of symbol `\`",
+            "description": "List files and directories from path.\nResult contains list of files and directories (only first level), for directory name end of symbol `/`",
             "parameters": {
                 "type": "object",
                 "required": ["path"],
