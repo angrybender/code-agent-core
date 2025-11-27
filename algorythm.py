@@ -132,6 +132,7 @@ class Copilot:
                 }
                 break
 
+            yield {'type': 'nope'}
             output = llm_query(conversation_log, tools=supervisor_tools)
             self.log("============= LLM OUTPUT =============", True)
 

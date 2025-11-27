@@ -56,6 +56,7 @@ class SimpleChat {
     onEndConversation() {
         if (this.IS_LAST_MESSAGE_SUCCESS) {
             this.messageInput.value = "";
+            this.messageInput.style.height = 'auto';
         }
 
         this.controlFlowStopBtn.style.display = 'none';
@@ -186,6 +187,8 @@ class SimpleChat {
 
     handleServerMessage(data) {
         switch (data.type) {
+            case 'nope':
+                break;
             case 'status':
                 this.updateStatus(data.message, 'connected');
                 break;

@@ -109,6 +109,7 @@ class BaseAgent:
 
             conversation = self.conversation_filter(conversation)
 
+            yield {'type': 'nope'}
             if self.thinking:
                 think_output = llm_query(conversation)
                 think_output = think_output.get('_output', '')
@@ -187,6 +188,7 @@ class BaseAgent:
                 }
                 break
             else:
+                yield {'type': 'nope'}
                 result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
                 if 'file_edit' in result:
                     result['source_file_path'] = self.cache_file(result['file_name'], result['source_file_content'])
