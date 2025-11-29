@@ -30,6 +30,8 @@ class CommandInterpreter:
         if is_success:
             response['tool_name'] = 'read'
             response['file_path'] = file_path
+        else:
+            response['error'] = True
 
         return response
 
@@ -88,6 +90,8 @@ class CommandInterpreter:
                 result['source_file_content'] = source_file['result']
             else:
                 result['file_create'] = True
+        else:
+            result['error'] = True
 
         return result
 
@@ -102,7 +106,7 @@ class CommandInterpreter:
         try:
             patched_file = apply_patch("\n".join(source_code), str_find, str_replace)
         except PatchError as e:
-            return {'result': f"ERROR: {e}"}
+            return {'result': f"ERROR: {e}", 'error': True}
 
         content = tool_call(self.mcp_host, 'create_new_file', {
             'pathInProject': file_path,
@@ -118,6 +122,8 @@ class CommandInterpreter:
             result['file_path'] = os.path.join(self.project_root, file_path)
             result['file_name'] = file_path
             result['source_file_content'] = source_file['result']
+        else:
+            result['error'] = True
 
         return result
 
@@ -132,6 +138,6 @@ class CommandInterpreter:
             elif opcode == 'replace_code_in_file':
                 return self._command_write_diff(*arguments)
             else:
-                return {"result": "ERROR: wrong tool name, check tools list and call correct"}
+                return {"result": "ERROR: wrong tool name, check tools list and call correct", 'error': True}
         except TypeError:
-            return {"result": "ERROR: wrong command code/arguments, check tools list and call correct"}
+            return {"result": "ERROR: wrong command code/arguments, check tools list and call correct", 'error': True}

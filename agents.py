@@ -190,15 +190,24 @@ class BaseAgent:
             else:
                 yield {'type': 'nope'}
                 result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
-                if 'file_edit' in result:
+                is_success = not result.get('error', False)
+
+                if 'error' in result:
+                    del result['error']
+
+                if is_success and 'file_edit' in result:
                     result['source_file_path'] = self.cache_file(result['file_name'], result['source_file_content'])
 
-                yield {
-                    'message': f"🔨 {tool_call_description['function']}: {tool_call_description['args'][0]}",
-                    'result': result,
-                    'type': "info",
-                    'exit': False,
-                }
+                if not tool_call_description['args']:
+                    tool_call_description['args'] = ['']
+
+                if is_success:
+                    yield {
+                        'message': f"🔨 {tool_call_description['function']}: {tool_call_description['args'][0]}",
+                        'result': result,
+                        'type': "info",
+                        'exit': False,
+                    }
 
                 result_msg = {
                     'role': 'tool',
