@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Agent0.7</title>
+
+    <style>
+        .error {
+          background-color: #fee;
+          border-left: 4px solid #c33;
+          border-radius: 4px;
+          padding: 16px;
+          margin: 16px 0;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        .error p {
+          margin: 0 0 12px 0;
+          color: #333;
+          line-height: 1.5;
+        }
+
+        .error code {
+          background-color: #f5f5f5;
+          padding: 2px 6px;
+          border-radius: 3px;
+          font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+          font-size: 0.9em;
+          color: #c33;
+        }
+
+        .error pre {
+          background-color: #2d2d2d;
+          color: #f8f8f2;
+          padding: 12px;
+          border-radius: 4px;
+          overflow-x: auto;
+          font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+          font-size: 0.9em;
+          line-height: 1.4;
+          margin: 0;
+        }
+    </style>
+</head>
+<body>
+    {% if core_version < ui_version %}
+    <div class="error">
+        <p>
+            Core server has incompatibility with UI.<br/> Update server, from repository:<br/><code>https://github.com/angrybender/code-agent-core.git</code>
+        </p>
+        <pre>git checkout main && git pull && pip install -r requirements.txt</pre>
+    </div>
+    {% endif %}
+
+    {% if core_version > ui_version %}
+    <div class="error">
+        <p>
+            UI has incompatibility with Core server.<br/> Update UI, download the last release from: <code>https://github.com/angrybender/code-agent-jetbrains-plugin/releases</code>
+        </p>
+    </div>
+    {% endif %}
+</body>
+</html>

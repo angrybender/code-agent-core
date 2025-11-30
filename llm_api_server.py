@@ -18,6 +18,7 @@ load_dotenv()
 HTTP_PORT = int(os.getenv('HTTP_PORT', 5000))
 MODEL = os.getenv('MODEL')
 IS_DEBUG = int(os.environ.get('DEBUG', 0)) == 1
+VERSION_TAG = 1
 
 if IS_DEBUG:
     logging.getLogger().setLevel(logging.DEBUG)
@@ -126,6 +127,14 @@ def index():
 
     if not os.path.exists(project_base_path):
         return f'Wrong ?project={project_base_path}', 400
+
+    ui_version_tag = int(request.args.get('versionTag', 0))
+    if ui_version_tag != VERSION_TAG:
+        return Response(render_template('error.html', core_version=VERSION_TAG, ui_version=ui_version_tag), mimetype='text/html', headers={
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-cache',
+            'Access-Control-Allow-Origin': '*'
+        })
 
     session_id = hashlib.sha256(project_base_path.encode()).hexdigest()
     template_app_data = {
