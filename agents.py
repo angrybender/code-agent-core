@@ -109,6 +109,12 @@ class BaseAgent:
 
             conversation = self.conversation_filter(conversation)
 
+            # merge multiply assistant messages to once
+            if len(conversation) >= 2:
+                if conversation[-1]['role'] == 'assistant' and conversation[-2]['role'] == 'assistant':
+                    conversation[-2]['content'] += "\n" + conversation[-1]['content']
+                    conversation = conversation[:-1]
+
             yield {'type': 'nope'}
             if self.thinking:
                 think_output = llm_query(conversation)

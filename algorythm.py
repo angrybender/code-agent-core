@@ -119,6 +119,12 @@ class Copilot:
                 }
                 break
 
+            # merge multiply assistant messages to once
+            if len(conversation_log) >= 2:
+                if conversation_log[-1]['role'] == 'assistant' and conversation_log[-2]['role'] == 'assistant':
+                    conversation_log[-2]['content'] += "\n" + conversation_log[-1]['content']
+                    conversation_log = conversation_log[:-1]
+
             yield {'type': 'nope'}
             output = llm_query(conversation_log, tools=supervisor_tools)
             self.log("============= LLM OUTPUT =============", True)
