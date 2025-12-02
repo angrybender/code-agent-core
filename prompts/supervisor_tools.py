@@ -31,7 +31,7 @@ tools = [
                 "properties": {
                     "text": {
                         "type": "string",
-                        "description": "text is a message for user in the markdowm format"
+                        "description": "text is a message for user in the markdown format"
                     }
                 }
             }
