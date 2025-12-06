@@ -40,12 +40,16 @@ def agent_result_tpl(result: dict, message_type: str, message) -> dict:
 
 def agent_result_of_all_active_tpl(messages: list[dict]) -> dict|None:
     processed_files = []
+    processed_files_file_path_idx = {}
     for message in messages:
         result = message['message'].get('result', {})
-        if message['type'] == 'files' and result.get('tool_name', '') in ['write', 'write_diff']:
+        if (message['type'] == 'files'
+            and result.get('tool_name', '') in ['write', 'write_diff']
+            and result['file_path'] not in processed_files_file_path_idx
+        ):
+            processed_files_file_path_idx[ result['file_path'] ] = True
             _html = _file_processing_tpl(result)
-            if _html not in processed_files:
-                processed_files.append(_html)
+            processed_files.append(_html)
 
     if processed_files:
         message = "<p>📋 Processed files:</p> <ul>" + " ".join([f"<li>{link}</li>" for link in processed_files]) + "</ul>"

@@ -48,8 +48,12 @@ def _write_file_pure(project_path: str, path_in_project: str, text: str) -> dict
     if parent_dir:
         os.makedirs(parent_dir, exist_ok=True)
 
-    with open(abs_path, 'w', encoding='utf-8') as f:
-        f.write(text)
+    try:
+        with open(abs_path, 'w', encoding='utf-8') as f:
+            f.write(text)
+    except OSError as e:
+        if str(e).find('Invalid argument') > -1:
+            return {'error': f"Cannot write file, wrong tool calling format: {abs_path}"}
 
     return {'status': 'File created successfully'}
 
