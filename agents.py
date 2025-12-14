@@ -12,7 +12,7 @@ logger = logging.getLogger('APP')
 from dotenv import load_dotenv
 load_dotenv()
 
-from llm import llm_query
+from utils.llm import llm_query
 from command_interpreter import CommandInterpreter
 from prompts.analytic_tools import tools as analytic_tools
 from prompts.coder_tools import tools as coder_tools

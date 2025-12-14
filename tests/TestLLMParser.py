@@ -1,5 +1,5 @@
 import unittest
-from llm_parser import parse_tags
+from utils.llm_parser import parse_tags
 
 class TestLLMParser(unittest.TestCase):
     def test_1(self):

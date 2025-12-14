@@ -3,9 +3,9 @@ import os
 import glob
 import datetime
 
-from mcp_helper import tool_call
-from llm import llm_query
-from path_helper import get_relative_path
+from utils.mcp_helper import tool_call
+from utils.llm import llm_query
+from utils.path_helper import get_relative_path
 from command_interpreter import CommandInterpreter
 from agents import Agent
 from prompts.supervisor_tools import tools as supervisor_tools

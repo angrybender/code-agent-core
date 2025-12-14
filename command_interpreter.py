@@ -1,8 +1,8 @@
 import os.path
 
-from diff_helper import apply_patch, PatchError
+from utils.diff_helper import apply_patch, PatchError
 import re
-from mcp_helper import tool_call
+from utils.mcp_helper import tool_call
 import json
 
 class CommandInterpreter:
