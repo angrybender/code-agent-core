@@ -1,8 +1,8 @@
 import os.path
 
-from diff_helper import apply_patch, PatchError
+from utils.diff_helper import apply_patch, PatchError
 import re
-from mcp_helper import tool_call
+from utils.mcp_helper import tool_call
 import json
 
 class CommandInterpreter:
@@ -98,7 +98,7 @@ class CommandInterpreter:
     def _command_write_diff(self, file_path, str_find, str_replace):
         source_file = self._command_read(file_path)
         if not source_file['exists']:
-            return {'result': "ERROR: file not exist"}
+            return {'result': "ERROR: file not exist", 'error': True}
 
         source_code = source_file['result']
         source_code = [_.rstrip() for _ in source_code.split("\n")]

@@ -1,7 +1,7 @@
 import unittest
 import json
 
-from diff_helper import apply_patch
+from utils.diff_helper import apply_patch
 
 class TestDiffHelper(unittest.TestCase):
     CODE_JSON = """[

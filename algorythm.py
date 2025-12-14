@@ -3,9 +3,9 @@ import os
 import glob
 import datetime
 
-from mcp_helper import tool_call
-from llm import llm_query
-from path_helper import get_relative_path
+from utils.mcp_helper import tool_call
+from utils.llm import llm_query
+from utils.path_helper import get_relative_path
 from command_interpreter import CommandInterpreter
 from agents import Agent
 from prompts.supervisor_tools import tools as supervisor_tools
@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
-MAX_ITERATION=os.getenv('MAX_ITERATION')
+MAX_ITERATION=int(os.getenv('MAX_ITERATION'))
 
 import logging
 logger = logging.getLogger('APP')
@@ -24,13 +24,9 @@ logging.basicConfig(level=logging.INFO)
 
 class Copilot:
     PROJECT_DESCRIPTION = "./AGENTS.md"
-    MAX_STEP = int(MAX_ITERATION)
     LOG_FILE = './conversations_log/log.log'
 
     def __init__(self, instruction: str, session: dict):
-        self.output = []
-        self.last_step = None
-        self.last_tool = {}
         self.manifest = {}
         self.session = session
         self.instruction = instruction
@@ -39,10 +35,6 @@ class Copilot:
 
         self.system_prompt = ''
         self.prompt = ''
-        self.executed_commands = []
-        self.agent_step = 0
-
-        self.command_state = []
 
     def get_manifest(self, project_base_path: str):
         content = tool_call(IDE_MCP_HOST, 'get_file_text_by_path', {
@@ -72,11 +64,6 @@ class Copilot:
             'files_structure': self._read_project_structure(self.session['project_base_path']),
         }
 
-        self.output = []
-
-        self.executed_commands = []
-        self.command_state = []
-        self.agent_step = 1
         self.interpreter = CommandInterpreter(IDE_MCP_HOST, self.session['project_base_path'])
 
     def _read_project_structure(self, base_path) -> list:
@@ -124,13 +111,19 @@ class Copilot:
 
         agent_step_counter = 1
         while True:
-            if agent_step_counter > self.MAX_STEP:
-                logger.warning("MAX_STEP exceed!")
+            if agent_step_counter > MAX_ITERATION:
+                logger.warning("MAX_ITERATION exceed!")
                 yield {
-                    'message': "MAX_STEP exceed!",
+                    'message': "MAX_ITERATION exceed!",
                     'type': "error",
                 }
                 break
+
+            # merge multiply assistant messages to once
+            if len(conversation_log) >= 2:
+                if conversation_log[-1]['role'] == 'assistant' and conversation_log[-2]['role'] == 'assistant':
+                    conversation_log[-2]['content'] += "\n" + conversation_log[-1]['content']
+                    conversation_log = conversation_log[:-1]
 
             yield {'type': 'nope'}
             output = llm_query(conversation_log, tools=supervisor_tools)

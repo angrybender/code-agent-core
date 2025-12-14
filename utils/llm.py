@@ -1,9 +1,8 @@
-import json
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
 import time
-from llm_parser import parse_tags
+from utils.llm_parser import parse_tags
 
 import logging
 
