@@ -69,6 +69,7 @@ class BaseAgent:
 
     def run(self):
         assert self.instruction, 'Init() s required'
+        specific_model = os.environ.get(f'MODEL:{self.role}', None)
 
         yield {
             'message': f"start {self.role}...",
@@ -111,7 +112,7 @@ class BaseAgent:
 
             yield {'type': 'nope'}
             if self.thinking:
-                think_output = llm_query(conversation)
+                think_output = llm_query(conversation, model_name=specific_model)
                 think_output = think_output.get('_output', '')
                 if think_output and think_output.find(f'<{self.DEEP_THINK_TAG}>') > -1:
                     think_output_msg = think_output\
@@ -128,7 +129,7 @@ class BaseAgent:
                         'content': think_output
                     })
 
-            output = llm_query(conversation, tools=self.get_tools())
+            output = llm_query(conversation, tools=self.get_tools(), model_name=specific_model)
             self.log("============= LLM OUTPUT =============", True)
             self.log('LLM OUTPUT:\n' + output.get('output', ''), True)
 

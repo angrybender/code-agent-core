@@ -93,6 +93,7 @@ class Copilot:
         return result
 
     def run(self):
+        specific_model = os.environ.get('MODEL:SUPERVISOR', None)
         yield {
             'message': f"start SUPERVISOR...",
             'type': "info",
@@ -133,7 +134,7 @@ class Copilot:
                 break
 
             yield {'type': 'nope'}
-            output = llm_query(conversation_log, tools=supervisor_tools)
+            output = llm_query(conversation_log, tools=supervisor_tools, model_name=specific_model)
             self.log("============= LLM OUTPUT =============", True)
 
             tool_call_description = None
