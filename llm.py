@@ -45,7 +45,7 @@ else:
     MAX_PROMPT_OUTPUT = None
 
 
-def llm_query(messages, tags=None, tools=None) -> dict|None:
+def llm_query(messages, tags=None, tools=None, model_name=None) -> dict|None:
     client = OpenAI(
         api_key=API_KEY,
         base_url=API_URL,
@@ -70,7 +70,7 @@ def llm_query(messages, tags=None, tools=None) -> dict|None:
 
     options = {
         'messages': messages,
-        'model': MODEL,
+        'model': model_name if model_name else MODEL,
         'max_tokens': MAX_PROMPT_OUTPUT,
         'tools': tools,
     }
