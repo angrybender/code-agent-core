@@ -87,7 +87,7 @@ class BaseAgent:
         conversation = [
             {
                 'role': 'system',
-                'content': self.system_prompt + "\n" + sub_prompt
+                'content': self.system_prompt + "\n" + sub_prompt + f"\nMaximum allowed tools calling: {MAX_ITERATION-1}, dont exceed it!"
             },
             {
                 'role': 'user',
@@ -253,35 +253,65 @@ class CoderAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
         return coder_tools
 
+    def _create_log(self, conversation: list[dict]):
+        tools_list = [_ for _ in conversation if 'tool_calls' in _]
+        for tool in tools_list:
+            tool_call = tool['tool_calls'][0]
+            tool['args'] = list(_parse_tool_arguments(tool_call.function.arguments).values()) if tool_call.function.arguments else []
+
+        return "; ".join([f'{m['tool_calls'][0].function.name}:{m['args'][0]}' for m in tools_list])
+
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
-        last_tool = ''
-        modified_conversation = []
-        for m in conversation:
-            modified_conversation.append(m)
+        tools_map = {}
+        tools_answers = {}
+        is_convolution = False
+        for position, m in enumerate(conversation):
+            if 'tool_call_id' in m:
+                tools_answers[m['tool_call_id']] = m
 
             if 'tool_calls' not in m:
                 continue
 
             tool = m['tool_calls'][0]
-            _hash = tool.function.name + ':' + tool.function.arguments
+            if tool.function.name == 'report':
+                return conversation
 
-            if tool.function.name != 'read_file':
-                last_tool = _hash
-                continue
+            args = list(_parse_tool_arguments(tool.function.arguments).values()) if tool.function.arguments else []
+            if not args:
+                return conversation
 
-            if _hash == last_tool:
-                modified_conversation.append({
-                    'role': 'tool',
-                    'tool_call_id': tool.id,
-                    'name': tool.function.name,
-                    'content': 'File has read above!',
-                })
-
-                return modified_conversation
+            js_obj_name = args[0]
+            if tool.function.name in ['replace_code_in_file', 'write_file']:
+                tool_name = 'write'
             else:
-                last_tool = _hash
+                tool_name = 'read'
 
-        return conversation
+            if tools_map.get(js_obj_name, {}).get(tool_name, None):
+                is_convolution = True
+
+            if js_obj_name not in tools_map:
+                tools_map[js_obj_name] = {}
+
+            tools_map[js_obj_name][tool_name] = [m, position]
+
+        if not is_convolution:
+            return conversation
+
+        modified_conversation = []
+        for _, obj_tools in tools_map.items():
+            for _, [m, position] in obj_tools.items():
+                modified_conversation.append([10*position, m])
+                if m['tool_calls'][0].id in tools_answers:
+                    modified_conversation.append([10*position + 5, tools_answers[ m['tool_calls'][0].id ] ])
+
+        modified_conversation = sorted(modified_conversation, key=lambda pos_m: pos_m[0])
+        modified_conversation = [_[1] for _ in modified_conversation]
+
+        logger.info(
+            "Conv context! Before: " + self._create_log(conversation) + " After: " + self._create_log(modified_conversation)
+        )
+
+        return conversation[:2] + modified_conversation
 
 
 class Agent:
