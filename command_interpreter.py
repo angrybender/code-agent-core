@@ -10,6 +10,17 @@ class CommandInterpreter:
         self.mcp_host = mcp_host
         self.project_root = project_root
 
+    def _correction_write_arg(self, value) -> str:
+        """
+        workaround for some stupid local LLM
+        :param value:
+        :return:
+        """
+        if type(value) is dict or type(value) is list:
+            value = json.dumps(value, ensure_ascii=False, indent=4)
+
+        return value
+
     def _command_read(self, file_path) -> dict:
         content = tool_call(self.mcp_host, 'get_file_text_by_path', {
             'pathInProject': file_path,
@@ -57,10 +68,7 @@ class CommandInterpreter:
         source_file = self._command_read(file_path)
         is_exist = source_file['exists']
 
-        if type(data) is dict or type(data) is list:
-            # workaround for some stupid local LLM
-            data = json.dumps(data, ensure_ascii=False, indent=4)
-
+        data = self._correction_write_arg(data)
         if type(data) is not str:
             return {'result': "ERROR: file content must be string!"}
 
@@ -102,6 +110,9 @@ class CommandInterpreter:
 
         source_code = source_file['result']
         source_code = [_.rstrip() for _ in source_code.split("\n")]
+
+        str_find = self._correction_write_arg(str_find)
+        str_replace = self._correction_write_arg(str_replace)
 
         try:
             patched_file = apply_patch("\n".join(source_code), str_find, str_replace)

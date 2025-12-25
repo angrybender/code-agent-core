@@ -115,7 +115,7 @@ class Copilot:
         conversation_log = [
             {
                 'role': 'system',
-                'content': self.system_prompt + "\n" + sub_prompt
+                'content': self.system_prompt + "\n" + sub_prompt + f"\nMaximum allowed tools calling: {self.MAX_STEP-1}; planing work with this restriction!"
             },
             {
                 'role': 'user',
@@ -217,7 +217,7 @@ class Copilot:
                         agent_complete_report = agent_step['message']
                         agent_step['type'] = 'markdown'
                     elif agent_step['type'] == 'error':
-                        agent_complete_report = 'Agent cant complete a work, try another approach: add more details, rewrite instruction for agent!' # TODO ???
+                        agent_complete_report = 'Agent cant complete a work, try another approach: add more details, rewrite instruction for agent! Agent returns error: ' + agent_step['message']
                         is_agent_completes_work = True
 
                     yield agent_step

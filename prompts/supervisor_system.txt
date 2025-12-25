@@ -32,3 +32,6 @@ Before call CODER sub-agent check:
 - You know what files CODER will be changes and create
 - You know how review is work completed
 - The changes decide user's task, there are not changed what no need
+
+### Review of task
+After CODER agent modify/create files - call CODER with review role, write detailed instruction for check code and accordance to task, if there are error - create sub task for fix
