@@ -278,6 +278,12 @@ class CoderAgent(BaseAgent):
         return "; ".join([f'{m['tool_calls'][0].function.name}:{m['args'][0]}' for m in tools_list])
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
+        # merge multiply assistant messages to once
+        if len(conversation) >= 2:
+            if conversation[-1]['role'] == 'assistant' and conversation[-2]['role'] == 'assistant':
+                conversation[-2]['content'] += "\n" + conversation[-1]['content']
+                conversation = conversation[:-1]
+
         tools_map = {}
         tools_answers = {}
         is_convolution = False
