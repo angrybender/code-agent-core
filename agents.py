@@ -129,7 +129,23 @@ class BaseAgent:
                         'content': think_output
                     })
 
-            output = llm_query(conversation, tools=self.get_tools(), model_name=specific_model)
+            is_empty_workaround = False
+            while True:
+                output = llm_query(conversation, tools=self.get_tools(), model_name=specific_model)
+                if output:
+                    break
+
+                logger.info("Empty response. Force to using tool")
+
+                if not is_empty_workaround:
+                    is_empty_workaround = True
+                    conversation.append({
+                        'role': 'user',
+                        'content': 'You must call tool, dont answer empty message'
+                    })
+
+                yield {'type': 'nope'}
+
             self.log("============= LLM OUTPUT =============", True)
             self.log('LLM OUTPUT:\n' + output.get('output', ''), True)
 
