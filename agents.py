@@ -303,8 +303,11 @@ class CoderAgent(BaseAgent):
                 return conversation
 
             js_obj_name = args[0]
-            if tool.function.name in ['replace_code_in_file', 'write_file']:
+            if tool.function.name == 'write_file':
                 tool_name = 'write'
+            elif tool.function.name == 'replace_code_in_file':
+                # lost write diff cause less quality
+                tool_name = f'replace_code_in_file:{position}'
             else:
                 tool_name = 'read'
 
