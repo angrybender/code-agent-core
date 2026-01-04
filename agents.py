@@ -138,15 +138,15 @@ class BaseAgent:
                     break
 
                 if not AVOID_EMPTY_RESPONSE:
-                    if conversation[-1]['role'] == 'tool' and conversation[-1]['name'] == 'message':
-                        _report = conversation[-1]['name']['content']
+                    if conversation[-1]['role'] == 'assistant' and conversation[-1]['content'].strip():
+                        _report = conversation[-1]['content']
                         logger.info("Empty response. Create report from previous message")
                     else:
                         _report = "I've completed task"
-                        logger.info("Empty response")
+                        logger.info("Empty response [agents]")
 
                     yield {
-                        'message': "I've completed task",
+                        'message': _report,
                         'result': {},
                         'type': "report",
                         'exit': True,
