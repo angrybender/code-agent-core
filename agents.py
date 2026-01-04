@@ -20,6 +20,7 @@ from prompts.coder_tools import tools as coder_tools
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=int(os.getenv('MAX_ITERATION'))
 DEEPTHINKING_AGENTS=os.getenv('DEEPTHINKING_AGENTS', '').split(',')
+AVOID_EMPTY_RESPONSE = int(os.getenv('AVOID_EMPTY_RESPONSE', 0)) == 1
 
 def _parse_tool_arguments(json_data: str):
     try:
@@ -131,9 +132,26 @@ class BaseAgent:
 
             is_empty_workaround = False
             while True:
+                yield {'type': 'nope'}
                 output = llm_query(conversation, tools=self.get_tools(), model_name=specific_model)
                 if output:
                     break
+
+                if not AVOID_EMPTY_RESPONSE:
+                    if conversation[-1]['role'] == 'tool' and conversation[-1]['name'] == 'message':
+                        _report = conversation[-1]['name']['content']
+                        logger.info("Empty response. Create report from previous message")
+                    else:
+                        _report = "I've completed task"
+                        logger.info("Empty response")
+
+                    yield {
+                        'message': "I've completed task",
+                        'result': {},
+                        'type': "report",
+                        'exit': True,
+                    }
+                    return
 
                 logger.info("Empty response. Force to using tool")
 
@@ -141,10 +159,8 @@ class BaseAgent:
                     is_empty_workaround = True
                     conversation.append({
                         'role': 'user',
-                        'content': 'You must call tool, dont answer empty message'
+                        'content': 'Dont answer with empty message. If you have finished the work - call `report` tool!'
                     })
-
-                yield {'type': 'nope'}
 
             self.log("============= LLM OUTPUT =============", True)
             self.log('LLM OUTPUT:\n' + output.get('output', ''), True)
