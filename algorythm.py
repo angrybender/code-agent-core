@@ -16,6 +16,7 @@ load_dotenv()
 
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=os.getenv('MAX_ITERATION')
+AVOID_EMPTY_RESPONSE = int(os.getenv('AVOID_EMPTY_RESPONSE', 0)) == 1
 
 import logging
 logger = logging.getLogger('APP')
@@ -133,8 +134,27 @@ class Copilot:
                 }
                 break
 
-            yield {'type': 'nope'}
-            output = llm_query(conversation_log, tools=supervisor_tools, model_name=specific_model)
+            is_empty_workaround = False
+            while True:
+                yield {'type': 'nope'}
+                output = llm_query(conversation_log, tools=supervisor_tools, model_name=specific_model)
+                if output:
+                    break
+
+                if not AVOID_EMPTY_RESPONSE:
+                    # == exit
+                    logger.info("Empty response. Stop working")
+                    return True
+
+                logger.info("Empty response. Force to using tool")
+
+                if not is_empty_workaround:
+                    is_empty_workaround = True
+                    conversation_log.append({
+                        'role': 'user',
+                        'content': 'Dont answer with empty message. If you have finished the work - call `exit` tool!'
+                    })
+
             self.log("============= LLM OUTPUT =============", True)
 
             tool_call_description = None
