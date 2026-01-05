@@ -150,6 +150,7 @@ class BaseAgent:
                         'result': {},
                         'type': "report",
                         'exit': True,
+                        'hidden': True,
                     }
                     return
 
