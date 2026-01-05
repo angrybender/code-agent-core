@@ -102,7 +102,9 @@ def process_task(user_request: str, session_id: str):
 
         message['timestamp'] = time.time()
 
-        if 'tool_name' in message.get('result', {}):
+        if message.get('hidden', False):
+            message = {'type': 'nope'}
+        elif 'tool_name' in message.get('result', {}):
             active_responses.append({'type': 'files', 'message': message.copy()})
             message = agent_result_tpl(message['result'], message['type'], message.get('message', ''))
 
