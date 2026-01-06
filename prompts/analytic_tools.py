@@ -44,7 +44,7 @@ tools = [
                 "properties": {
                     "text": {
                         "type": "string",
-                        "description": "Text is a report in the markdowm format. Dont write full content of files - short description is enough!"
+                        "description": "Text is a report in the markdown format. Dont write full content of files - short description is enough!"
                     }
                 }
             }
