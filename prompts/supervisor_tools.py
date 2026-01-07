@@ -10,7 +10,7 @@ tools = [
                 "properties": {
                     "agent_name": {
                         "type": "string",
-                        "description": "agent_name is a agent name, possible values: ANALYTIC, CODER"
+                        "description": "agent_name is a agent name, possible values: ANALYTIC, CODER, REVIEWER"
                     },
                     "instruction": {
                         "type": "string",

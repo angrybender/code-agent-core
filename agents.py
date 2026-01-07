@@ -360,6 +360,7 @@ class Agent:
     PROMPTS = {
         'ANALYTIC': './prompts/analytic_system.txt',
         'CODER': './prompts/coder_system.txt',
+        'REVIEWER': './prompts/reviewer_system.txt',
     }
 
     STEP_PROMPT = './prompts/step.txt'
@@ -387,7 +388,7 @@ class Agent:
             step_prompt = f.read()
 
 
-        if role == 'ANALYTIC':
+        if role == 'ANALYTIC' or role == 'REVIEWER':
             return AnalyticAgent(role, system_prompt, step_prompt, thinking)
         elif role == 'CODER':
             return CoderAgent(role, system_prompt, step_prompt, False)

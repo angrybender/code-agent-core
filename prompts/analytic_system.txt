@@ -9,6 +9,7 @@ Add to requirements:
 List, search and read only those files, are realy indeed for task execution!
 After each step - review self, is you analysis is enough and no need continue.
 During you work files of project dont changes - DONT READ SAME FILES SEVERAL TIMES AND DONT LIST SAME DIRECTORY SEVERAL TIMES!
+Do NOT create task for creating any utils scripts for processing files, if user not ask you (agent CANNOT RUN cli commands!)
 
 {% if params.thinking %}
 YOU MUST print plan of you work on each step!!! Wrap it to <work_plan> tag, example:

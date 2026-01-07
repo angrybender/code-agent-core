@@ -19,6 +19,23 @@ tools = [
     {
         "type":"function",
         "function":{
+            "name": "list_in_directory",
+            "description": "List files and directories from path.\nResult contains list of files and directories (only first level), for directory name end of symbol `/`",
+            "parameters": {
+                "type": "object",
+                "required": ["path"],
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": 'path, for root of project use `.`'
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type":"function",
+        "function":{
             "name": "write_file",
             "description": "Write full data to file.\nUse this command ONLY if:\n1. You edit a file less than 100 lines\n2. You create new file.",
             "parameters": {
