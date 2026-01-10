@@ -8,6 +8,11 @@ function onPluginHide() {
     IS_APP_ACTIVE = false;
 }
 
+function onFilesDrag(message) {
+    const ta = document.getElementById('message-input');
+    ta.value = ta.value + message;
+}
+
 function JIDETransport(request, onSuccessCb, onFailureCb) {
     if (!IS_APP_ACTIVE) {
         return;

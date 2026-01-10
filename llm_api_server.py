@@ -18,7 +18,7 @@ load_dotenv()
 HTTP_PORT = int(os.getenv('HTTP_PORT', 5000))
 MODEL = os.getenv('MODEL')
 IS_DEBUG = int(os.environ.get('DEBUG', 0)) == 1
-VERSION_TAG = 1
+VERSION_TAG = 2
 
 if IS_DEBUG:
     logging.getLogger().setLevel(logging.DEBUG)
