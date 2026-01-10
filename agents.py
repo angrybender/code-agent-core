@@ -111,25 +111,6 @@ class BaseAgent:
 
             conversation = self.conversation_filter(conversation)
 
-            yield {'type': 'nope'}
-            if self.thinking:
-                think_output = llm_query(conversation, model_name=specific_model)
-                think_output = think_output.get('_output', '')
-                if think_output and think_output.find(f'<{self.DEEP_THINK_TAG}>') > -1:
-                    think_output_msg = think_output\
-                                            .replace(f'<{self.DEEP_THINK_TAG}>', '')\
-                                            .replace(f'</{self.DEEP_THINK_TAG}>', '')
-                    yield {
-                        'message': think_output_msg,
-                        'result': {},
-                        'type': "markdown",
-                    }
-
-                    conversation.append({
-                        'role': 'assistant',
-                        'content': think_output
-                    })
-
             is_empty_workaround = False
             while True:
                 yield {'type': 'nope'}
