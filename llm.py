@@ -84,7 +84,7 @@ def llm_query(messages, tags=None, tools=None, model_name=None) -> dict|None:
             content = response.choices[0].message.content.strip() if response.choices[0].message.content else ''
 
             if len(content) == 0 and tools and not response.choices[0].message.tool_calls:
-                raise Exception("Empty response")
+                return None
 
             if tags:
                 output = parse_tags(content, tags)
