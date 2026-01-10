@@ -20,6 +20,7 @@ Create isolated small sub-task - agent must executed only part of work.
 Agent return report of their sub-task.
 After getting report - decide what next step, next agent etc
 Move iterate, step-by-step.
+If a prompt contains file (or files) path, labeled "@file " (example: "@file app/Controller.py"): change only this file(s), transfer this restriction for all agents though work cycle
 
 ### For ANALYTIC
 ANALYTIC help you to decide - how work must be executed, create instruction example "find classes in the ... directory witch include code for working with DB and create requirements for complete task %write isolated subtask%"
