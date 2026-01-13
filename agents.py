@@ -258,10 +258,25 @@ class BaseAgent:
 
         return os.path.abspath(source_file_content_path)
 
+def _merge_assistant_messages(conversation: list[dict]) -> list[dict]:
+    # merge multiply assistant messages to once
+    merged = True
+    while merged:
+        merged = False
+        if len(conversation) >= 2:
+            if conversation[-1]['role'] == 'assistant' and conversation[-2]['role'] == 'assistant':
+                conversation[-2]['content'] += "\n" + conversation[-1]['content']
+                conversation = conversation[:-1]
+                merged = True
+
+    return conversation
 
 class AnalyticAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
         return analytic_tools
+
+    def conversation_filter(self, conversation: list[dict]) -> list[dict]:
+        return _merge_assistant_messages(conversation)
 
 class CoderAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
@@ -276,11 +291,7 @@ class CoderAgent(BaseAgent):
         return "; ".join([f'{m['tool_calls'][0].function.name}:{m['args'][0]}' for m in tools_list])
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
-        # merge multiply assistant messages to once
-        if len(conversation) >= 2:
-            if conversation[-1]['role'] == 'assistant' and conversation[-2]['role'] == 'assistant':
-                conversation[-2]['content'] += "\n" + conversation[-1]['content']
-                conversation = conversation[:-1]
+        conversation = _merge_assistant_messages(conversation)
 
         tools_map = {}
         tools_answers = {}
