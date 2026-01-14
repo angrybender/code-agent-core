@@ -10,7 +10,21 @@ class CommandInterpreter:
         self.mcp_host = mcp_host
         self.project_root = project_root
 
+    def _validate_path(self, path: str) -> bool:
+        if not path or not isinstance(path, str):
+            return False
+        if '\x00' in path:
+            return False
+        normalized = os.path.normpath(path)
+        if normalized.startswith('..') or normalized.startswith('/'):
+            return False
+        real_path = os.path.realpath(os.path.join(self.project_root, normalized))
+        project_root_real = os.path.realpath(self.project_root)
+        return real_path.startswith(project_root_real + os.sep)
+
     def _command_read(self, file_path) -> dict:
+        if not self._validate_path(file_path):
+            return {'result': 'ERROR: Invalid path', 'error': True}
         content = tool_call(self.mcp_host, 'get_file_text_by_path', {
             'pathInProject': file_path,
             'projectPath': self.project_root,
@@ -36,6 +50,8 @@ class CommandInterpreter:
         return response
 
     def _command_list(self, path) -> dict:
+        if not self._validate_path(path):
+            return {'result': 'ERROR: Invalid path', 'error': True}
         absolute_path = os.path.join(self.project_root, path)
 
         if not os.path.exists(absolute_path):
@@ -53,6 +69,8 @@ class CommandInterpreter:
         return {'result': "\n".join(result), 'tool_name': 'list_in_directory'}
 
     def _command_write(self, file_path, data) -> dict:
+        if not self._validate_path(file_path):
+            return {'result': 'ERROR: Invalid path', 'error': True}
         # looking for file exists:
         source_file = self._command_read(file_path)
         is_exist = source_file['exists']
@@ -96,6 +114,8 @@ class CommandInterpreter:
         return result
 
     def _command_write_diff(self, file_path, str_find, str_replace):
+        if not self._validate_path(file_path):
+            return {'result': 'ERROR: Invalid path', 'error': True}
         source_file = self._command_read(file_path)
         if not source_file['exists']:
             return {'result': "ERROR: file not exist"}
