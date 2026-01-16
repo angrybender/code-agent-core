@@ -180,6 +180,55 @@ def control_action():
     return json.dumps({'status': 'success'})
 
 
+@app.route('/api/agent', methods=['POST'])
+def agent_api():
+    try:
+        data = request.get_json()
+        user_message = data.get('message', '').strip()
+        project_base_path = data.get('project_base_path', '').strip()
+        max_working_time = data.get('max_working_time')
+
+        if not project_base_path:
+            return json.dumps({'status': 'error', 'message': 'project_base_path is required and must be non-empty'}), 400
+
+        if not os.path.exists(project_base_path):
+            return json.dumps({'status': 'error', 'message': 'project_base_path is not exists'}), 400
+
+        if not user_message:
+            return json.dumps({'status': 'error', 'message': 'message is required and must be non-empty'}), 400
+
+        if max_working_time is None:
+            return json.dumps({'status': 'error', 'message': 'max_working_time is required'}), 400
+
+        if not isinstance(max_working_time, int) or max_working_time <= 0:
+            return json.dumps({'status': 'error', 'message': 'max_working_time must be a positive integer'}), 400
+
+        session_data = {'project_base_path': project_base_path}
+        copilot = Copilot(user_message, session_data)
+
+        start_time = time.time()
+        results = []
+        timeout_occurred = False
+
+        for message in copilot.run():
+            elapsed = time.time() - start_time
+            if elapsed > max_working_time:
+                timeout_occurred = True
+                break
+
+            results.append(message)
+
+        return json.dumps({
+            'status': 'success',
+            'results': results,
+            'timeout': timeout_occurred,
+            'elapsed_time': time.time() - start_time
+        })
+
+    except Exception as e:
+        return json.dumps({'status': 'error', 'message': str(e)}), 500
+
+
 @app.route('/send_message', methods=['POST'])
 def message_action():
     try:

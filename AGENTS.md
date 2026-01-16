@@ -51,9 +51,51 @@ User Task → SUPERVISOR → Specialized Agents:
 - Session-based message queue system
 - Endpoints:
   - `/` - Web UI
-  - `/send_message` - Task submission
-  - `/events` - SSE event stream
-- Heartbeat mechanism to maintain connections
+  - `/send_message` - Task submission (web interface)
+  - `/events` - SSE event stream (web interface)
+
+#### REST API Integration Endpoints
+
+**`POST /api/agent`** - Direct agent execution endpoint
+- Provides synchronous, blocking execution for programmatic access
+- No session management or SSE streaming required
+
+**Request Body (JSON):**
+```json
+{
+  "message": "Your task description here",
+  "max_working_time": 60
+}
+```
+
+| Field | Type | Required | Description                               |
+|-------|------|----------|-------------------------------------------|
+| `message` | string | Yes      | The task instruction for the agent system |
+| `project_base_path` | string | Yes      | The base project path                     |
+| `max_working_time` | integer | Yes      | Maximum execution time in seconds         |
+
+**Response (JSON):**
+```json
+{
+  "status": "success" | "error",
+  "results": [{"role": "assistant", "content": "..."}, ...],
+  "timeout": true | false,
+  "elapsed_time": 45.23
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | string | Execution status: `success` or `error` |
+| `results` | array | List of message objects from the agent execution |
+| `timeout` | boolean | Whether execution was terminated due to timeout |
+| `elapsed_time` | number | Actual execution time in seconds |
+
+**Key Behavior Notes:**
+- **Synchronous execution**: The endpoint blocks until task completion or timeout
+- **Timeout enforcement**: Execution stops when `max_working_time` is reached
+- **No session management**: Each request is independent; no conversation persistence
+- **No SSE streaming**: Results returned as a single JSON response, not streamed
 
 ### Orchestration Layer
 
