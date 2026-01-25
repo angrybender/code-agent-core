@@ -1,0 +1,171 @@
+import glob
+import os
+import re
+from ast_grep_py import SgRoot
+
+from path_helper import get_relative_path
+
+def __find_subtext(lines: list[str], substr: str) -> tuple[str, float]:
+    for line in lines:
+        if line.lower().find(substr.lower()) > -1:
+            return line, 1.0
+
+    tokens = re.split(r'\W', substr)
+    tokens = [_.lower() for _ in tokens]
+
+    candidates = []
+    for line in lines:
+        _line = line.lower()
+        score = 0
+        for token in tokens:
+            if _line.find(token) > -1:
+                score += 1
+
+        if score > 0:
+            candidates.append((line, score/len(tokens)))
+
+    if not candidates:
+        return '', 0.0
+
+    candidates = sorted(candidates, key=lambda line_score: -line_score[1])
+    return candidates[0]
+
+
+def __detect_code_by_file_name(file_name) -> str:
+    ext = file_name.split('.')[-1]
+
+    ext_map = {
+        # Common programming languages
+        "py": "python",
+        "pyi": "python",
+        "js": "javascript",
+        "mjs": "javascript",
+        "cjs": "javascript",
+        "ts": "typescript",
+        "tsx": "typescript",
+        "jsx": "javascript",
+        "java": "java",
+        "kt": "kotlin",
+        "kts": "kotlin",
+        "scala": "scala",
+        "go": "golang",
+        "rb": "ruby",
+        "php": "php",
+        "rs": "rust",
+        "rust": "rust",
+        "swift": "Swift",
+        "cs": "csharp",
+        "csharp": "csharp",
+        "fs": "txt",
+        "vb": "txt",
+        "c": "c",
+        "h": "c",
+        "cc": "cpp",
+        "cpp": "cpp",
+        "cxx": "cpp",
+        "hpp": "cpp",
+        "hh": "cpp",
+        "m": "txt",
+        "mm": "txt",
+        "r": "txt",
+        "jl": "txt",
+        "lua": "lua",
+        "pl": "txt",
+        "pm": "txt",
+        "dart": "txt",
+        "ex": "elixir",
+        "exs": "elixir",
+        "erl": "txt",
+        "hrl": "txt",
+        "hs": "haskell",
+        "clj": "txt",
+        "cljs": "txt",
+
+        # Shell / scripting
+        "sh": "bash",
+        "bash": "bash",
+        "zsh": "bash",
+        "ps1": "txt",
+        "bat": "txt",
+        "cmd": "txt",
+
+        # Web / markup
+        "html": "html",
+        "htm": "html",
+        "css": "css",
+        "scss": "css",
+        "sass": "css",
+        "less": "css",
+        "svg": "txt",
+        "md": "txt",
+
+        # Data / config
+        "json": "json",
+        "yml": "yaml",
+        "yaml": "yaml",
+        "toml": "txt",
+        "ini": "txt",
+        "xml": "txt",
+        "sql": "txt",
+        "graphql": "txt",
+        "gql": "txt",
+        "txt": "txt",
+        "env": "txt",
+    }
+
+    return ext_map.get(ext, "")
+
+MAX_RESULTS = 10
+
+def search(project_path: str, needle: str) -> list[dict]:
+    file_pattern = os.path.join(project_path, '**', '*')  # Finds all .py files in the current directory
+    files_to_search = glob.glob(file_pattern, recursive=True)
+
+    results = []
+    for file_path in files_to_search:
+        file_path_relative = get_relative_path(project_path, file_path)
+
+        lang = __detect_code_by_file_name(file_path)
+        if lang == '':
+            continue
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                code = f.read()
+                lines = code.split("\n")
+        except:
+            continue
+
+        if lang == 'txt':
+            line, score = __find_subtext(lines, needle)
+            if line and score > 0.0:
+                results.append({
+                    'file': file_path_relative,
+                    'found': line.strip(),
+                    'score': score
+                })
+        else:
+            root = SgRoot(code, lang)
+            try:
+                print_stmt  = root.root().find(pattern=needle)
+                if print_stmt:
+                    start_line = print_stmt.range().start.line
+                    end_line = print_stmt.range().end.line
+
+                    results.append({
+                        'file': file_path_relative,
+                        'found': "\n".join(lines[start_line:end_line + 1]),
+                        'score': 1.0
+                    })
+
+            except:
+                line, score = __find_subtext(lines, needle)
+                if line and score > 0.0:
+                    results.append({
+                        'file': file_path_relative,
+                        'found': line.strip(),
+                        'score': score
+                    })
+
+    results = sorted(results, key=lambda r: -r['score'])
+    return results[:MAX_RESULTS]

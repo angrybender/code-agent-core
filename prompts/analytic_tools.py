@@ -36,6 +36,28 @@ tools = [
     {
         "type":"function",
         "function":{
+            "name": "search_file",
+            "description": (
+                "Looking for `needle` over all project's files. Using `ast-grep` python lib for understanding language structure and simple string search for text and config files."
+                "Support languages: PHP, JS, Java, Scala, C#, Go, Ruby, HTML, CSS, YML, bash."
+                "Return file path and lines with contain most relevant needle."
+                "Return first 10 results."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["needle"],
+                "properties": {
+                    "needle": {
+                        "type": "string",
+                        "description": 'string for searching'
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type":"function",
+        "function":{
             "name": "report",
             "description": "Print short report of you work.\nUse this command when you completely executed instructions and you have decided finish a work.",
             "parameters": {

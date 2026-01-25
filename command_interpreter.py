@@ -1,9 +1,10 @@
 import os.path
+import re
+import json
 
 from diff_helper import apply_patch, PatchError
-import re
 from mcp_helper import tool_call
-import json
+from search_code import search
 
 class CommandInterpreter:
     def __init__(self, mcp_host, project_root):
@@ -158,6 +159,17 @@ class CommandInterpreter:
 
         return result
 
+    def _search_file(self, needle):
+        results = search(self.project_root, needle)
+        if not results:
+            return {"result": "ERROR: empty search result", "tool_name": "search_file"}
+
+        formatted_result = []
+        for result in results:
+            formatted_result.append(f"file: `{result['file']}`\nfound line: ```{result['found']}```")
+
+        return {"result": "\n\n".join(formatted_result), "tool_name": "search_file"}
+
     def execute(self, opcode: str, arguments) -> dict:
         try:
             if opcode == 'read_file':
@@ -168,6 +180,8 @@ class CommandInterpreter:
                 return self._command_write(*arguments)
             elif opcode == 'replace_code_in_file':
                 return self._command_write_diff(*arguments)
+            elif opcode == 'search_file':
+                return self._search_file(*arguments)
             else:
                 return {"result": "ERROR: wrong tool name, check tools list and call correct", 'error': True}
         except TypeError:

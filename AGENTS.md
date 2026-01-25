@@ -289,11 +289,11 @@ Browser SSE connection → Event stream → Incremental messages
 
 ```
 project_root/
-├── agents.py                  # Agent implementations
-├── algorythm.py              # SUPERVISOR orchestration
-├── command_interpreter.py    # Tool execution layer
-├── conversation.py           # Message formatting
-├── conversations_log/        # Session and debug logs
+├── agents.py                # Agent implementations
+├── algorythm.py             # SUPERVISOR orchestration
+├── command_interpreter.py   # Tool execution layer
+├── conversation.py          # Message formatting
+├── conversations_log/       # Session and debug logs
 ├── diff_helper.py           # Code patching utilities
 ├── llm.py                   # LLM API integration
 ├── llm_api_server.py        # Flask web server
@@ -303,6 +303,7 @@ project_root/
 ├── prompts/                 # Agent prompts and tools
 ├── templates/               # Web UI templates
 ├── tests/                   # Unit tests
+├── storage/                 # temp folder -- dont read/update
 ├── requirements.txt         # Python dependencies
 ├── AGENTS.md                # Project manifest
 └── .env                     # Configuration (not in repo)
