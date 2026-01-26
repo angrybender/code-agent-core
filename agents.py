@@ -16,6 +16,7 @@ from llm import llm_query
 from command_interpreter import CommandInterpreter
 from prompts.analytic_tools import tools as analytic_tools
 from prompts.coder_tools import tools as coder_tools
+from search_code import SearchCode
 
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=int(os.getenv('MAX_ITERATION'))
@@ -50,6 +51,7 @@ class BaseAgent:
         self.log_file = role
         self.thinking = thinking
         self.storage_path = None
+        self.search_service = SearchCode()
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
         return conversation
@@ -61,7 +63,7 @@ class BaseAgent:
         self.instruction = instruction
         self.project_description = manifest['description']
         self.project_structure = manifest['files_structure']
-        self.interpreter = CommandInterpreter(IDE_MCP_HOST, manifest['base_path'])
+        self.interpreter = CommandInterpreter(IDE_MCP_HOST, manifest['base_path'], self.search_service)
         self.log_file = log_file
 
         self.storage_path = os.path.join(self.STORAGE_PATH, hashlib.sha256(manifest['base_path'].encode()).hexdigest())
@@ -71,6 +73,7 @@ class BaseAgent:
     def run(self):
         assert self.instruction, 'Init() s required'
         specific_model = os.environ.get(f'MODEL:{self.role}', None)
+        self.search_service.reset()
 
         yield {
             'message': f"start {self.role}...",

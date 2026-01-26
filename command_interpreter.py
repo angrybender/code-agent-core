@@ -4,12 +4,14 @@ import json
 
 from diff_helper import apply_patch, PatchError
 from mcp_helper import tool_call
-from search_code import search
+from search_code import SearchCode
 
 class CommandInterpreter:
-    def __init__(self, mcp_host, project_root):
+    def __init__(self, mcp_host, project_root, search_service: SearchCode = None):
         self.mcp_host = mcp_host
         self.project_root = project_root
+        if search_service:
+            self.search_service = search_service
 
     def _correction_write_arg(self, value) -> str:
         """
@@ -160,7 +162,7 @@ class CommandInterpreter:
         return result
 
     def _search_file(self, needle):
-        results = search(self.project_root, needle)
+        results = self.search_service.search(self.project_root, needle)
         if not results:
             return {"result": "ERROR: empty search result", "tool_name": "search_file"}
 
