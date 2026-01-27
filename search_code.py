@@ -124,36 +124,37 @@ MAX_RESULTS = 10
 
 class SearchCode:
     def __init__(self):
-        self._files_cache = []
+        self._files_cache = {}
 
     def reset(self):
-        self._files_cache = []
+        self._files_cache = {}
 
     def search(self, project_path: str, needle: str) -> list[dict]:
         _start_time = time.time()
 
-        if not self._files_cache:
-            file_pattern = os.path.join(project_path, '**', '*')  # Finds all .py files in the current directory
-            files_to_search = glob.glob(file_pattern, recursive=True)
-            logger.info(f"[search] total files: {len(files_to_search)}")
-            self._files_cache = files_to_search
-        else:
-            logger.info(f"[search] total files from cache: {len(self._files_cache)}")
+        file_pattern = os.path.join(project_path, '**', '*')  # Finds all .py files in the current directory
+        files_to_search = glob.glob(file_pattern, recursive=True)
+        logger.info(f"[search] total files: {len(files_to_search)}")
 
         results = []
-        for file_path in self._files_cache:
+        for file_path in files_to_search:
             file_path_relative = get_relative_path(project_path, file_path)
 
             lang = _detect_code_by_file_name(file_path)
             if lang == '':
                 continue
 
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    code = f.read()
-                    lines = code.split("\n")
-            except:
-                continue
+            if file_path in self._files_cache:
+                code = self._files_cache[file_path]
+            else:
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        code = f.read()
+                    self._files_cache[file_path] = code
+                except:
+                    continue
+
+            lines = code.split("\n")
 
             if lang == 'txt':
                 line, score = _find_subtext(lines, needle)
