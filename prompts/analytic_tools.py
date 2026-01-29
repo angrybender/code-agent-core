@@ -45,11 +45,15 @@ tools = [
             ),
             "parameters": {
                 "type": "object",
-                "required": ["needle"],
+                "required": ["needle", "extension"],
                 "properties": {
                     "needle": {
                         "type": "string",
                         "description": 'string for searching'
+                    },
+                    "extension": {
+                        "type": "string",
+                        "description": "extension for filtering files looking for, example: 'py' (will filter only files like '*.py'), empty string for no filtration"
                     }
                 }
             }

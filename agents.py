@@ -99,9 +99,9 @@ class BaseAgent:
             }
         ]
 
-        agent_step = 1
-        max_skip_command = 3
+        agent_step = 0
         while True:
+            agent_step += 1
             if agent_step > MAX_ITERATION:
                 logger.warning("MAX_STEP exceed!")
                 yield {
@@ -165,17 +165,10 @@ class BaseAgent:
                 current_tool_call = tool_call
                 break
 
-            if not current_tool_call and (max_skip_command <= 0 or not output['_output']):
-                yield {
-                    'message': "Not commands (1), early stop",
-                    'result': {},
-                    'type': "error",
-                    'exit': True,
-                }
-                break
+            if not current_tool_call and not output['_output']:
+                logger.warning("Empty response")
+                continue
             elif not current_tool_call and output['_output']:
-                max_skip_command -= 1
-
                 yield {
                     'message': output['_output'],
                     'result': {},
@@ -237,8 +230,6 @@ class BaseAgent:
                 self.log(result_msg, True)
 
                 conversation.append(result_msg)
-
-                agent_step += 1
 
     def log(self, data, to_file=False):
         if type(data) is list or type(data) is dict:

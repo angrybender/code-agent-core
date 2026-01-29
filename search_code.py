@@ -3,7 +3,6 @@ import os
 import re
 import logging
 import time
-from ast_grep_py import SgRoot
 
 from path_helper import get_relative_path
 
@@ -129,12 +128,19 @@ class SearchCode:
     def reset(self):
         self._files_cache = {}
 
-    def search(self, project_path: str, needle: str) -> list[dict]:
+    def search(self, project_path: str, needle: str, extension: str) -> list[dict]:
         _start_time = time.time()
 
-        file_pattern = os.path.join(project_path, '**', '*')  # Finds all .py files in the current directory
+        extension = extension.strip().strip('*').strip('.')
+        if extension:
+            mask = f'*.{extension.lower()}'
+        else:
+            mask = '*'
+
+        file_pattern = os.path.join(project_path, '**', mask)
         files_to_search = glob.glob(file_pattern, recursive=True)
         logger.info(f"[search] total files: {len(files_to_search)}")
+        logger.info(f"[search] looking for: `{needle}` (extension: `{extension}`)")
 
         results = []
         for file_path in files_to_search:
@@ -156,36 +162,13 @@ class SearchCode:
 
             lines = code.split("\n")
 
-            if lang == 'txt':
-                line, score = _find_subtext(lines, needle)
-                if line and score > 0.0:
-                    results.append({
-                        'file': file_path_relative,
-                        'found': line.strip(),
-                        'score': score
-                    })
-            else:
-                root = SgRoot(code, lang)
-                try:
-                    print_stmt = root.root().find(pattern=needle)
-                    if print_stmt:
-                        start_line = print_stmt.range().start.line
-                        end_line = print_stmt.range().end.line
-
-                        results.append({
-                            'file': file_path_relative,
-                            'found': "\n".join(lines[start_line:end_line + 1]),
-                            'score': 1.0
-                        })
-
-                except:
-                    line, score = _find_subtext(lines, needle)
-                    if line and score > 0.0:
-                        results.append({
-                            'file': file_path_relative,
-                            'found': line.strip(),
-                            'score': score
-                        })
+            line, score = _find_subtext(lines, needle)
+            if line and score > 0.0:
+                results.append({
+                    'file': file_path_relative,
+                    'found': line.strip(),
+                    'score': score
+                })
 
         results = sorted(results, key=lambda r: -r['score'])
 

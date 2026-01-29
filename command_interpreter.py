@@ -161,8 +161,8 @@ class CommandInterpreter:
 
         return result
 
-    def _search_file(self, needle):
-        results = self.search_service.search(self.project_root, needle)
+    def _search_file(self, needle, extension=None):
+        results = self.search_service.search(self.project_root, needle, str(extension))
         if not results:
             return {"result": "ERROR: empty search result", "tool_name": "search_file"}
 
