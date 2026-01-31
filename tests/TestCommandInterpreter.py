@@ -1,5 +1,6 @@
 import unittest
 import os
+import re
 
 from command_interpreter import CommandInterpreter
 
@@ -10,8 +11,8 @@ class TestCommandInterpreter(unittest.TestCase):
         result = instance.execute('list_in_directory', ['.'])
 
         result = result['result'] + '\n'
-        self.assertIn('- .env\n', result, 'file check')
-        self.assertIn('- tests/\n', result, 'dir check')
+        self.assertTrue(re.search(r'- tests/ \(total \d+ files\)\n', result), 'dir check - should show file count')
+        self.assertTrue(re.search(r'- .env \(\d+ bytes\)\n', result), 'file size check')
 
     def test_command_list2(self):
         root_path = os.path.join(os.path.dirname(__file__), '..', '_invalid_dir')

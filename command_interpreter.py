@@ -25,6 +25,9 @@ class CommandInterpreter:
         return value
 
     def _validate_path(self, path: str) -> bool:
+        if path == '.' or path == '':
+            return True
+
         if not path or not isinstance(path, str):
             return False
         if '\x00' in path:
@@ -78,7 +81,11 @@ class CommandInterpreter:
         for _path in os.listdir(str(absolute_path)):
             full_path = os.path.join(absolute_path, _path)
             if os.path.isdir(full_path):
-                result.append(f"- {_path}/")
+                try:
+                    file_count = sum(len(files) for _, _, files in os.walk(full_path, followlinks=False))
+                    result.append(f"- {_path}/ (total {file_count} files)")
+                except (PermissionError, OSError):
+                    result.append(f"- {_path}/ (permission denied)")
             else:
                 file_size = os.path.getsize(full_path)
                 result.append(f"- {_path} ({file_size} bytes)")
