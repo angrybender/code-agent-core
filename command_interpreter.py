@@ -76,9 +76,12 @@ class CommandInterpreter:
 
         result = []
         for _path in os.listdir(str(absolute_path)):
-            if os.path.isdir(_path):
-                _path += '/'
-            result.append(f"- {_path}")
+            full_path = os.path.join(absolute_path, _path)
+            if os.path.isdir(full_path):
+                result.append(f"- {_path}/")
+            else:
+                file_size = os.path.getsize(full_path)
+                result.append(f"- {_path} ({file_size} bytes)")
 
         return {'result': "\n".join(result), 'tool_name': 'list_in_directory'}
 
