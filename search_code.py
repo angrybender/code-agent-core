@@ -8,10 +8,28 @@ from path_helper import get_relative_path
 
 logger = logging.getLogger('APP')
 
+def _truncate_line_around_match(line: str, match_pos: int, max_chars: int = 1000) -> str:
+    if len(line) <= max_chars:
+        return line
+    
+    half_window = max_chars // 2
+    start = max(0, match_pos - half_window)
+    end = min(len(line), match_pos + half_window)
+    
+    if start == 0:
+        end = min(len(line), max_chars)
+    elif end == len(line):
+        start = max(0, len(line) - max_chars)
+    
+    return '...' + line[start:end] + '...'
+
+
 def _find_subtext(lines: list[str], substr: str) -> tuple[str, float]:
     for line in lines:
-        if line.lower().find(substr.lower()) > -1:
-            return line, 1.0
+        pos = line.lower().find(substr.lower())
+        if pos > -1:
+            truncated_line = _truncate_line_around_match(line, pos)
+            return truncated_line, 1.0
 
     tokens = re.split(r'\W', substr)
     tokens = [_.lower() for _ in tokens]
@@ -20,12 +38,17 @@ def _find_subtext(lines: list[str], substr: str) -> tuple[str, float]:
     for line in lines:
         _line = line.lower()
         score = 0
+        first_match_pos = -1
         for token in tokens:
-            if _line.find(token) > -1:
+            token_pos = _line.find(token)
+            if token_pos > -1:
                 score += 1
+                if first_match_pos == -1:
+                    first_match_pos = token_pos
 
         if score > 0:
-            candidates.append((line, score/len(tokens)))
+            truncated_line = _truncate_line_around_match(line, first_match_pos)
+            candidates.append((truncated_line, score/len(tokens)))
 
     if not candidates:
         return '', 0.0
