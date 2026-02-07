@@ -303,6 +303,7 @@ class SimpleChat {
         const messageContent = document.createElement('div');
         if (type === 'markdown') {
             messageContent.innerHTML = marked.parse(message);
+            this.setupMarkdownCopyButton(messageDiv, message);
         }
         else if (type === 'html') {
             messageContent.innerHTML = message;
@@ -324,6 +325,42 @@ class SimpleChat {
         if (!this.ON_USER_SCROLL_SEMAPHORE) {
             window.scrollTo(0, document.body.scrollHeight);
         }
+    }
+
+    setupMarkdownCopyButton(messageDiv, originalMarkdown) {
+        const copyButton = document.createElement('button');
+        copyButton.className = 'ico-copy';
+
+        copyButton.addEventListener('mouseenter', () => {
+            copyButton.style.opacity = '1';
+        });
+
+        copyButton.addEventListener('mouseleave', () => {
+            copyButton.style.opacity = '0.6';
+        });
+
+        copyButton.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(originalMarkdown);
+
+                const originalTitle = copyButton.title;
+                copyButton.title = 'Copied!';
+                copyButton.style.opacity = '1';
+
+                setTimeout(() => {
+                    copyButton.title = originalTitle;
+                    copyButton.style.opacity = '0.6';
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy text:', err);
+                copyButton.title = 'Failed to copy';
+                setTimeout(() => {
+                    copyButton.title = 'Copy markdown source';
+                }, 2000);
+            }
+        });
+
+        messageDiv.appendChild(copyButton);
     }
 
     updateStatus(message, className) {
