@@ -62,7 +62,7 @@ class SimpleChat {
         if (this.IS_LAST_MESSAGE_SUCCESS) {
             this.messageInput.value = "";
             this.messageInput.style.height = 'auto';
-            localStorage.removeItem('promptInputValue');
+            localStorage.removeItem('promptInputValue_' + SESSION_ID);
         }
 
         this.controlFlowStopBtn.style.display = 'none';
@@ -75,7 +75,7 @@ class SimpleChat {
 
     setupEventListeners() {
         // Restore textarea value from localStorage
-        const savedValue = localStorage.getItem('promptInputValue');
+        const savedValue = localStorage.getItem('promptInputValue_' + SESSION_ID);
         if (savedValue) {
             this.messageInput.value = savedValue;
             this.messageInput.style.height = 'auto';
@@ -104,7 +104,7 @@ class SimpleChat {
         this.messageInput.addEventListener('input', () => {
             this.messageInput.style.height = 'auto';
             this.messageInput.style.height = (this.messageInput.scrollHeight + 5) + 'px';
-            localStorage.setItem('promptInputValue', this.messageInput.value);
+            localStorage.setItem('promptInputValue_' + SESSION_ID, this.messageInput.value);
         });
 
         // Handle clicks on A tags in chat messages
