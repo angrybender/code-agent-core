@@ -342,21 +342,13 @@ class SimpleChat {
         copyButton.addEventListener('click', async () => {
             try {
                 await navigator.clipboard.writeText(originalMarkdown);
-
-                const originalTitle = copyButton.title;
-                copyButton.title = 'Copied!';
                 copyButton.style.opacity = '1';
 
                 setTimeout(() => {
-                    copyButton.title = originalTitle;
                     copyButton.style.opacity = '0.6';
                 }, 2000);
             } catch (err) {
-                console.error('Failed to copy text:', err);
-                copyButton.title = 'Failed to copy';
-                setTimeout(() => {
-                    copyButton.title = 'Copy markdown source';
-                }, 2000);
+                // @todo
             }
         });
 
