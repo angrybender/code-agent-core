@@ -1,6 +1,15 @@
 var APP_HOST = '';
 var IS_APP_ACTIVE = true;
 
+function escapeHtml(unsafe) {
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
 function onPluginShow() {
     IS_APP_ACTIVE = true;
 }
@@ -293,7 +302,7 @@ class SimpleChat {
 
         if (type === 'user') {
             type = 'html';
-            message = `<pre>${message}</pre>`;
+            message = `<pre>${escapeHtml(message)}</pre>`;
             messageDivClassName = "message html-message user-message";
         }
 
