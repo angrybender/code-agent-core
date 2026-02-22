@@ -1,10 +1,14 @@
 import os.path
 import re
 import json
+import shlex
+from execute_terminal_command import execute_terminal_command
 
 from diff_helper import apply_patch, PatchError
 from mcp_helper import tool_call
 from search_code import SearchCode
+
+SHELL_COMMAND_TIMEOUT = int(os.getenv('SHELL_COMMAND_TIMEOUT', 30))
 
 class CommandInterpreter:
     def __init__(self, mcp_host, project_root, search_service: SearchCode = None):
@@ -182,6 +186,26 @@ class CommandInterpreter:
 
         return {"result": "\n\n".join(formatted_result), "tool_name": "search_file"}
 
+    def _command_shell(self, cmd: str) -> dict:
+        if not cmd or not isinstance(cmd, str):
+            return {'result': 'ERROR: cmd must be a non-empty string', 'error': True}
+        try:
+            _ = shlex.split(cmd)
+        except ValueError as e:
+            return {'result': f'ERROR: Invalid command syntax: {e}', 'error': True}
+
+        raw = execute_terminal_command(cmd=cmd, timeout=SHELL_COMMAND_TIMEOUT, cwd=self.project_root)
+
+        if raw['status'] == 'ok':
+            return {'result': raw['stdout'], 'tool_name': 'shell_command'}
+        elif raw['status'] == 'timeout':
+            return {
+                'result': f"ERROR: Command timed out after {SHELL_COMMAND_TIMEOUT}s. Partial output: {raw['stdout']}",
+                'error': True,
+            }
+        else:
+            return {'result': f"ERROR: {raw['stderr'] or raw['stdout']}", 'error': True}
+
     def execute(self, opcode: str, arguments) -> dict:
         try:
             if opcode == 'read_file':
@@ -194,6 +218,8 @@ class CommandInterpreter:
                 return self._command_write_diff(*arguments)
             elif opcode == 'search_file':
                 return self._search_file(*arguments)
+            elif opcode == 'shell_command':
+                return self._command_shell(*arguments)
             else:
                 return {"result": "ERROR: wrong tool name, check tools list and call correct", 'error': True}
         except TypeError:

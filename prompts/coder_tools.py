@@ -94,6 +94,28 @@ example:
         }
     },
     {
+        "type": "function",
+        "function": {
+            "name": "shell_command",
+            "description": (
+                "Execute a shell command in the project root directory. "
+                "Use for build, test, lint, or install commands (e.g. 'pytest', 'npm install'). "
+                "The command runs with the project base path as the working directory. "
+                "Returns stdout on success, or an error message on failure/timeout."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["cmd"],
+                "properties": {
+                    "cmd": {
+                        "type": "string",
+                        "description": "Shell command to execute, e.g. 'pytest tests/' or 'npm run build'"
+                    }
+                }
+            }
+        }
+    },
+    {
         "type":"function",
         "function":{
             "name": "report",
