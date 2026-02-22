@@ -1,8 +1,9 @@
+import os
 import os.path
 import re
 import json
 import shlex
-from execute_terminal_command import execute_terminal_command
+from commands_helper import execute_terminal_command
 
 from diff_helper import apply_patch, PatchError
 from mcp_helper import tool_call
@@ -10,12 +11,13 @@ from search_code import SearchCode
 
 SHELL_COMMAND_TIMEOUT = int(os.getenv('SHELL_COMMAND_TIMEOUT', 30))
 
-class CommandInterpreter:
-    def __init__(self, mcp_host, project_root, search_service: SearchCode = None):
+class ToolsInterpreter:
+    def __init__(self, mcp_host, project_root, search_service: SearchCode = None, commands: list = None):
         self.mcp_host = mcp_host
         self.project_root = project_root
         if search_service:
             self.search_service = search_service
+        self._commands_map = {c['command']: c['cmd'] for c in (commands or [])}
 
     def _correction_write_arg(self, value) -> str:
         """
@@ -186,13 +188,17 @@ class CommandInterpreter:
 
         return {"result": "\n\n".join(formatted_result), "tool_name": "search_file"}
 
-    def _command_shell(self, cmd: str) -> dict:
-        if not cmd or not isinstance(cmd, str):
-            return {'result': 'ERROR: cmd must be a non-empty string', 'error': True}
-        try:
-            _ = shlex.split(cmd)
-        except ValueError as e:
-            return {'result': f'ERROR: Invalid command syntax: {e}', 'error': True}
+    def _command_shell(self, command_name: str) -> dict:
+        if not command_name or not isinstance(command_name, str):
+            return {'result': 'ERROR: command_name must be a non-empty string', 'error': True}
+
+        cmd = self._commands_map.get(command_name)
+        if cmd is None:
+            available = ', '.join(self._commands_map.keys()) or 'none'
+            return {
+                'result': f"ERROR: Unknown command '{command_name}'. Available: {available}",
+                'error': True,
+            }
 
         raw = execute_terminal_command(cmd=cmd, timeout=SHELL_COMMAND_TIMEOUT, cwd=self.project_root)
 

@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from llm import llm_query
-from command_interpreter import CommandInterpreter
+from tools_interpreter import ToolsInterpreter
 from prompts.analytic_tools import tools as analytic_tools
 from prompts.coder_tools import tools as coder_tools
 from search_code import SearchCode
@@ -63,7 +63,7 @@ class BaseAgent:
         self.instruction = instruction
         self.project_description = manifest['description']
         self.project_structure = manifest['files_structure']
-        self.interpreter = CommandInterpreter(IDE_MCP_HOST, manifest['base_path'], self.search_service)
+        self.interpreter = ToolsInterpreter(IDE_MCP_HOST, manifest['base_path'], self.search_service, commands=manifest.get('agent_commands', []))
         self.log_file = log_file
 
         self.storage_path = os.path.join(self.STORAGE_PATH, hashlib.sha256(manifest['base_path'].encode()).hexdigest())
@@ -357,7 +357,7 @@ class Agent:
             shutil.rmtree(cache_path)
 
     @staticmethod
-    def fabric(role) -> BaseAgent:
+    def fabric(role, agent_commands: list = None) -> BaseAgent:
         assert role in Agent.PROMPTS, f'invalid role: {role}'
 
         thinking = role in DEEPTHINKING_AGENTS
@@ -367,7 +367,8 @@ class Agent:
 
             rtemplate = Environment(loader=BaseLoader).from_string(system_prompt)
             system_prompt = rtemplate.render(params={
-                'thinking': thinking
+                'thinking': thinking,
+                'agent_commands': agent_commands or []
             })
 
         with open(Agent.STEP_PROMPT, 'r', encoding='utf8') as f:

@@ -98,18 +98,18 @@ example:
         "function": {
             "name": "shell_command",
             "description": (
-                "Execute a shell command in the project root directory. "
-                "Use for build, test, lint, or install commands (e.g. 'pytest', 'npm install'). "
-                "The command runs with the project base path as the working directory. "
-                "Returns stdout on success, or an error message on failure/timeout."
+                "Execute a predefined named shell command in the project root directory. "
+                "Use for build, test, lint, or install commands. "
+                "Pass the command NAME (e.g. 'run-tests', 'build'), not a raw shell string. "
+                "Available command names are listed in the system prompt."
             ),
             "parameters": {
                 "type": "object",
-                "required": ["cmd"],
+                "required": ["command_name"],
                 "properties": {
-                    "cmd": {
+                    "command_name": {
                         "type": "string",
-                        "description": "Shell command to execute, e.g. 'pytest tests/' or 'npm run build'"
+                        "description": "Name of the predefined command to execute (e.g. 'run-tests'). Must match one of the available shell command names listed in the system prompt."
                     }
                 }
             }
