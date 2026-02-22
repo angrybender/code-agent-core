@@ -16,6 +16,7 @@ load_dotenv()
 
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=os.getenv('MAX_ITERATION')
+AVOID_EMPTY_RESPONSE = int(os.getenv('AVOID_EMPTY_RESPONSE', 0)) == 1
 
 import logging
 logger = logging.getLogger('APP')
@@ -115,7 +116,7 @@ class Copilot:
         conversation_log = [
             {
                 'role': 'system',
-                'content': self.system_prompt + "\n" + sub_prompt
+                'content': self.system_prompt + "\n" + sub_prompt + f"\nMaximum allowed tools calling: {self.MAX_STEP-1}; planing work with this restriction!"
             },
             {
                 'role': 'user',
@@ -133,8 +134,27 @@ class Copilot:
                 }
                 break
 
-            yield {'type': 'nope'}
-            output = llm_query(conversation_log, tools=supervisor_tools, model_name=specific_model)
+            is_empty_workaround = False
+            while True:
+                yield {'type': 'nope'}
+                output = llm_query(conversation_log, tools=supervisor_tools, model_name=specific_model)
+                if output:
+                    break
+
+                if not AVOID_EMPTY_RESPONSE:
+                    # == exit
+                    logger.info("Empty response. Stop working")
+                    return True
+
+                logger.info("Empty response. Force to using tool")
+
+                if not is_empty_workaround:
+                    is_empty_workaround = True
+                    conversation_log.append({
+                        'role': 'user',
+                        'content': 'Dont answer with empty message. If you have finished the work - call `exit` tool!'
+                    })
+
             self.log("============= LLM OUTPUT =============", True)
 
             tool_call_description = None
@@ -217,7 +237,7 @@ class Copilot:
                         agent_complete_report = agent_step['message']
                         agent_step['type'] = 'markdown'
                     elif agent_step['type'] == 'error':
-                        agent_complete_report = 'Agent cant complete a work, try another approach: add more details, rewrite instruction for agent!' # TODO ???
+                        agent_complete_report = 'Agent cant complete a work, try another approach: add more details, rewrite instruction for agent! Agent returns error: ' + agent_step['message']
                         is_agent_completes_work = True
 
                     yield agent_step

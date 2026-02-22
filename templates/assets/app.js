@@ -1,6 +1,15 @@
 var APP_HOST = '';
 var IS_APP_ACTIVE = true;
 
+function escapeHtml(unsafe) {
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
 function onPluginShow() {
     IS_APP_ACTIVE = true;
 }
@@ -62,6 +71,7 @@ class SimpleChat {
         if (this.IS_LAST_MESSAGE_SUCCESS) {
             this.messageInput.value = "";
             this.messageInput.style.height = 'auto';
+            localStorage.removeItem('promptInputValue_' + SESSION_ID);
         }
 
         this.controlFlowStopBtn.style.display = 'none';
@@ -73,6 +83,14 @@ class SimpleChat {
     }
 
     setupEventListeners() {
+        // Restore textarea value from localStorage
+        const savedValue = localStorage.getItem('promptInputValue_' + SESSION_ID);
+        if (savedValue) {
+            this.messageInput.value = savedValue;
+            this.messageInput.style.height = 'auto';
+            this.messageInput.style.height = (this.messageInput.scrollHeight + 5) + 'px';
+        }
+
         // Handle Ctrl+Enter to send message
         this.messageInput.addEventListener('keydown', (e) => {
             // Check for Ctrl (Windows/Linux) or Cmd (Mac)
@@ -91,10 +109,11 @@ class SimpleChat {
             this.sendControl('stop');
         });
 
-        // Auto-resize textarea
+        // Auto-resize textarea and save to localStorage
         this.messageInput.addEventListener('input', () => {
             this.messageInput.style.height = 'auto';
             this.messageInput.style.height = (this.messageInput.scrollHeight + 5) + 'px';
+            localStorage.setItem('promptInputValue_' + SESSION_ID, this.messageInput.value);
         });
 
         // Handle clicks on A tags in chat messages
@@ -283,7 +302,7 @@ class SimpleChat {
 
         if (type === 'user') {
             type = 'html';
-            message = `<pre>${message}</pre>`;
+            message = `<pre>${escapeHtml(message)}</pre>`;
             messageDivClassName = "message html-message user-message";
         }
 
@@ -293,6 +312,7 @@ class SimpleChat {
         const messageContent = document.createElement('div');
         if (type === 'markdown') {
             messageContent.innerHTML = marked.parse(message);
+            this.setupMarkdownCopyButton(messageDiv, message);
         }
         else if (type === 'html') {
             messageContent.innerHTML = message;
@@ -314,6 +334,34 @@ class SimpleChat {
         if (!this.ON_USER_SCROLL_SEMAPHORE) {
             window.scrollTo(0, document.body.scrollHeight);
         }
+    }
+
+    setupMarkdownCopyButton(messageDiv, originalMarkdown) {
+        const copyButton = document.createElement('button');
+        copyButton.className = 'ico-copy';
+
+        copyButton.addEventListener('mouseenter', () => {
+            copyButton.style.opacity = '1';
+        });
+
+        copyButton.addEventListener('mouseleave', () => {
+            copyButton.style.opacity = '0.6';
+        });
+
+        copyButton.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(originalMarkdown);
+                copyButton.style.opacity = '1';
+
+                setTimeout(() => {
+                    copyButton.style.opacity = '0.6';
+                }, 2000);
+            } catch (err) {
+                // @todo
+            }
+        });
+
+        messageDiv.appendChild(copyButton);
     }
 
     updateStatus(message, className) {

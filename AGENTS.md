@@ -51,9 +51,51 @@ User Task → SUPERVISOR → Specialized Agents:
 - Session-based message queue system
 - Endpoints:
   - `/` - Web UI
-  - `/send_message` - Task submission
-  - `/events` - SSE event stream
-- Heartbeat mechanism to maintain connections
+  - `/send_message` - Task submission (web interface)
+  - `/events` - SSE event stream (web interface)
+
+#### REST API Integration Endpoints
+
+**`POST /api/agent`** - Direct agent execution endpoint
+- Provides synchronous, blocking execution for programmatic access
+- No session management or SSE streaming required
+
+**Request Body (JSON):**
+```json
+{
+  "message": "Your task description here",
+  "max_working_time": 60
+}
+```
+
+| Field | Type | Required | Description                               |
+|-------|------|----------|-------------------------------------------|
+| `message` | string | Yes      | The task instruction for the agent system |
+| `project_base_path` | string | Yes      | The base project path                     |
+| `max_working_time` | integer | Yes      | Maximum execution time in seconds         |
+
+**Response (JSON):**
+```json
+{
+  "status": "success" | "error",
+  "results": [{"role": "assistant", "content": "..."}, ...],
+  "timeout": true | false,
+  "elapsed_time": 45.23
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | string | Execution status: `success` or `error` |
+| `results` | array | List of message objects from the agent execution |
+| `timeout` | boolean | Whether execution was terminated due to timeout |
+| `elapsed_time` | number | Actual execution time in seconds |
+
+**Key Behavior Notes:**
+- **Synchronous execution**: The endpoint blocks until task completion or timeout
+- **Timeout enforcement**: Execution stops when `max_working_time` is reached
+- **No session management**: Each request is independent; no conversation persistence
+- **No SSE streaming**: Results returned as a single JSON response, not streamed
 
 ### Orchestration Layer
 
@@ -247,11 +289,11 @@ Browser SSE connection → Event stream → Incremental messages
 
 ```
 project_root/
-├── agents.py                  # Agent implementations
-├── algorythm.py              # SUPERVISOR orchestration
-├── command_interpreter.py    # Tool execution layer
-├── conversation.py           # Message formatting
-├── conversations_log/        # Session and debug logs
+├── agents.py                # Agent implementations
+├── algorythm.py             # SUPERVISOR orchestration
+├── command_interpreter.py   # Tool execution layer
+├── conversation.py          # Message formatting
+├── conversations_log/       # Session and debug logs
 ├── diff_helper.py           # Code patching utilities
 ├── llm.py                   # LLM API integration
 ├── llm_api_server.py        # Flask web server
@@ -261,6 +303,7 @@ project_root/
 ├── prompts/                 # Agent prompts and tools
 ├── templates/               # Web UI templates
 ├── tests/                   # Unit tests
+├── storage/                 # temp folder -- dont read/update
 ├── requirements.txt         # Python dependencies
 ├── AGENTS.md                # Project manifest
 └── .env                     # Configuration (not in repo)
