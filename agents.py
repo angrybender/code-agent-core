@@ -16,6 +16,7 @@ from llm import llm_query
 from tools_interpreter import ToolsInterpreter
 from prompts.analytic_tools import tools as analytic_tools
 from prompts.coder_tools import tools as coder_tools
+from prompts.reviewer_tools import tools as reviewer_tools
 from search_code import SearchCode
 
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
@@ -267,7 +268,10 @@ def _merge_assistant_messages(conversation: list[dict]) -> list[dict]:
 
 class AnalyticAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
-        return analytic_tools
+        if self.role == 'ANALYTIC':
+            return analytic_tools
+        else:
+            return reviewer_tools
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
         return _merge_assistant_messages(conversation)
@@ -373,7 +377,6 @@ class Agent:
 
         with open(Agent.STEP_PROMPT, 'r', encoding='utf8') as f:
             step_prompt = f.read()
-
 
         if role == 'ANALYTIC' or role == 'REVIEWER':
             return AnalyticAgent(role, system_prompt, step_prompt, thinking)

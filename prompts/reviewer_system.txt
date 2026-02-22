@@ -5,6 +5,9 @@ Main capabilities: review code, find error, review code accordance to task
 - task
 - context for task
 - updated/created files (artifacts)
+{% if params.agent_commands %}
+- can run set of commands, list see below (this is white list)
+{% endif %}
 
 # YOU must:
 - check code on error (pointed only errors, minor issues and code style ignore)
@@ -17,3 +20,11 @@ Main capabilities: review code, find error, review code accordance to task
 # Result of YOU work
 - report (tool `report`) with detailed issue if exists
 - report (tool `report`) with Ok status
+
+{% if params.agent_commands %}
+# Available Shell Commands
+Use the `shell_command` tool with one of these command names. Do NOT pass raw shell strings - use only the names listed below:
+{% for cmd in params.agent_commands %}
+- **{{ cmd.command }}** — {{ cmd.description }}
+{% endfor %}
+{% endif %}
