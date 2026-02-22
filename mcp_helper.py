@@ -5,13 +5,12 @@ import os.path
 from dotenv import load_dotenv
 load_dotenv()
 
-from mcp import ClientSession
-from mcp.client.sse import sse_client
-
 # Load mode configuration - 'mcp' or 'pure'
 AGENT_FILE_TOOLS = os.getenv('AGENT_FILE_TOOLS', 'mcp')
 
 async def _tool_call_sse(path: str, name: str, args: dict = None):
+    from mcp import ClientSession
+    from mcp.client.sse import sse_client
     async with sse_client(path) as (
             read_stream,
             write_stream,
@@ -68,7 +67,7 @@ def tool_call(path: str, name: str, args: dict = None) -> dict:
             )
         else:
             raise Exception(f"Unknown tool: {name}")
-    
+
     # MCP mode: use existing MCP protocol implementation
     result = asyncio.run(_tool_call_sse(path, name, args))
     if result.isError:
