@@ -190,7 +190,7 @@ class ToolsInterpreter:
 
     def _command_shell(self, command_name: str) -> dict:
         if not command_name or not isinstance(command_name, str):
-            return {'result': 'ERROR: command_name must be a non-empty string', 'error': True}
+            return {'result': 'ERROR: command_name must be a non-empty string', 'error': True, 'tool_name': 'shell_command'}
 
         cmd = self._commands_map.get(command_name)
         if cmd is None:
@@ -198,6 +198,7 @@ class ToolsInterpreter:
             return {
                 'result': f"ERROR: Unknown command '{command_name}'. Available: {available}",
                 'error': True,
+                'tool_name': 'shell_command',
             }
 
         raw = execute_terminal_command(cmd=cmd, timeout=SHELL_COMMAND_TIMEOUT, cwd=self.project_root)
@@ -208,9 +209,10 @@ class ToolsInterpreter:
             return {
                 'result': f"ERROR: Command timed out after {SHELL_COMMAND_TIMEOUT}s. Partial output: {raw['stdout']}",
                 'error': True,
+                'tool_name': 'shell_command',
             }
         else:
-            return {'result': f"ERROR: {raw['stderr'] or raw['stdout']}", 'error': True}
+            return {'result': f"ERROR: {raw['stderr'] or raw['stdout']}", 'error': True, 'tool_name': 'shell_command'}
 
     def execute(self, opcode: str, arguments) -> dict:
         try:

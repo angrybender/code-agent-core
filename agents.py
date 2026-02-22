@@ -213,11 +213,23 @@ class BaseAgent:
                 if not tool_call_description['args']:
                     tool_call_description['args'] = ['']
 
-                if is_success:
+
+                prefix = "🔨"
+                if not is_success:
+                    prefix += " ❌"
+
+                yield {
+                    'message': f"{prefix} {tool_call_description['function']}: {tool_call_description['args'][0]}",
+                    'result': result,
+                    'type': "info",
+                    'exit': False,
+                }
+
+                if tool_call_description['function'] == 'shell_command':
                     yield {
-                        'message': f"🔨 {tool_call_description['function']}: {tool_call_description['args'][0]}",
-                        'result': result,
-                        'type': "info",
+                        'message': f"{tool_call_description['function']}:\n```\n{result['result']}\n```",
+                        'result': {},
+                        'type': "markdown",
                         'exit': False,
                     }
 
