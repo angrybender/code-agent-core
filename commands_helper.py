@@ -1,4 +1,5 @@
 import os
+import glob
 import re
 import subprocess
 
@@ -7,10 +8,8 @@ def parse_agent_commands(directory: str) -> list[dict]:
         return []
 
     results = []
-    for filename in sorted(os.listdir(directory)):
-        if not filename.endswith('.md'):
-            continue
-        filepath = os.path.join(directory, filename)
+    pattern = os.path.join(directory, '*.md')
+    for filepath in sorted(glob.glob(pattern)):
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
         blocks = re.findall(r'```[^\n`]*\n(.*?)```|```([^`\n]+)```', content, re.DOTALL)
@@ -21,7 +20,7 @@ def parse_agent_commands(directory: str) -> list[dict]:
         if not cmd:
             continue
         description = re.sub(r'```.*?```', '', content, flags=re.DOTALL).strip()
-        command = os.path.splitext(filename)[0]
+        command = os.path.splitext(os.path.basename(filepath))[0]
         results.append({'command': command, 'description': description, 'cmd': cmd})
     return results
 
