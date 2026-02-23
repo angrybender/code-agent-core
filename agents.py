@@ -201,6 +201,20 @@ class BaseAgent:
                 break
             else:
                 yield {'type': 'nope'}
+
+                is_pre_output = tool_call_description['function'] in ['shell_command']
+                is_output_resul_of_tool_separate_msg = tool_call_description['function'] in ['shell_command']
+                tool_msg_prefix = "🔨"
+
+                if is_pre_output:
+                    _args = tool_call_description['args'][0] if tool_call_description['args'] else ''
+                    yield {
+                        'message': f"{tool_msg_prefix} {tool_call_description['function']}: {_args}",
+                        'result': {},
+                        'type': "info",
+                        'exit': False,
+                    }
+
                 result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
                 is_success = not result.get('error', False)
 
@@ -213,19 +227,18 @@ class BaseAgent:
                 if not tool_call_description['args']:
                     tool_call_description['args'] = ['']
 
-
-                prefix = "🔨"
                 if not is_success:
-                    prefix += " ❌"
+                    tool_msg_prefix += " ❌"
 
-                yield {
-                    'message': f"{prefix} {tool_call_description['function']}: {tool_call_description['args'][0]}",
-                    'result': result,
-                    'type': "info",
-                    'exit': False,
-                }
+                if not is_pre_output:
+                    yield {
+                        'message': f"{tool_msg_prefix} {tool_call_description['function']}: {tool_call_description['args'][0]}",
+                        'result': result,
+                        'type': "info",
+                        'exit': False,
+                    }
 
-                if tool_call_description['function'] == 'shell_command':
+                if is_output_resul_of_tool_separate_msg:
                     yield {
                         'message': f"{tool_call_description['function']}:\n```\n{result['result']}\n```",
                         'result': {},
