@@ -337,11 +337,11 @@ class CoderAgent(BaseAgent):
 
             if tool.function.name == 'write_file':
                 tool_name = 'write'
-                js_obj_name = args[0]
+                js_obj_name = str(args[0])
             elif tool.function.name == 'replace_code_in_file':
                 # lost write diff cause less quality
                 tool_name = f'replace_code_in_file:{position}'
-                js_obj_name = args[0]
+                js_obj_name = str(args[0])
             else:
                 tool_name = 'read'
                 js_obj_name = ':'.join([str(_) for _ in args])
