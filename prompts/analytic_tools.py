@@ -11,6 +11,14 @@ tools = [
                     "path": {
                         "type": "string",
                         "description": "path to file"
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Start reading from line number N (0-based). Default: 0"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of lines to return. If not specified, returns all lines from offset to end of file"
                     }
                 }
             }

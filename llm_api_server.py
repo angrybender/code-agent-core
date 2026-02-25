@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger('APP')
 
 from algorythm import Copilot
-from conversation import get_terminal, agent_result_tpl, agent_result_of_all_active_tpl
+from conversation import get_terminal, agent_result_tpl, agent_result_of_all_active_tpl, agent_tool_tpl
 
 app = Flask(__name__)
 
@@ -101,6 +101,7 @@ def process_task(user_request: str, session_id: str):
             break
 
         message['timestamp'] = time.time()
+        message = agent_tool_tpl(message)
 
         if message.get('hidden', False):
             message = {'type': 'nope'}

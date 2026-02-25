@@ -202,17 +202,18 @@ class BaseAgent:
             else:
                 yield {'type': 'nope'}
 
-                is_pre_output = tool_call_description['function'] in ['shell_command']
-                is_output_resul_of_tool_separate_msg = tool_call_description['function'] in ['shell_command']
-                tool_msg_prefix = "🔨"
+                is_pre_output = tool_call_description['function'] in ['shell_command', 'search_file']
+                is_output_resul_of_tool_separate_msg = tool_call_description['function'] in ['shell_command', 'search_file']
 
                 if is_pre_output:
                     _args = tool_call_description['args'][0] if tool_call_description['args'] else ''
                     yield {
-                        'message': f"{tool_msg_prefix} {tool_call_description['function']}: {_args}",
+                        'function': tool_call_description['function'],
+                        'args': tool_call_description['args'],
                         'result': {},
-                        'type': "info",
+                        'type': "tool",
                         'exit': False,
+                        'is_success': True,
                     }
 
                 result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
@@ -227,20 +228,20 @@ class BaseAgent:
                 if not tool_call_description['args']:
                     tool_call_description['args'] = ['']
 
-                if not is_success:
-                    tool_msg_prefix += " ❌"
-
                 if not is_pre_output:
                     yield {
-                        'message': f"{tool_msg_prefix} {tool_call_description['function']}: {tool_call_description['args'][0]}",
+                        'function': tool_call_description['function'],
+                        'args': tool_call_description['args'],
                         'result': result,
-                        'type': "info",
+                        'type': "tool",
                         'exit': False,
+                        'is_success': is_success,
                     }
 
                 if is_output_resul_of_tool_separate_msg:
+                    _result = result.get('post_result', result['result'])
                     yield {
-                        'message': f"{tool_call_description['function']}:\n```\n{result['result']}\n```",
+                        'message': f"```\n{_result}\n```",
                         'result': {},
                         'type': "markdown",
                         'exit': False,

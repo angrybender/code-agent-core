@@ -237,6 +237,10 @@ class SimpleChat {
                 this.addMessage(data.message, 'html', data.timestamp);
                 this.IS_LAST_MESSAGE_SUCCESS = true;
                 break;
+            case 'tool':
+                this.addMessage(data.message, 'tool', data.timestamp);
+                this.IS_LAST_MESSAGE_SUCCESS = true;
+                break;
             default:
                 this.addMessage(data.message, 'bot', data.timestamp);
                 this.IS_LAST_MESSAGE_SUCCESS = true;
@@ -304,6 +308,9 @@ class SimpleChat {
             type = 'html';
             message = `<pre>${escapeHtml(message)}</pre>`;
             messageDivClassName = "message html-message user-message";
+        }
+        else if (type === 'tool') {
+            type = 'html';
         }
 
         const messageDiv = document.createElement('div');

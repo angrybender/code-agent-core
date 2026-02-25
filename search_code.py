@@ -11,31 +11,31 @@ logger = logging.getLogger('APP')
 def _truncate_line_around_match(line: str, match_pos: int, max_chars: int = 1000) -> str:
     if len(line) <= max_chars:
         return line
-    
+
     half_window = max_chars // 2
     start = max(0, match_pos - half_window)
     end = min(len(line), match_pos + half_window)
-    
+
     if start == 0:
         end = min(len(line), max_chars)
     elif end == len(line):
         start = max(0, len(line) - max_chars)
-    
+
     return '...' + line[start:end] + '...'
 
 
-def _find_subtext(lines: list[str], substr: str) -> tuple[str, float]:
-    for line in lines:
+def _find_subtext(lines: list[str], substr: str) -> tuple[str, int, float]:
+    for line_index, line in enumerate(lines):
         pos = line.lower().find(substr.lower())
         if pos > -1:
             truncated_line = _truncate_line_around_match(line, pos)
-            return truncated_line, 1.0
+            return truncated_line, line_index, 1.0
 
     tokens = re.split(r'\W', substr)
     tokens = [_.lower() for _ in tokens]
 
     candidates = []
-    for line in lines:
+    for line_index, line in enumerate(lines):
         _line = line.lower()
         score = 0
         first_match_pos = -1
@@ -48,12 +48,12 @@ def _find_subtext(lines: list[str], substr: str) -> tuple[str, float]:
 
         if score > 0:
             truncated_line = _truncate_line_around_match(line, first_match_pos)
-            candidates.append((truncated_line, score/len(tokens)))
+            candidates.append((truncated_line, line_index, score/len(tokens)))
 
     if not candidates:
-        return '', 0.0
+        return '', -1, 0.0
 
-    candidates = sorted(candidates, key=lambda line_score: -line_score[1])
+    candidates = sorted(candidates, key=lambda item: -item[2])
     return candidates[0]
 
 
@@ -151,7 +151,7 @@ class SearchCode:
     def reset(self):
         self._files_cache = {}
 
-    def search(self, project_path: str, needle: str, extension: str) -> list[dict]:
+    def search(self, project_path: str, needle: str, extension: str) -> tuple[int, list[dict]]:
         _start_time = time.time()
 
         extension = extension.strip().strip('*').strip('.')
@@ -185,10 +185,11 @@ class SearchCode:
 
             lines = code.split("\n")
 
-            line, score = _find_subtext(lines, needle)
+            line, line_number, score = _find_subtext(lines, needle)
             if line and score > 0.0:
                 results.append({
                     'file': file_path_relative,
+                    'line_number': line_number,
                     'found': line.strip(),
                     'score': score
                 })
@@ -196,4 +197,4 @@ class SearchCode:
         results = sorted(results, key=lambda r: -r['score'])
 
         logger.info(f"[search] total found: {len(results)}; total time: {time.time() - _start_time}")
-        return results[:MAX_RESULTS]
+        return len(results), results[:MAX_RESULTS]

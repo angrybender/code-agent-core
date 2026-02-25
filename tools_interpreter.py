@@ -45,7 +45,7 @@ class ToolsInterpreter:
         project_root_real = os.path.realpath(self.project_root)
         return real_path.startswith(project_root_real + os.sep)
 
-    def _command_read(self, file_path) -> dict:
+    def _command_read(self, file_path: str, offset: int = 0, limit: int = None) -> dict:
         if not self._validate_path(file_path):
             return {'result': 'ERROR: Invalid path', 'error': True}
         content = tool_call(self.mcp_host, 'get_file_text_by_path', {
@@ -54,6 +54,8 @@ class ToolsInterpreter:
         })
 
         is_success = False
+        total_lines = 0
+        lines = []
         if 'error' in content:
             result = content['error']
             result = result.replace(self.project_root, '')
@@ -61,12 +63,21 @@ class ToolsInterpreter:
             result = "ERROR: File not exists"
         else:
             is_success = True
-            result = content['status']
+            full_content = content['status']
+            lines = full_content.split('\n')
+            total_lines = len(lines)
+            lines = lines[offset:]
+            if limit is not None:
+                lines = lines[:limit]
+            result = '\n'.join(lines)
 
         response = {'result': result, 'exists': 'status' in content}
         if is_success:
             response['tool_name'] = 'read'
             response['file_path'] = file_path
+            response['total_lines'] = total_lines
+            response['offset'] = offset
+            response['returned_lines'] = len(lines)
         else:
             response['error'] = True
 
@@ -178,15 +189,17 @@ class ToolsInterpreter:
         return result
 
     def _search_file(self, needle, extension=None):
-        results = self.search_service.search(self.project_root, needle, str(extension))
+        total_count, results = self.search_service.search(self.project_root, needle, str(extension))
         if not results:
             return {"result": "ERROR: empty search result", "tool_name": "search_file"}
 
         formatted_result = []
         for result in results:
-            formatted_result.append(f"file: `{result['file']}`\nfound line: ```{result['found']}```")
+            formatted_result.append(
+                f"file: `{result['file']}`\nline: {result['line_number']}\nfound line: ```{result['found']}```"
+            )
 
-        return {"result": "\n\n".join(formatted_result), "tool_name": "search_file"}
+        return {"result": "\n\n".join(formatted_result), "tool_name": "search_file", "post_result": f"Found: {total_count} file(s)"}
 
     def _command_shell(self, command_name: str) -> dict:
         if not command_name or not isinstance(command_name, str):
