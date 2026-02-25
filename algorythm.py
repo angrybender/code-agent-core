@@ -6,10 +6,11 @@ import datetime
 from mcp_helper import tool_call
 from llm import llm_query
 from path_helper import get_relative_path
-from command_interpreter import CommandInterpreter
+from tools_interpreter import ToolsInterpreter
 from agents import Agent
 from prompts.supervisor_tools import tools as supervisor_tools
 
+from commands_helper import parse_agent_commands
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -73,12 +74,17 @@ class Copilot:
             'files_structure': self._read_project_structure(self.session['project_base_path']),
         }
 
+        shell_cmd_dir = os.getenv('SHELL_COMMAND_DIRECTORY', '.agent-commands')
+        full_cmd_dir = os.path.join(self.session['project_base_path'], shell_cmd_dir)
+        self.agent_commands = parse_agent_commands(full_cmd_dir)
+        self.manifest['agent_commands'] = self.agent_commands
+
         self.output = []
 
         self.executed_commands = []
         self.command_state = []
         self.agent_step = 1
-        self.interpreter = CommandInterpreter(IDE_MCP_HOST, self.session['project_base_path'])
+        self.interpreter = ToolsInterpreter(IDE_MCP_HOST, self.session['project_base_path'])
 
     def _read_project_structure(self, base_path) -> list:
         result = []
@@ -102,6 +108,13 @@ class Copilot:
 
         self._init()
         Agent.setUp()
+
+        if self.agent_commands:
+            names = "\n".join(f"- {c['command']}" for c in self.agent_commands)
+            yield {
+                'message': f"Available shell commands:\n{names}",
+                'type': "markdown",
+            }
 
         with open(self.LOG_FILE, "w", encoding='utf8') as f:
             f.write(str(datetime.datetime.now()) + "\n\n")
@@ -227,7 +240,7 @@ class Copilot:
                     }
                     break
 
-                agent = Agent.fabric(agent_name)
+                agent = Agent.fabric(agent_name, self.agent_commands)
                 agent.init(agent_instruction, self.manifest, self.LOG_FILE)
 
                 is_agent_completes_work = False
@@ -278,4 +291,3 @@ class Copilot:
 
         with open(self.LOG_FILE, "a", encoding='utf8') as f:
             f.write(data + "\n\n")
-

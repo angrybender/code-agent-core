@@ -13,9 +13,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from llm import llm_query
-from command_interpreter import CommandInterpreter
+from tools_interpreter import ToolsInterpreter
 from prompts.analytic_tools import tools as analytic_tools
 from prompts.coder_tools import tools as coder_tools
+from prompts.reviewer_tools import tools as reviewer_tools
 from search_code import SearchCode
 
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
@@ -63,7 +64,7 @@ class BaseAgent:
         self.instruction = instruction
         self.project_description = manifest['description']
         self.project_structure = manifest['files_structure']
-        self.interpreter = CommandInterpreter(IDE_MCP_HOST, manifest['base_path'], self.search_service)
+        self.interpreter = ToolsInterpreter(IDE_MCP_HOST, manifest['base_path'], self.search_service, commands=manifest.get('agent_commands', []))
         self.log_file = log_file
 
         self.storage_path = os.path.join(self.STORAGE_PATH, hashlib.sha256(manifest['base_path'].encode()).hexdigest())
@@ -200,6 +201,20 @@ class BaseAgent:
                 break
             else:
                 yield {'type': 'nope'}
+
+                is_pre_output = tool_call_description['function'] in ['shell_command']
+                is_output_resul_of_tool_separate_msg = tool_call_description['function'] in ['shell_command']
+                tool_msg_prefix = "🔨"
+
+                if is_pre_output:
+                    _args = tool_call_description['args'][0] if tool_call_description['args'] else ''
+                    yield {
+                        'message': f"{tool_msg_prefix} {tool_call_description['function']}: {_args}",
+                        'result': {},
+                        'type': "info",
+                        'exit': False,
+                    }
+
                 result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
                 is_success = not result.get('error', False)
 
@@ -212,11 +227,22 @@ class BaseAgent:
                 if not tool_call_description['args']:
                     tool_call_description['args'] = ['']
 
-                if is_success:
+                if not is_success:
+                    tool_msg_prefix += " ❌"
+
+                if not is_pre_output:
                     yield {
-                        'message': f"🔨 {tool_call_description['function']}: {tool_call_description['args'][0]}",
+                        'message': f"{tool_msg_prefix} {tool_call_description['function']}: {tool_call_description['args'][0]}",
                         'result': result,
                         'type': "info",
+                        'exit': False,
+                    }
+
+                if is_output_resul_of_tool_separate_msg:
+                    yield {
+                        'message': f"{tool_call_description['function']}:\n```\n{result['result']}\n```",
+                        'result': {},
+                        'type': "markdown",
                         'exit': False,
                     }
 
@@ -267,7 +293,10 @@ def _merge_assistant_messages(conversation: list[dict]) -> list[dict]:
 
 class AnalyticAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
-        return analytic_tools
+        if self.role == 'ANALYTIC':
+            return analytic_tools
+        else:
+            return reviewer_tools
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
         return _merge_assistant_messages(conversation)
@@ -357,7 +386,7 @@ class Agent:
             shutil.rmtree(cache_path)
 
     @staticmethod
-    def fabric(role) -> BaseAgent:
+    def fabric(role, agent_commands: list = None) -> BaseAgent:
         assert role in Agent.PROMPTS, f'invalid role: {role}'
 
         thinking = role in DEEPTHINKING_AGENTS
@@ -367,12 +396,12 @@ class Agent:
 
             rtemplate = Environment(loader=BaseLoader).from_string(system_prompt)
             system_prompt = rtemplate.render(params={
-                'thinking': thinking
+                'thinking': thinking,
+                'agent_commands': agent_commands or []
             })
 
         with open(Agent.STEP_PROMPT, 'r', encoding='utf8') as f:
             step_prompt = f.read()
-
 
         if role == 'ANALYTIC' or role == 'REVIEWER':
             return AnalyticAgent(role, system_prompt, step_prompt, thinking)

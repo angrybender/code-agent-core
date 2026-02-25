@@ -94,6 +94,28 @@ example:
         }
     },
     {
+        "type": "function",
+        "function": {
+            "name": "shell_command",
+            "description": (
+                "Execute a predefined named shell command in the project root directory. "
+                "Use for build, test, lint, or install commands. "
+                "Pass the command NAME (e.g. 'run-tests', 'build'), not a raw shell string. "
+                "Available command names are listed in the system prompt."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["command_name"],
+                "properties": {
+                    "command_name": {
+                        "type": "string",
+                        "description": "Name of the predefined command to execute (e.g. 'run-tests'). Must match one of the available shell command names listed in the system prompt."
+                    }
+                }
+            }
+        }
+    },
+    {
         "type":"function",
         "function":{
             "name": "report",
