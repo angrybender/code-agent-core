@@ -335,14 +335,16 @@ class CoderAgent(BaseAgent):
             if not args:
                 return conversation
 
-            js_obj_name = args[0]
             if tool.function.name == 'write_file':
                 tool_name = 'write'
+                js_obj_name = args[0]
             elif tool.function.name == 'replace_code_in_file':
                 # lost write diff cause less quality
                 tool_name = f'replace_code_in_file:{position}'
+                js_obj_name = args[0]
             else:
                 tool_name = 'read'
+                js_obj_name = ':'.join([str(_) for _ in args])
 
             if tools_map.get(js_obj_name, {}).get(tool_name, None):
                 is_convolution = True
