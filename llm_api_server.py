@@ -108,9 +108,9 @@ def process_task(user_request: str, session_id: str):
         try:
             message = agent_tool_tpl(message)
         except Exception as e:
-            logger.error("Error translate message: ")
+            logger.error(f"Error translate message: {e}")
             logger.error(message)
-            raise e
+            message = {'type': 'nope'}
 
         if message.get('hidden', False):
             message = {'type': 'nope'}
