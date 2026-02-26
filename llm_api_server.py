@@ -110,12 +110,13 @@ def process_task(user_request: str, session_id: str):
         except Exception as e:
             logger.error(f"Error translate message: {e}")
             logger.error(message)
-            message = {'type': 'nope'}
+            message['hidden'] = True # workaround for prevent lost files' list
+
+        if 'tool_name' in message.get('result', {}):
+            active_responses.append({'type': 'files', 'message': message.copy()})
 
         if message.get('hidden', False):
             message = {'type': 'nope'}
-        elif 'tool_name' in message.get('result', {}):
-            active_responses.append({'type': 'files', 'message': message.copy()})
 
         yield f"data: {json.dumps(message)}\n\n"
 
