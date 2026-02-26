@@ -2,6 +2,16 @@ import time
 from dataclasses import asdict
 from dto.dto_instruction import DTOInstruction
 
+
+_FUNCTION_NAME_TITLES = {
+    'read_file': 'read  ',
+    'search_file': 'search',
+    'list_in_directory': 'list  ',
+    'shell_command': 'shell ',
+    'write_file': 'write ',
+    'replace_code_in_file': 'patch ',
+}
+
 def get_message(message: str, role: str, message_type: str=None) -> dict:
     return {
         'role': role,
@@ -17,10 +27,6 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
     function_name = message.function
     result_message = message.message
 
-    tool_msg_prefix = "🔨"
-    if message.type == 'tool' and not message.is_success:
-        tool_msg_prefix += " ❌"
-
     if function_name == 'read_file':
         path = message.args[0]
         offset = message.args[1] if len(message.args) >= 2 else None
@@ -34,17 +40,21 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
         else:
             suffix = ''
 
-        result_message = f'{tool_msg_prefix} <cite>read_file</cite> <dfn>{path}{suffix}</dfn>'
+        result_message = f'<cite>read  </cite> <dfn>{path}{suffix}</dfn>'
 
     elif function_name == 'search_file':
         needle = message.args[0].replace('<', '').replace('>', '')
         ext = message.args[1] if len(message.args) == 2 else ''
         ext = f"*.{ext}" if ext else '*.*'
-        result_message = f'{tool_msg_prefix} <cite>search_file</cite> <dfn>{ext}</dfn> <dfn>{needle}</dfn>'
+        result_message = f'<cite>search</cite> <dfn>{ext}</dfn> <dfn>{needle}</dfn>'
+
+    elif function_name in ['write_file', 'replace_code_in_file']:
+        file_link = _file_processing_tpl(message.result)
+        result_message = f'<cite>{_FUNCTION_NAME_TITLES.get(function_name, function_name)}</cite> {file_link}'
 
     elif message.type == 'tool':
         suffix = f"<dfn>{message.args[0]}</dfn>" if message.args else ''
-        result_message = f'{tool_msg_prefix} <cite>{function_name}</cite> {suffix}'
+        result_message = f'<cite>{_FUNCTION_NAME_TITLES.get(function_name, function_name)}</cite> {suffix}'
 
     output = asdict(message)
     output['timestamp'] = time.time()
@@ -63,20 +73,6 @@ def _file_processing_tpl(result: dict) -> str:
         a_href = f"#call:jide_open_file//{result['file_path']}"
 
     return f"<a class='jide_open_file {css_class}' href='{a_href}'>{result['file_name']}</a>"
-
-def agent_result_tpl(result: dict, message_type: str, message) -> dict:
-    tool_name = result.get('tool_name', '')
-    if tool_name in ['write', 'write_diff']:
-        message_type = 'html'
-        file_link = _file_processing_tpl(result)
-        message = f"🔨 {tool_name}: {file_link}"
-
-    return {
-        'role': 'assistant',
-        'message': message,
-        'type': message_type,
-        'timestamp': time.time()
-    }
 
 def agent_result_of_all_active_tpl(messages: list[dict]) -> dict|None:
     processed_files = []
