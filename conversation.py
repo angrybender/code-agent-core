@@ -44,6 +44,7 @@ def agent_tool_tpl(message: dict) -> dict:
         suffix = f"<dfn>{message['args'][0]}</dfn>" if message['args'] else ''
         message['message'] = f'{tool_msg_prefix} <cite>{function_name}</cite> {suffix}'
 
+    message['timestamp'] = time.time()
     return message
 
 def _file_processing_tpl(result: dict) -> str:

@@ -1,3 +1,5 @@
+from dataclasses import asdict
+
 from flask import Flask, render_template, request, Response
 import json
 import time
@@ -7,6 +9,9 @@ import hashlib
 import signal
 
 import logging
+
+from dto.dto_instruction import DTOInstruction
+
 logger = logging.getLogger('APP')
 
 from algorythm import Copilot
@@ -100,7 +105,10 @@ def process_task(user_request: str, session_id: str):
             SESSION_MANAGER_INSTANCE.commit_command(session_id)
             break
 
-        message['timestamp'] = time.time()
+        # TODO - replace to new dataclass objects
+        if isinstance(message, DTOInstruction):
+            message = asdict(message)
+
         message = agent_tool_tpl(message)
 
         if message.get('hidden', False):
@@ -216,6 +224,9 @@ def agent_api():
             if elapsed > max_working_time:
                 timeout_occurred = True
                 break
+
+            if isinstance(message, DTOInstruction):
+                message = asdict(message)
 
             results.append(message)
 
