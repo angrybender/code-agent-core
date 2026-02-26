@@ -110,6 +110,7 @@ def process_task(user_request: str, session_id: str):
         except Exception as e:
             logger.error(f"Error translate message: {e}")
             logger.error(message)
+            message = asdict(message)
             message['hidden'] = True # workaround for prevent lost files' list
 
         if 'tool_name' in message.get('result', {}):
