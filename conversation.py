@@ -1,5 +1,6 @@
-import json
 import time
+from dataclasses import asdict
+from dto.dto_instruction import DTOInstruction
 
 def get_message(message: str, role: str, message_type: str=None) -> dict:
     return {
@@ -12,17 +13,18 @@ def get_message(message: str, role: str, message_type: str=None) -> dict:
 def get_terminal():
     return get_message('[DONE]', 'assistant', 'end')
 
-def agent_tool_tpl(message: dict) -> dict:
-    function_name = message.get('function')
+def agent_tool_tpl(message: DTOInstruction) -> dict:
+    function_name = message.function
+    result_message = message.message
 
     tool_msg_prefix = "🔨"
-    if message['type'] == 'tool' and not message['is_success']:
+    if message.type == 'tool' and not message.is_success:
         tool_msg_prefix += " ❌"
 
     if function_name == 'read_file':
-        path = message['args'][0]
-        offset = message['args'][1] if len(message['args']) >= 2 else None
-        limit = message['args'][2] if len(message['args']) == 3 else None
+        path = message.args[0]
+        offset = message.args[1] if len(message.args) >= 2 else None
+        limit = message.args[2] if len(message.args) == 3 else None
         if offset is not None and limit is not None:
             suffix = f"[{offset + 1}:{offset + limit + 1}]"
         elif offset is not None:
@@ -32,20 +34,23 @@ def agent_tool_tpl(message: dict) -> dict:
         else:
             suffix = ''
 
-        message['message'] = f'{tool_msg_prefix} <cite>read_file</cite> <dfn>{path}{suffix}</dfn>'
+        result_message = f'{tool_msg_prefix} <cite>read_file</cite> <dfn>{path}{suffix}</dfn>'
 
     elif function_name == 'search_file':
-        needle = message['args'][0].replace('<', '').replace('>', '')
-        ext = message['args'][1] if len(message['args']) == 2 else ''
+        needle = message.args[0].replace('<', '').replace('>', '')
+        ext = message.args[1] if len(message.args) == 2 else ''
         ext = f"*.{ext}" if ext else '*.*'
-        message['message'] = f'{tool_msg_prefix} <cite>search_file</cite> <dfn>{ext}</dfn> <dfn>{needle}</dfn>'
+        result_message = f'{tool_msg_prefix} <cite>search_file</cite> <dfn>{ext}</dfn> <dfn>{needle}</dfn>'
 
-    elif message['type'] == 'tool':
-        suffix = f"<dfn>{message['args'][0]}</dfn>" if message['args'] else ''
-        message['message'] = f'{tool_msg_prefix} <cite>{function_name}</cite> {suffix}'
+    elif message.type == 'tool':
+        suffix = f"<dfn>{message.args[0]}</dfn>" if message.args else ''
+        result_message = f'{tool_msg_prefix} <cite>{function_name}</cite> {suffix}'
 
-    message['timestamp'] = time.time()
-    return message
+    output = asdict(message)
+    output['timestamp'] = time.time()
+    output['message'] = result_message
+
+    return output
 
 def _file_processing_tpl(result: dict) -> str:
     css_class = ''

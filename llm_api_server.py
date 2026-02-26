@@ -105,10 +105,6 @@ def process_task(user_request: str, session_id: str):
             SESSION_MANAGER_INSTANCE.commit_command(session_id)
             break
 
-        # TODO - replace to new dataclass objects
-        if isinstance(message, DTOInstruction):
-            message = asdict(message)
-
         message = agent_tool_tpl(message)
 
         if message.get('hidden', False):
