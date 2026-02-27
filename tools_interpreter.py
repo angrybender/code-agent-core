@@ -211,6 +211,9 @@ class ToolsInterpreter:
             return {'result': f"ERROR: Unknown command '{command_name}'. Available: {available}", 'error': True, 'tool_name': 'shell_command'}
         cmd = command_def['cmd']
 
+        if args and len(args) != len(command_def['args']) or not args and command_def['args']:
+            return {'result': f"ERROR: Wrongs '{command_name}' argument list: current: {len(args)}; actual: {len(command_def['args'])}.", 'error': True, 'tool_name': 'shell_command'}
+
         if args:
             for i, value in enumerate(args, start=1):
                 cmd = cmd.replace(f'${i}', str(value))

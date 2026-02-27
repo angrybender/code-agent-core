@@ -4,6 +4,7 @@ import shutil
 import tempfile
 
 from commands_helper import parse_agent_commands
+from tools_interpreter import ToolsInterpreter
 
 
 class TestParseAgentCommands(unittest.TestCase):
@@ -136,6 +137,37 @@ class TestParseAgentCommands(unittest.TestCase):
         result = parse_agent_commands(self.test_dir)
         self.assertEqual(1, len(result))
         self.assertEqual('with_block', result[0]['command'])
+
+class TestShellCommandUnknown(unittest.TestCase):
+    """Tests for ToolsInterpreter._command_shell unknown-command error branch."""
+
+    def _make_ti(self, commands=None):
+        """Helper: create a ToolsInterpreter with given commands list."""
+        return ToolsInterpreter('', '/tmp', commands=commands or [])
+
+    def test_unknown_command_empty_commands_map(self):
+        """No commands registered → available reports 'none'"""
+        ti = self._make_ti()
+        result = ti.execute('shell_command', ['nonexistent'])
+        self.assertTrue(result.get('error'))
+        self.assertEqual('shell_command', result['tool_name'])
+        self.assertIn("Unknown command 'nonexistent'", result['result'])
+        self.assertIn('none', result['result'])
+
+    def test_unknown_command_shows_available_names(self):
+        """Known commands registered → available lists their names in the error"""
+        commands = [
+            {'command': 'build', 'cmd': 'make build', 'description': 'Build project', 'args': []},
+            {'command': 'lint',  'cmd': 'make lint',  'description': 'Run linter',    'args': []},
+        ]
+        ti = self._make_ti(commands)
+        result = ti.execute('shell_command', ['deploy'])
+        self.assertTrue(result.get('error'))
+        self.assertEqual('shell_command', result['tool_name'])
+        self.assertIn("Unknown command 'deploy'", result['result'])
+        self.assertIn('build', result['result'])
+        self.assertIn('lint', result['result'])
+
 
 if __name__ == '__main__':
     unittest.main()
