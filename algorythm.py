@@ -3,6 +3,8 @@ import os
 import glob
 import datetime
 
+from dto.dto_instruction import DTOInstruction
+from dto.enums import EventType
 from mcp_helper import tool_call
 from llm import llm_query
 from path_helper import get_relative_path
@@ -101,20 +103,14 @@ class Copilot:
 
     def run(self):
         specific_model = os.environ.get('MODEL:SUPERVISOR', None)
-        yield {
-            'message': f"start SUPERVISOR...",
-            'type': "info",
-        }
+        yield DTOInstruction(type=EventType.INFO, message="start SUPERVISOR...")
 
         self._init()
         Agent.setUp()
 
         if self.agent_commands:
             names = "\n".join(f"- {c['command']}" for c in self.agent_commands)
-            yield {
-                'message': f"Available shell commands:\n{names}",
-                'type': "markdown",
-            }
+            yield DTOInstruction(type=EventType.MARKDOWN, message=f"Available shell commands:\n{names}")
 
         with open(self.LOG_FILE, "w", encoding='utf8') as f:
             f.write(str(datetime.datetime.now()) + "\n\n")
@@ -141,15 +137,12 @@ class Copilot:
         while True:
             if agent_step_counter > self.MAX_STEP:
                 logger.warning("MAX_STEP exceed!")
-                yield {
-                    'message': "MAX_STEP exceed!",
-                    'type': "error",
-                }
+                yield DTOInstruction(type=EventType.ERROR, message="MAX_STEP exceed!")
                 break
 
             is_empty_workaround = False
             while True:
-                yield {'type': 'nope'}
+                yield DTOInstruction(type=EventType.NOPE)
                 output = llm_query(conversation_log, tools=supervisor_tools, model_name=specific_model)
                 if output:
                     break
@@ -197,19 +190,13 @@ class Copilot:
                 })
                 self.log(output['_output'], True)
 
-                yield {
-                    'message': output['_output'],
-                    'type': "markdown",
-                }
+                yield DTOInstruction(type=EventType.MARKDOWN, message=output['_output'])
 
                 agent_step_counter += 1
                 continue
 
             if not tool_call_description and not output['_output']:
-                yield {
-                    'message': "Agent call error (empty)",
-                    'type': "error",
-                }
+                yield DTOInstruction(type=EventType.ERROR, message="Agent call error (empty)")
                 break
 
             self.log(tool_call_description, True)
@@ -218,26 +205,17 @@ class Copilot:
             if tool_call_description['function'] == 'exit':
                 break
             elif tool_call_description['function'] == 'message':
-                yield {
-                    'message': tool_call_description['args'][0],
-                    'type': "markdown",
-                }
+                yield DTOInstruction(type=EventType.MARKDOWN, message=tool_call_description['args'][0])
 
                 agent_complete_report = 'message print to user'
             elif tool_call_description['function'] == 'call_agent':
                 agent_name, agent_instruction = tool_call_description['args']
                 if agent_name not in Agent.PROMPTS:
-                    yield {
-                        'message': f"Agent call error (name), name=`{agent_name}`",
-                        'type': "error",
-                    }
+                    yield DTOInstruction(type=EventType.ERROR, message=f"Agent call error (name), name=`{agent_name}`")
                     break
 
                 if not agent_instruction:
-                    yield {
-                        'message': f"Agent call error (empty instruction)",
-                        'type': "error",
-                    }
+                    yield DTOInstruction(type=EventType.ERROR, message=f"Agent call error (empty instruction)")
                     break
 
                 agent = Agent.fabric(agent_name, self.agent_commands)
@@ -245,12 +223,12 @@ class Copilot:
 
                 is_agent_completes_work = False
                 for agent_step in agent.run():
-                    if agent_step['type'] == 'report':
+                    if agent_step.type == 'report':
                         is_agent_completes_work = True
-                        agent_complete_report = agent_step['message']
-                        agent_step['type'] = 'markdown'
-                    elif agent_step['type'] == 'error':
-                        agent_complete_report = 'Agent cant complete a work, try another approach: add more details, rewrite instruction for agent! Agent returns error: ' + agent_step['message']
+                        agent_complete_report = agent_step.message
+                        agent_step.type = 'markdown'
+                    elif agent_step.type == 'error':
+                        agent_complete_report = 'Agent cant complete a work, try another approach: add more details, rewrite instruction for agent! Agent returns error: ' + agent_step.message
                         is_agent_completes_work = True
 
                     yield agent_step
@@ -258,10 +236,7 @@ class Copilot:
                     if is_agent_completes_work:
                         break
             else:
-                yield {
-                    'message': "Agent call error (wrong tool)",
-                    'type': "error",
-                }
+                yield DTOInstruction(type=EventType.ERROR, message="Agent call error (wrong tool)")
                 break
 
             if current_tool_call:

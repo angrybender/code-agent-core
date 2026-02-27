@@ -141,11 +141,11 @@ class SimpleChat {
                         command.join('//'),
                         null,
                          (errorCode, errorMessage) => {
-                            this.addMessage("Java error:" + errorMessage, 'error');
+                            this.addMessage({ message: "Java error:" + errorMessage }, 'error');
                         }
                     );
                 } catch (e) {
-                    this.addMessage("JS error:" + e, 'error');
+                    this.addMessage({ message: "JS error:" + e }, 'error');
                 }
 
                 return false;
@@ -185,7 +185,7 @@ class SimpleChat {
                     const data = JSON.parse(event.data);
                     this.handleServerMessage(data);
                 } catch (e) {
-                    this.addMessage("Error:" + e);
+                    this.addMessage({ message: "Error:" + e }, 'error');
                 }
             };
 
@@ -220,29 +220,29 @@ class SimpleChat {
                 this.onEndConversation();
                 break;
             case 'error':
-                this.addMessage(data.message, 'error', data.timestamp);
+                this.addMessage(data, 'error');
                 this.IS_LAST_MESSAGE_SUCCESS = false;
                 break;
             case 'warning':
-                this.addMessage(data.message, 'warning', data.timestamp);
+                this.addMessage(data, 'warning');
                 this.IS_LAST_MESSAGE_SUCCESS = false;
                 break;
             case 'heartbeat':
                 break;
             case 'markdown':
-                this.addMessage(data.message, 'markdown', data.timestamp);
+                this.addMessage(data, 'markdown');
                 this.IS_LAST_MESSAGE_SUCCESS = true;
                 break;
             case 'html':
-                this.addMessage(data.message, 'html', data.timestamp);
+                this.addMessage(data, 'html');
                 this.IS_LAST_MESSAGE_SUCCESS = true;
                 break;
             case 'tool':
-                this.addMessage(data.message, 'tool', data.timestamp);
+                this.addMessage(data, 'tool');
                 this.IS_LAST_MESSAGE_SUCCESS = true;
                 break;
             default:
-                this.addMessage(data.message, 'bot', data.timestamp);
+                this.addMessage(data, 'bot');
                 this.IS_LAST_MESSAGE_SUCCESS = true;
                 break;
         }
@@ -261,10 +261,10 @@ class SimpleChat {
             const result = await response.json();
 
             if (result.status !== 'success') {
-                this.addMessage(`Error: ${result.message}`, 'error');
+                this.addMessage({ message: `Error: ${result.message}` }, 'error');
             }
         } catch (error) {
-            this.addMessage('Error: Failed to send command, [' + error.message + ']', 'error');
+            this.addMessage({ message: 'Error: Failed to send command, [' + error.message + ']' }, 'error');
         }
     }
 
@@ -277,7 +277,7 @@ class SimpleChat {
         this.messagesContainer.innerHTML = '';
 
         // Add user message to chat
-        this.addMessage(message, 'user');
+        this.addMessage({ message: message }, 'user');
 
         try {
             const response = await fetch(APP_HOST + '/send_message', {
@@ -291,22 +291,23 @@ class SimpleChat {
             const result = await response.json();
 
             if (result.status !== 'success') {
-                this.addMessage(`Error: ${result.message}`, 'error');
+                this.addMessage({ message: `Error: ${result.message}` }, 'error');
             }
             else {
                 this.onStartConversation();
             }
         } catch (error) {
-            this.addMessage('Error: Failed to send message, [' + error.message + ']', 'error');
+            this.addMessage({ message: 'Error: Failed to send message, [' + error.message + ']' }, 'error');
         }
     }
 
-    addMessage(message, type, timestamp) {
+    addMessage(message, type) {
         let messageDivClassName = `message ${type}-message`;
+        if (message.is_success === false) messageDivClassName += ' error';
 
         if (type === 'user') {
             type = 'html';
-            message = `<pre>${escapeHtml(message)}</pre>`;
+            message = { ...message, message: `<pre>${escapeHtml(message.message)}</pre>` };
             messageDivClassName = "message html-message user-message";
         }
         else if (type === 'tool') {
@@ -318,21 +319,21 @@ class SimpleChat {
 
         const messageContent = document.createElement('div');
         if (type === 'markdown') {
-            messageContent.innerHTML = marked.parse(message);
-            this.setupMarkdownCopyButton(messageDiv, message);
+            messageContent.innerHTML = marked.parse(message.message);
+            this.setupMarkdownCopyButton(messageDiv, message.message);
         }
         else if (type === 'html') {
-            messageContent.innerHTML = message;
+            messageContent.innerHTML = message.message;
         }
         else {
-            messageContent.textContent = message;
+            messageContent.textContent = message.message;
         }
         messageDiv.appendChild(messageContent);
 
-        if (timestamp) {
+        if (message.timestamp) {
             const timestampDiv = document.createElement('div');
             timestampDiv.className = 'timestamp';
-            timestampDiv.textContent = new Date(timestamp * 1000).toLocaleTimeString();
+            timestampDiv.textContent = new Date(message.timestamp * 1000).toLocaleTimeString();
             messageDiv.appendChild(timestampDiv);
         }
 
@@ -377,11 +378,11 @@ class SimpleChat {
                 'jide_status//' + message + '//' + className,
                 null,
                 (errorCode, errorMessage) => {
-                    this.addMessage("Java error:" + errorMessage, 'error');
+                    this.addMessage({ message: "Java error:" + errorMessage }, 'error');
                 }
             );
         } catch (e) {
-            this.addMessage("[updateStatus] JS error:" + e, 'error');
+            this.addMessage({ message: "[updateStatus] JS error:" + e }, 'error');
         }
     }
 }

@@ -18,6 +18,8 @@ from prompts.analytic_tools import tools as analytic_tools
 from prompts.coder_tools import tools as coder_tools
 from prompts.reviewer_tools import tools as reviewer_tools
 from search_code import SearchCode
+from dto.dto_instruction import DTOInstruction
+from dto.enums import EventType
 
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=int(os.getenv('MAX_ITERATION'))
@@ -76,11 +78,7 @@ class BaseAgent:
         specific_model = os.environ.get(f'MODEL:{self.role}', None)
         self.search_service.reset()
 
-        yield {
-            'message': f"start {self.role}...",
-            'result': {},
-            'type': "info",
-        }
+        yield DTOInstruction(type=EventType.INFO, message=f"start {self.role}...")
 
         sub_prompt = self.step_prompt.format(
             project_description=self.project_description,
@@ -105,19 +103,14 @@ class BaseAgent:
             agent_step += 1
             if agent_step > MAX_ITERATION:
                 logger.warning("MAX_STEP exceed!")
-                yield {
-                    'message': "MAX_STEP exceed!",
-                    'result': {},
-                    'type': "error",
-                    'exit': True,
-                }
+                yield DTOInstruction(type=EventType.ERROR, message="MAX_STEP exceed!", exit=True)
                 break
 
             conversation = self.conversation_filter(conversation)
 
             is_empty_workaround = False
             while True:
-                yield {'type': 'nope'}
+                yield DTOInstruction(type=EventType.NOPE)
                 output = llm_query(conversation, tools=self.get_tools(), model_name=specific_model)
                 if output:
                     break
@@ -130,13 +123,7 @@ class BaseAgent:
                         _report = "I've completed task"
                         logger.info("Empty response [agents]")
 
-                    yield {
-                        'message': _report,
-                        'result': {},
-                        'type': "report",
-                        'exit': True,
-                        'hidden': True,
-                    }
+                    yield DTOInstruction(type=EventType.REPORT, message=_report, exit=True, hidden=True)
                     return
 
                 logger.info("Empty response. Force to using tool")
@@ -170,12 +157,7 @@ class BaseAgent:
                 logger.warning("Empty response")
                 continue
             elif not current_tool_call and output['_output']:
-                yield {
-                    'message': output['_output'],
-                    'result': {},
-                    'type': "markdown",
-                    'exit': True,
-                }
+                yield DTOInstruction(type=EventType.MARKDOWN, message=output['_output'], exit=True)
 
                 conversation.append({
                     'role': 'assistant',
@@ -192,29 +174,21 @@ class BaseAgent:
             })
 
             if tool_call_description['function'] == 'report':
-                yield {
-                    'message': tool_call_description['args'][0],
-                    'result': {},
-                    'type': "report",
-                    'exit': True,
-                }
+                yield DTOInstruction(type=EventType.REPORT, message=tool_call_description['args'][0], exit=True)
                 break
             else:
-                yield {'type': 'nope'}
+                yield DTOInstruction(type=EventType.NOPE)
 
                 is_pre_output = tool_call_description['function'] in ['shell_command', 'search_file']
                 is_output_resul_of_tool_separate_msg = tool_call_description['function'] in ['shell_command', 'search_file']
 
                 if is_pre_output:
                     _args = tool_call_description['args'][0] if tool_call_description['args'] else ''
-                    yield {
-                        'function': tool_call_description['function'],
-                        'args': tool_call_description['args'],
-                        'result': {},
-                        'type': "tool",
-                        'exit': False,
-                        'is_success': True,
-                    }
+                    yield DTOInstruction(
+                        type=EventType.TOOL,
+                        function=tool_call_description['function'],
+                        args=tool_call_description['args'],
+                    )
 
                 result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
                 is_success = not result.get('error', False)
@@ -229,23 +203,17 @@ class BaseAgent:
                     tool_call_description['args'] = ['']
 
                 if not is_pre_output:
-                    yield {
-                        'function': tool_call_description['function'],
-                        'args': tool_call_description['args'],
-                        'result': result,
-                        'type': "tool",
-                        'exit': False,
-                        'is_success': is_success,
-                    }
+                    yield DTOInstruction(
+                        type=EventType.TOOL,
+                        function=tool_call_description['function'],
+                        args=tool_call_description['args'],
+                        result=result,
+                        is_success=is_success,
+                    )
 
                 if is_output_resul_of_tool_separate_msg:
                     _result = result.get('post_result', result['result'])
-                    yield {
-                        'message': f"```\n{_result}\n```",
-                        'result': {},
-                        'type': "markdown",
-                        'exit': False,
-                    }
+                    yield DTOInstruction(type=EventType.MARKDOWN, message=f"```\n{_result}\n```")
 
                 result_msg = {
                     'role': 'tool',
