@@ -15,8 +15,7 @@ class ToolsInterpreter:
     def __init__(self, mcp_host, project_root, search_service: SearchCode = None, commands: list = None):
         self.mcp_host = mcp_host
         self.project_root = project_root
-        if search_service:
-            self.search_service = search_service
+        self.search_service = search_service
         self._commands_map = {c['command']: c for c in (commands or [])}
 
     def _correction_write_arg(self, value) -> str:
@@ -189,6 +188,8 @@ class ToolsInterpreter:
         return result
 
     def _search_file(self, needle, extension=None):
+        if self.search_service is None:
+            return {'error': 'Search service is not available'}
         total_count, results = self.search_service.search(self.project_root, needle, str(extension))
         if not results:
             return {"result": "ERROR: empty search result", "tool_name": "search_file"}

@@ -14,13 +14,16 @@ def parse_agent_commands(directory: str) -> list[dict]:
             content = f.read()
         blocks = re.findall(r'```[^\n`]*\n(.*?)```|```([^`\n]+)```', content, re.DOTALL)
         cmd_parts = [g1 or g2 for g1, g2 in blocks]
+        command = os.path.splitext(os.path.basename(filepath))[0]
+
         if not cmd_parts:
             continue
+
         cmd = cmd_parts[-1].strip()
         if not cmd:
             continue
+
         description = re.sub(r'```.*?```', '', content, flags=re.DOTALL).strip()
-        command = os.path.splitext(os.path.basename(filepath))[0]
 
         placeholder_digits = sorted(set(re.findall(r'\$(\d+)', cmd)), key=lambda x: int(x))
         if placeholder_digits:

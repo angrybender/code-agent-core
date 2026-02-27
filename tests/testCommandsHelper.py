@@ -3,7 +3,7 @@ import os
 import shutil
 import tempfile
 
-from commands_helper import parse_agent_commands
+from commands_helper import parse_agent_commands, execute_terminal_command
 from tools_interpreter import ToolsInterpreter
 
 
@@ -173,6 +173,20 @@ class TestShellCommandUnknown(unittest.TestCase):
         self.assertIn("Unknown command 'deploy'", result['result'])
         self.assertIn('build', result['result'])
         self.assertIn('lint', result['result'])
+
+
+class TestExecuteTerminalCommand(unittest.TestCase):
+
+    def test_wrong_command_returns_error_status(self):
+        result = execute_terminal_command("this_command_does_not_exist_xyz_123", timeout=5)
+        self.assertEqual(result['status'], 'error')
+        self.assertIn('stdout', result)
+        self.assertIn('stderr', result)
+        self.assertIn('status', result)
+
+    def test_wrong_command_does_not_raise(self):
+        result = execute_terminal_command("this_command_does_not_exist_xyz_123", timeout=5)
+        self.assertIsInstance(result, dict)
 
 
 if __name__ == '__main__':
