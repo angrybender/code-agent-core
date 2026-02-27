@@ -130,6 +130,12 @@ class TestParseAgentCommands(unittest.TestCase):
         result = parse_agent_commands(self.test_dir)
         self.assertEqual([], result)
 
+    def test_non_sequential_args_raises_exception(self):
+        """Command with $1 and $3 but missing $2 must raise ValueError."""
+        self._write('cmd.md', "Some description\n\n```\nfoo $1 $3\n```\n")
+        with self.assertRaises(ValueError):
+            parse_agent_commands(self.test_dir)
+
     def test_md_skip_no_block_mixed_with_valid(self):
         """Branch: .md without code block is skipped; .md with block is included"""
         self._write('no_block.md', "Plain text, no fenced code.")

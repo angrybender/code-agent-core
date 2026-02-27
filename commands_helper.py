@@ -23,6 +23,13 @@ def parse_agent_commands(directory: str) -> list[dict]:
         command = os.path.splitext(os.path.basename(filepath))[0]
 
         placeholder_digits = sorted(set(re.findall(r'\$(\d+)', cmd)), key=lambda x: int(x))
+        if placeholder_digits:
+            expected = [str(i) for i in range(1, len(placeholder_digits) + 1)]
+            if placeholder_digits != expected:
+                raise ValueError(
+                    f"Command argument placeholders must be a contiguous sequence starting at $1, "
+                    f"but got: {', '.join('$' + d for d in placeholder_digits)}"
+                )
         args = []
         for digit in placeholder_digits:
             arg_desc = ''
