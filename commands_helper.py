@@ -21,7 +21,19 @@ def parse_agent_commands(directory: str) -> list[dict]:
             continue
         description = re.sub(r'```.*?```', '', content, flags=re.DOTALL).strip()
         command = os.path.splitext(os.path.basename(filepath))[0]
-        results.append({'command': command, 'description': description, 'cmd': cmd})
+
+        placeholder_digits = sorted(set(re.findall(r'\$(\d+)', cmd)), key=lambda x: int(x))
+        args = []
+        for digit in placeholder_digits:
+            arg_desc = ''
+            for line in description.splitlines():
+                m = re.match(r'^\$' + digit + r'\s*[-–]\s*(.+)', line.strip())
+                if m:
+                    arg_desc = m.group(1).strip()
+                    break
+            args.append({'placeholder': f'${digit}', 'description': arg_desc})
+
+        results.append({'command': command, 'description': description, 'cmd': cmd, 'args': args})
     return results
 
 def execute_terminal_command(cmd: str, timeout: int, cwd: str = None) -> dict:

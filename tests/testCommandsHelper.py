@@ -99,7 +99,7 @@ class TestParseAgentCommands(unittest.TestCase):
         self._write('check.md', "Some desc.\n\n```\nsome cmd\n```")
         result = parse_agent_commands(self.test_dir)
         self.assertEqual(1, len(result))
-        self.assertEqual({'command', 'description', 'cmd'}, set(result[0].keys()))
+        self.assertEqual({'command', 'description', 'cmd', 'args'}, set(result[0].keys()))
 
     def test_description_is_empty_string_when_only_code_block(self):
         """Edge case: file contains only a fenced code block, description becomes empty"""

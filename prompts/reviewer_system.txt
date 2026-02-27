@@ -25,6 +25,8 @@ Main capabilities: review code, find error, review code accordance to task
 # Available Shell Commands
 Use the `shell_command` tool with one of these command names. Do NOT pass raw shell strings - use only the names listed below:
 {% for cmd in params.agent_commands %}
-- **{{ cmd.command }}** — {{ cmd.description }}
+- **{{ cmd.command }}** — {{ cmd.description }}{% if cmd.args %}
+  Arguments: {% for arg in cmd.args %}`{{ arg.placeholder }}` — {{ arg.description if arg.description else '(no description)' }}; {% endfor %}{% endif %}
+
 {% endfor %}
 {% endif %}

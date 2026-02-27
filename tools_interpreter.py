@@ -17,7 +17,7 @@ class ToolsInterpreter:
         self.project_root = project_root
         if search_service:
             self.search_service = search_service
-        self._commands_map = {c['command']: c['cmd'] for c in (commands or [])}
+        self._commands_map = {c['command']: c for c in (commands or [])}
 
     def _correction_write_arg(self, value) -> str:
         """
@@ -201,18 +201,19 @@ class ToolsInterpreter:
 
         return {"result": "\n\n".join(formatted_result), "tool_name": "search_file", "post_result": f"Found: {total_count} file(s)"}
 
-    def _command_shell(self, command_name: str) -> dict:
+    def _command_shell(self, command_name: str, args: list = None) -> dict:
         if not command_name or not isinstance(command_name, str):
             return {'result': 'ERROR: command_name must be a non-empty string', 'error': True, 'tool_name': 'shell_command'}
 
-        cmd = self._commands_map.get(command_name)
-        if cmd is None:
+        command_def = self._commands_map.get(command_name)
+        if not command_def:
             available = ', '.join(self._commands_map.keys()) or 'none'
-            return {
-                'result': f"ERROR: Unknown command '{command_name}'. Available: {available}",
-                'error': True,
-                'tool_name': 'shell_command',
-            }
+            return {'result': f"ERROR: Unknown command '{command_name}'. Available: {available}", 'error': True, 'tool_name': 'shell_command'}
+        cmd = command_def['cmd']
+
+        if args:
+            for i, value in enumerate(args, start=1):
+                cmd = cmd.replace(f'${i}', str(value))
 
         raw = execute_terminal_command(cmd=cmd, timeout=SHELL_COMMAND_TIMEOUT, cwd=self.project_root)
 

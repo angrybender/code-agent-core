@@ -157,7 +157,8 @@ TOOL_SHELL_COMMAND = {
             "Execute a predefined named shell command in the project root directory. "
             "Use for build, test, lint, or install commands. "
             "Pass the command NAME (e.g. 'run-tests', 'build'), not a raw shell string. "
-            "Available command names are listed in the system prompt."
+            "Some commands accept positional arguments ($1, $2, ...) — pass them via the 'args' list. "
+            "Available command names and their arguments are listed in the system prompt."
         ),
         "parameters": {
             "type": "object",
@@ -166,6 +167,11 @@ TOOL_SHELL_COMMAND = {
                 "command_name": {
                     "type": "string",
                     "description": "Name of the predefined command to execute (e.g. 'run-tests'). Must match one of the available shell command names listed in the system prompt."
+                },
+                "args": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional positional arguments for the command. $1 is args[0], $2 is args[1], etc. Only provide if the command definition includes $N placeholders."
                 }
             }
         }

@@ -4,10 +4,7 @@ from dto.dto_instruction import DTOInstruction
 
 
 _FUNCTION_NAME_TITLES = {
-    'read_file': 'read  ',
-    'search_file': 'search',
     'list_in_directory': 'list  ',
-    'shell_command': 'shell ',
     'write_file': 'write ',
     'replace_code_in_file': 'patch ',
 }
@@ -47,6 +44,13 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
         ext = message.args[1] if len(message.args) == 2 else ''
         ext = f"*.{ext}" if ext else '*.*'
         result_message = f'<cite>search</cite> <dfn>{ext}</dfn> <dfn>{needle}</dfn>'
+
+    elif function_name == 'shell_command':
+        command_name = [f"<dfn>{message.args[0]}</dfn>"]
+
+        if len(message.args) > 1:
+            command_name += [f"<dfn>{_}</dfn>" for _ in message.args[1]]
+        result_message = f'<cite>shell </cite> {" ".join(command_name)}'
 
     elif function_name in ['write_file', 'replace_code_in_file']:
         file_link = _file_processing_tpl(message.result)
