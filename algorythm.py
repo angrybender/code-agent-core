@@ -10,7 +10,7 @@ from llm import llm_query
 from path_helper import get_relative_path
 from tools_interpreter import ToolsInterpreter
 from agents import Agent
-from prompts.supervisor_tools import tools as supervisor_tools
+from tools.tools import SUPERVISOR_TOOLS
 
 from commands_helper import parse_agent_commands
 from dotenv import load_dotenv
@@ -143,7 +143,7 @@ class Copilot:
             is_empty_workaround = False
             while True:
                 yield DTOInstruction(type=EventType.NOPE)
-                output = llm_query(conversation_log, tools=supervisor_tools, model_name=specific_model)
+                output = llm_query(conversation_log, tools=SUPERVISOR_TOOLS, model_name=specific_model)
                 if output:
                     break
 

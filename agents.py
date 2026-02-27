@@ -14,9 +14,7 @@ load_dotenv()
 
 from llm import llm_query
 from tools_interpreter import ToolsInterpreter
-from prompts.analytic_tools import tools as analytic_tools
-from prompts.coder_tools import tools as coder_tools
-from prompts.reviewer_tools import tools as reviewer_tools
+from tools.tools import ANALYTIC_TOOLS, CODER_TOOLS, REVIEWER_TOOLS
 from search_code import SearchCode
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
@@ -263,16 +261,16 @@ def _merge_assistant_messages(conversation: list[dict]) -> list[dict]:
 class AnalyticAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
         if self.role == 'ANALYTIC':
-            return analytic_tools
+            return ANALYTIC_TOOLS
         else:
-            return reviewer_tools
+            return REVIEWER_TOOLS
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
         return _merge_assistant_messages(conversation)
 
 class CoderAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
-        return coder_tools
+        return CODER_TOOLS
 
     def _create_log(self, conversation: list[dict]):
         tools_list = [_ for _ in conversation if 'tool_calls' in _]
