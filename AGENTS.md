@@ -339,17 +339,7 @@ project_root/
 
 ## Testing
 
-Unit tests are located in `tests/`:
-- `testCommandsHelper.py` — shell command parsing
-- `testDiffHelper.py` — code patching
-- `testLLMParser.py` — XML tag extraction
-- `testMCPHelperPure.py` — file operations in pure mode
-- `testToolsInterpreter.py` — tool execution
-
-Run all tests:
-```bash
-bash run_tests.sh
-```
+Unit tests are located in `tests/`
 
 ## Restrictions:
 - Don't list directory `./storage` and read files into
