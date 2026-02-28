@@ -211,7 +211,7 @@ class BaseAgent:
 
                 if is_output_resul_of_tool_separate_msg:
                     _result = result.get('post_result', result['result'])
-                    yield DTOInstruction(type=EventType.MARKDOWN, message=f"```\n{_result}\n```")
+                    yield DTOInstruction(type=EventType.MARKDOWN, message=_result)
 
                 result_msg = {
                     'role': 'tool',

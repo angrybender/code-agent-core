@@ -222,7 +222,10 @@ class ToolsInterpreter:
         raw = execute_terminal_command(cmd=cmd, timeout=SHELL_COMMAND_TIMEOUT, cwd=self.project_root)
 
         if raw['status'] == 'ok':
-            return {'result': raw['stdout'], 'tool_name': 'shell_command'}
+            output = raw['stdout'] if raw['stdout'] else 'ok'
+            output = f"`$ {cmd}`\n\n```{output}```"
+
+            return {'result': output, 'tool_name': 'shell_command', 'cmd': cmd, 'status': 'status'}
         elif raw['status'] == 'timeout':
             return {
                 'result': f"ERROR: Command timed out after {SHELL_COMMAND_TIMEOUT}s. Partial output: {raw['stdout']}",
