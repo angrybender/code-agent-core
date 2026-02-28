@@ -276,29 +276,13 @@ project_root/
 ├── path_helper.py               # Path normalization utilities
 ├── search_code.py               # In-project code search engine (SearchCode)
 ├── tools_interpreter.py         # Agent tool executor (ToolsInterpreter)
+├── log_helper.py                # Formatting all objects for pretty-print
 ├── dto/
 │   ├── dto_instruction.py       # DTOInstruction dataclass (universal message object)
 │   └── enums.py                 # AgentRole and EventType enumerations
-├── prompts/
-│   ├── analytic_system.txt      # ANALYTIC system prompt
-│   ├── coder_system.txt         # CODER system prompt (Jinja2 template)
-│   ├── reviewer_system.txt      # REVIEWER system prompt (Jinja2 template)
-│   ├── step.txt                 # Shared context block (project info + file tree)
-│   └── supervisor_system.txt    # SUPERVISOR system prompt
-├── templates/
-│   ├── app.html                 # Web UI (SSE client, markdown rendering)
-│   ├── error.html               # Version mismatch error page
-│   └── assets/
-│       ├── app.js               # Frontend JS logic
-│       ├── markdown.js          # Markdown renderer
-│       └── main.css             # UI styles
-├── tests/
-│   ├── __init__.py
-│   ├── testCommandsHelper.py    # Tests for parse_agent_commands
-│   ├── testDiffHelper.py        # Tests for apply_patch
-│   ├── testLLMParser.py         # Tests for parse_tags
-│   ├── testMCPHelperPure.py     # Tests for mcp_helper in pure mode
-│   └── testToolsInterpreter.py  # Tests for ToolsInterpreter
+├── prompts/                     # Propmts for agent and sub-agents
+├── templates/                   # Web UI (SSE client, markdown rendering)
+├── tests/                       # Tests of the project
 ├── conversations_log/           # Session and LLM debug logs (not in git)
 ├── storage/                     # Temp file cache (not in git)
 ├── AGENTS.md                    # This file — project reference for AI agents
@@ -306,24 +290,11 @@ project_root/
 └── requirements.txt             # Python dependencies
 ```
 
-## Agent Tool Reference
-
-| Tool | ANALYTIC | CODER | REVIEWER |
-|------|----------|-------|----------|
-| `read_file` | ✅ (+ offset/limit) | ✅ (+ offset/limit) | ✅ |
-| `list_in_directory` | ✅ | ✅ | ❌ |
-| `search_file` | ✅ | ❌ | ✅ |
-| `write_file` | ❌ | ✅ | ❌ |
-| `replace_code_in_file` | ❌ | ✅ | ❌ |
-| `shell_command` | ❌ | ✅ | ✅ |
-| `report` | ✅ | ✅ | ✅ |
-
 ## Logging and Observability
 
 - **Session logs**: `conversations_log/log.log` — user-facing messages
 - **Debug logs**: `conversations_log/full_log.log` — full LLM request/response log (when `DEBUG=1`)
 - **Real-time streaming**: SSE message stream to browser via `GET /events`
-- **Timestamp-based IDs**: Conversation tracking per session
 
 ## Common Development Tasks
 
