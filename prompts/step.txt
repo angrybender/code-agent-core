@@ -1,4 +1,4 @@
-# Current worked project description:
+# Current project description:
 {project_description}
 
 ## Project files and folders:

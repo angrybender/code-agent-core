@@ -2,7 +2,7 @@ TOOL_READ_FILE = {
     "type": "function",
     "function": {
         "name": "read_file",
-        "description": "Read file by path and return it content",
+        "description": "Read file by path and return its content",
         "parameters": {
             "type": "object",
             "required": ["path"],
@@ -28,7 +28,7 @@ TOOL_READ_FILE_SIMPLE = {
     "type": "function",
     "function": {
         "name": "read_file",
-        "description": "Read file by path and return it content",
+        "description": "Read file by path and return its content",
         "parameters": {
             "type": "object",
             "required": ["path"],
@@ -46,14 +46,14 @@ TOOL_LIST_IN_DIRECTORY = {
     "type": "function",
     "function": {
         "name": "list_in_directory",
-        "description": "List files and directories from path.\nResult contains list of files and directories (only first level), for directory name end of symbol `/`",
+        "description": "List files and directories from a path.\nResult contains a list of files and directories (only first level); directory names end with the symbol `/`",
         "parameters": {
             "type": "object",
             "required": ["path"],
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": 'path, for root of project use `.`'
+                    "description": 'path, for the root of the project use `.`'
                 }
             }
         }
@@ -65,10 +65,10 @@ TOOL_SEARCH_FILE = {
     "function": {
         "name": "search_file",
         "description": (
-            "Looking for `needle` over all project's files. Using `ast-grep` python lib for understanding language structure and simple string search for text and config files."
-            "Support languages: PHP, JS, Java, Scala, C#, Go, Ruby, HTML, CSS, YML, bash."
-            "Return file path and lines with contain most relevant needle."
-            "Return first 10 results."
+            "Searches for `needle` across all project files. Uses the `ast-grep` Python library for understanding language structure and simple string search for text and config files. "
+            "Supports languages: PHP, JS, Java, Scala, C#, Go, Ruby, HTML, CSS, YML, bash. "
+            "Returns the file path and lines that contain the most relevant needle. "
+            "Returns the first 10 results."
         ),
         "parameters": {
             "type": "object",
@@ -76,11 +76,11 @@ TOOL_SEARCH_FILE = {
             "properties": {
                 "needle": {
                     "type": "string",
-                    "description": 'string for searching'
+                    "description": 'The string to search for'
                 },
                 "extension": {
                     "type": "string",
-                    "description": "extension for filtering files looking for, example: 'py' (will filter only files like '*.py'), empty string for no filtration"
+                    "description": "File extension for filtering files to search, example: 'py' (will filter only files like '*.py'), empty string for no filtering"
                 }
             }
         }
@@ -91,7 +91,7 @@ TOOL_WRITE_FILE = {
     "type": "function",
     "function": {
         "name": "write_file",
-        "description": "Write full data to file.\nUse this command ONLY if:\n1. You edit a file less than 100 lines\n2. You create new file.",
+        "description": "Write full data to a file.\nUse this command ONLY if:\n1. You are editing a file with fewer than 100 lines.\n2. You are creating a new file.",
         "parameters": {
             "type": "object",
             "required": ["path", "content"],
@@ -103,7 +103,7 @@ TOOL_WRITE_FILE = {
                 "content": {
                     "type": "string",
                     "description":
-"""data for write to the file, YOU MUST WRAP output ```, dont escape quotes (\") and brackets (< >)
+"""Data to write to the file. YOU MUST WRAP the output in ```, don't escape quotes (\") and brackets (< >)
 example:
 ```json
 {
@@ -131,18 +131,18 @@ TOOL_REPLACE_CODE_IN_FILE = {
                 "str_find": {
                     "type": "string",
                     "description":
-"""fragment code for replacing, for determinate search - catch 1-2 lines before and after the fragment
-- must be small as possible and unique
-- save all tab, spaces, comment, block comments etc
-- follow format considering for program language that you prints"""
+"""Code fragment to replace. For a deterministic search, include 1–2 lines before and after the fragment.
+- Must be as small as possible and unique.
+- Preserve all tabs, spaces, comments, block comments, etc.
+- Follow the format conventions of the programming language you are working with."""
                 },
                 "str_replace": {
                     "type": "string",
                     "description":
-"""fragment code to replace
-- save all tab, spaces, comment, block comments etc
-- follow format considering for program language that you prints
-- can not be empty"""
+"""Replacement code fragment.
+- Preserve all tabs, spaces, comments, block comments, etc.
+- Follow the format conventions of the programming language you are working with.
+- Cannot be empty."""
                 }
             }
         }
@@ -182,14 +182,14 @@ TOOL_REPORT = {
     "type": "function",
     "function": {
         "name": "report",
-        "description": "Print short report of you work.\nUse this command when you completely executed instructions and you have decided finish a work.",
+        "description": "Print a short report of your work.\nUse this command when you have completely executed the instructions and have decided to finish the work.",
         "parameters": {
             "type": "object",
             "required": ["text"],
             "properties": {
                 "text": {
                     "type": "string",
-                    "description": "Text is a report in the markdown format. Dont write full content of files - short description is enough!"
+                    "description": "Text is a report in the Markdown format. Don't write the full content of the files — a short description is enough!"
                 }
             }
         }
@@ -200,18 +200,18 @@ TOOL_CALL_AGENT = {
     "type": "function",
     "function": {
         "name": "call_agent",
-        "description": "Calling agent for execute sub-task",
+        "description": "Call an agent to execute a sub-task",
         "parameters": {
             "type": "object",
             "required": ["agent_name", "instruction"],
             "properties": {
                 "agent_name": {
                     "type": "string",
-                    "description": "agent_name is a agent name, possible values: ANALYTIC, CODER, REVIEWER"
+                    "description": "agent_name is an agent name; possible values: ANALYTIC, CODER, REVIEWER"
                 },
                 "instruction": {
                     "type": "string",
-                    "description": "instruction is a prompt for suitable agent, you must put into instruction all data for target agent"
+                    "description": "instruction is a prompt for the selected agent; you must put all data needed by the target agent into the instruction"
                 }
             }
         }
@@ -229,7 +229,7 @@ TOOL_MESSAGE = {
             "properties": {
                 "text": {
                     "type": "string",
-                    "description": "text is a message for user in the markdowm format"
+                    "description": "text is a message for the user in the Markdown format"
                 }
             }
         }
@@ -240,7 +240,7 @@ TOOL_EXIT = {
     "type": "function",
     "function": {
         "name": "exit",
-        "description": "Stop conversation, only if you full complete a work and achieve the goal",
+        "description": "Stop the conversation, only if you have fully completed the work and achieved the goal",
         "parameters": {
             "type": "object",
             "properties": {}
