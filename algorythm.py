@@ -5,6 +5,7 @@ import datetime
 
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
+from log_helper import pretty_print_as_json
 from mcp_helper import tool_call
 from llm import llm_query
 from path_helper import get_relative_path
@@ -161,8 +162,6 @@ class Copilot:
                         'content': 'Dont answer with empty message. If you have finished the work - call `exit` tool!'
                     })
 
-            self.log("============= LLM OUTPUT =============", True)
-
             tool_call_description = None
             current_tool_call = None
             for tool_call in output['_tool_calls']:
@@ -257,12 +256,12 @@ class Copilot:
             agent_step_counter += 1
 
     def log(self, data, to_file=False):
-        if type(data) is list or type(data) is dict:
-            data = json.dumps(data, ensure_ascii=False, indent=4)
+        output = pretty_print_as_json(data)
+        output = f"[ SUPERVISOR ] {output}"
 
         if not to_file:
-            logger.info(data)
+            logger.info(output)
             return
 
         with open(self.LOG_FILE, "a", encoding='utf8') as f:
-            f.write(data + "\n\n")
+            f.write(output + "\n\n")

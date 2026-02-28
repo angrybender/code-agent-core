@@ -7,6 +7,9 @@ import glob
 from jinja2 import Environment, BaseLoader
 
 import logging
+
+from log_helper import pretty_print_as_json
+
 logger = logging.getLogger('APP')
 
 from dotenv import load_dotenv
@@ -133,7 +136,6 @@ class BaseAgent:
                         'content': 'Dont answer with empty message. If you have finished the work - call `report` tool!'
                     })
 
-            self.log("============= LLM OUTPUT =============", True)
             self.log('LLM OUTPUT:\n' + output.get('output', ''), True)
 
             tool_call_description = None
@@ -225,17 +227,15 @@ class BaseAgent:
                 conversation.append(result_msg)
 
     def log(self, data, to_file=False):
-        if type(data) is list or type(data) is dict:
-            data = json.dumps(data, ensure_ascii=False, indent=4)
-
-        data = f"[ {self.role} ] {data}"
+        output = pretty_print_as_json(data)
+        output = f"[ {self.role} ] {output}"
 
         if not to_file:
-            logger.info(data)
+            logger.info(output)
             return
 
         with open(self.log_file, "a", encoding='utf8') as f:
-            f.write(data + "\n\n")
+            f.write(output + "\n\n")
 
     def cache_file(self, file_name: str, source_file_content: str) -> str:
         source_file_content_path = os.path.join(self.storage_path, hashlib.sha256(file_name.encode()).hexdigest() + '.txt')
