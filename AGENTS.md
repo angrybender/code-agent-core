@@ -350,3 +350,7 @@ Run all tests:
 ```bash
 bash run_tests.sh
 ```
+
+## Restrictions:
+- Don't list directory `./storage` and read files into
+- Don't list directory `./conversations_log` and read files into
