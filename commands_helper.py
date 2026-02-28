@@ -14,14 +14,36 @@ def parse_agent_commands(directory: str) -> list[dict]:
             content = f.read()
         blocks = re.findall(r'```[^\n`]*\n(.*?)```|```([^`\n]+)```', content, re.DOTALL)
         cmd_parts = [g1 or g2 for g1, g2 in blocks]
+        command = os.path.splitext(os.path.basename(filepath))[0]
+
         if not cmd_parts:
             continue
+
         cmd = cmd_parts[-1].strip()
         if not cmd:
             continue
+
         description = re.sub(r'```.*?```', '', content, flags=re.DOTALL).strip()
-        command = os.path.splitext(os.path.basename(filepath))[0]
-        results.append({'command': command, 'description': description, 'cmd': cmd})
+
+        placeholder_digits = sorted(set(re.findall(r'\$(\d+)', cmd)), key=lambda x: int(x))
+        if placeholder_digits:
+            expected = [str(i) for i in range(1, len(placeholder_digits) + 1)]
+            if placeholder_digits != expected:
+                raise ValueError(
+                    f"Command argument placeholders must be a contiguous sequence starting at $1, "
+                    f"but got: {', '.join('$' + d for d in placeholder_digits)}"
+                )
+        args = []
+        for digit in placeholder_digits:
+            arg_desc = ''
+            for line in description.splitlines():
+                m = re.match(r'^\$' + digit + r'\s*[-–]\s*(.+)', line.strip())
+                if m:
+                    arg_desc = m.group(1).strip()
+                    break
+            args.append({'placeholder': f'${digit}', 'description': arg_desc})
+
+        results.append({'command': command, 'description': description, 'cmd': cmd, 'args': args})
     return results
 
 def execute_terminal_command(cmd: str, timeout: int, cwd: str = None) -> dict:
