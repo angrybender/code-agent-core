@@ -43,33 +43,21 @@ CODER → REVIEWER
    - Makes decisions based on agent reports
    - Manages conversation logs and state
    - Iterative execution loop with safety limits (`MAX_ITERATION`)
-   - Reads `AGENTS.md` for project manifest
-   - Loads predefined shell commands from `.agent-commands/` directory
 
 2. **ANALYTIC Agent** (implemented in `agents.py`)
-   - Role: `SystemAnalyst`
    - Analyzes project structure and files (read-only access)
    - Searches codebases for relevant code fragments
    - Creates detailed implementation requirements and plans
-   - Tools: `read_file`, `list_in_directory`, `search_file`, `report`
 
 3. **CODER Agent** (implemented in `agents.py`)
-   - Role: `DevPilot`
    - Implements code changes based on plans from ANALYTIC
    - Creates new files and modifies existing code
    - Can execute predefined shell commands (whitelist-based)
-   - Filters duplicate file reads/writes to optimize performance
-   - Tools: `read_file`, `list_in_directory`, `write_file`, `replace_code_in_file`, `shell_command`, `report`
 
-4. **REVIEWER Agent** (implemented in `agents.py`, same class as ANALYTIC)
-   - Role: `DevPilot` (reviewer mode)
+4. **REVIEWER Agent** (implemented in `agents.py`)
    - Verifies correctness of implemented changes
    - Can search files and execute predefined shell commands (e.g., run tests)
    - Returns a report with issues found or approval
-   - Tools: `read_file`, `search_file`, `shell_command`, `report`
-
-Agent instantiation is handled by the `Agent.fabric(role)` factory method.
-`Agent.setUp()` clears the `./storage` temp folder before each run.
 
 ## Core Components
 
@@ -78,7 +66,6 @@ Agent instantiation is handled by the `Agent.fabric(role)` factory method.
 **`llm_api_server.py`** — Flask-based HTTP server
 - Serves web UI for task submission
 - Implements Server-Sent Events (SSE) for real-time streaming
-- Session ID is computed as `sha256(project_base_path)`
 - Endpoints:
   - `GET /` — Web UI (`?project=<path>&versionTag=<int>`)
   - `POST /send_message` — Task submission via web interface
@@ -108,17 +95,19 @@ Synchronous, blocking endpoint — no session management or SSE required.
 **Response (JSON):**
 ```json
 {
-  "status": "success" | "error",
-  "results": [{"role": "assistant", "content": "..."}, ...],
-  "timeout": true | false,
-  "elapsed_time": 45.23
+  "status": "success",
+  "results": [
+    {"id": "uuid", "type": "info", "message": "...", "result": {}, "exit": false, "hidden": false, "function": null, "args": [], "is_success": true}
+  ],
+  "timeout": false,
+  "elapsed_time": 12.5
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `status` | string | `success` or `error` |
-| `results` | array | List of message objects from agent execution |
+| `results` | array | List of serialized DTOInstruction objects from agent execution |
 | `timeout` | boolean | Whether execution was terminated due to timeout |
 | `elapsed_time` | number | Actual execution time in seconds |
 
@@ -129,98 +118,13 @@ Stops a running agent session:
 {"session_id": "<sha256_of_project_path>", "command": "stop"}
 ```
 
-### Orchestration Layer
-
-**`algorythm.py`** — Core orchestration engine
-- `Copilot` class: Main SUPERVISOR implementation
-- Reads project manifest via `get_manifest()` (via MCP or pure mode)
-- Loads shell commands from `.agent-commands/` at startup
-- Manages full conversation history and state
-- Iterative loop with `MAX_ITERATION` safeguard (default: 20)
-- Tool-based LLM interaction — provides three tools to LLM:
-  - `call_agent` — delegate to a specialized agent
-  - `message` — send a message to the user
-  - `exit` — signal task completion
-
-### Agent Layer
-
-**`agents.py`** — Agent implementations
-- `BaseAgent` / `Agent`: Base class with common functionality
-- Factory: `Agent.fabric(role)` → returns configured agent instance
-- `Agent.setUp()` → clears `./storage` temp directory
-- Per-agent system prompts loaded from `prompts/` (Jinja2 templating for CODER and REVIEWER — shell commands injected at runtime)
-- **`CoderAgent`** applies `conversation_filter()` to deduplicate read/write operations across turns
-
-### Tool Execution Layer
-
-**`tools_interpreter.py`** — Agent tool execution bridge
-- `ToolsInterpreter` class executes agent tool calls
-- Validates all paths (`_validate_path`) — protection against path traversal
-- Translates tool calls to filesystem or MCP operations:
-
-| Tool | Method | Description |
-|------|--------|-------------|
-| `read_file` | `_command_read()` | Reads file content |
-| `list_in_directory` | `_command_list()` | Lists directory (shows file sizes and subfolder counts) |
-| `write_file` | `_command_write()` | Writes file (strips ``` code fences automatically) |
-| `replace_code_in_file` | `_command_write_diff()` | Diff-based code patching |
-| `search_file` | `_search_file()` | Delegates to `SearchCode` for code search |
-| `shell_command` | `_command_shell()` | Executes whitelisted predefined shell commands |
-| `report` | — | Signals task completion, returns result to SUPERVISOR |
-
 ### LLM Integration Layer
 
 **`llm.py`** — Language model integration
 - OpenAI-compatible API client (works with any OpenAI-compatible endpoint)
 - Supports function calling (tool use)
-- Retry logic with exponential backoff (5 attempts)
-- Debug logging to `conversations_log/full_log.log`
-- Configurable reasoning effort for o1/o3 models
 - Per-agent model selection via `MODEL:<ROLE>` env variables
 - Environment-based configuration
-
-**`llm_parser.py`** — Response parsing utilities
-- Extracts XML-style tags from LLM responses
-- Regex-based pattern matching
-- Handles tags with/without attributes
-
-### Helper Modules
-
-**`diff_helper.py`** — Smart code patching
-- `apply_patch()`: Finds and replaces code fragments
-- Handles exact and whitespace-normalized matching
-- `PatchError` exception for failed patches
-- Prevents multiple-match errors
-- Supports adding/removing lines
-
-**`path_helper.py`** — Path utilities
-- `get_relative_path()`: Normalizes paths to project-relative format
-- Cross-platform path handling
-
-**`mcp_helper.py`** — File operations abstraction
-- Two modes controlled by `AGENT_FILE_TOOLS` env variable:
-  - **`mcp`** (default) — SSE MCP-client via JetBrains IDE (port 63342)
-  - **`pure`** — direct Python file operations (no IDE dependency, useful for testing)
-- Note: `get_file_text_by_path` always uses `_read_file_pure` to bypass MCP size limitations on large files
-
-**`conversation.py`** — Message formatting
-- Standardized message structure with timestamps
-- Role-based messaging (user / assistant / system / tool)
-- SSE terminal signal generation
-
-**`search_code.py`** — Code search engine
-- `SearchCode` class for in-project file search
-- Supports exact match and fuzzy token-based search with scoring
-- In-memory file content cache (reset via `reset()`)
-- Detects file language by extension (30+ languages supported)
-- Returns top-10 results with truncation of long lines
-- Used by `ToolsInterpreter` for the `search_file` tool
-
-**`commands_helper.py`** — Shell command management
-- `parse_agent_commands(directory)` — parses `.md` files from `.agent-commands/`
-  - Each `.md` file = one command; filename = command name; last code block = shell command
-- `execute_terminal_command(cmd, timeout, cwd)` — executes shell command via `subprocess`
-- Timeout controlled by `SHELL_COMMAND_TIMEOUT` env variable (default: 30 sec)
 
 ## Technology Stack
 
@@ -246,7 +150,7 @@ Stops a running agent session:
 ### 1. Task Submission
 ```
 User enters task → Flask server receives → Creates Copilot instance
-→ Reads project manifest (AGENTS.md)
+→ Reads project manifest (AGENTS.md) directly from disk
 → Loads shell commands from .agent-commands/
 → Initializes conversation
 ```
@@ -269,8 +173,9 @@ Agent receives instruction → Builds conversation context with system prompt
 ### 4. File Operations
 ```
 Agent tool call → ToolsInterpreter → mcp_helper
-→ [mcp mode] MCP call to IDE → IDE performs operation → Result returned
-→ [pure mode] Direct Python file I/O → Result returned
+→ [read] Always reads directly from disk
+→ [mcp mode] MCP call to IDE → IDE performs write operation → Result returned
+→ [pure mode] Direct Python file I/O write → Result returned
 → Agent continues
 ```
 
@@ -279,7 +184,7 @@ Agent tool call → ToolsInterpreter → mcp_helper
 .agent-commands/my-command.md  →  parse_agent_commands()
 → whitelist of named commands loaded at startup
 → Agent calls shell_command("my-command")
-→ ToolsInterpreter._command_shell() executes via subprocess
+→ ToolsInterpreter executes the command via subprocess
 → Output returned to agent
 ```
 
@@ -293,7 +198,6 @@ Browser SSE connection → GET /events → Incremental messages streamed
 
 ### Tool-Calling Pattern
 - All agents use OpenAI function calling
-- Tools defined as JSON schemas in `prompts/*_tools.py`
 - Each agent has a specialized, minimal tool set
 
 ### Shell Commands System
@@ -311,21 +215,15 @@ Browser SSE connection → GET /events → Incremental messages streamed
 
 ### Conversation Management
 - Full conversation history maintained for context within each agent turn
-- Role-based messages: system, user, assistant, tool
-- CoderAgent applies `conversation_filter()` to remove duplicate read/write operations
 - Logs stored in `conversations_log/`
 
 ### Error Handling
 - Retry logic with exponential backoff in LLM calls (5 attempts)
-- `PatchError` for diff/patch failures
-- Path traversal protection in `ToolsInterpreter._validate_path()`
 - `MAX_ITERATION` safeguard prevents infinite loops
 
 ### Configuration-Driven
 - `.env` for API keys, model selection, timeouts, modes
 - Project manifest (`AGENTS.md` or `.copilot_project.xml`) for project metadata
-- Prompt templates in `prompts/` directory (Jinja2 for CODER and REVIEWER)
-- Per-agent model override via `MODEL:<ROLE>` env variables
 
 ### Separation of Concerns
 - **SUPERVISOR**: Task delegation and orchestration only
@@ -335,9 +233,7 @@ Browser SSE connection → GET /events → Incremental messages streamed
 
 ### Safety Features
 - Agents can only execute shell commands from a predefined whitelist
-- Path validation prevents directory traversal attacks
 - `MAX_ITERATION` prevents runaway execution
-- `AGENT_FILE_TOOLS=pure` mode allows operation without IDE dependency
 
 ## Project Configuration
 
@@ -371,7 +267,7 @@ project_root/
 ├── agents.py                    # Agent implementations (ANALYTIC, CODER, REVIEWER)
 ├── algorythm.py                 # SUPERVISOR orchestrator (Copilot class)
 ├── commands_helper.py           # .agent-commands/ parser and shell executor
-├── conversation.py              # Message formatting and SSE helpers
+├── conversation.py              # UI message formatting (DTOInstruction → HTML/text)
 ├── diff_helper.py               # Code patching utilities (apply_patch, PatchError)
 ├── llm.py                       # OpenAI-compatible LLM client
 ├── llm_api_server.py            # Flask HTTP server (Web UI + REST API)
@@ -380,30 +276,13 @@ project_root/
 ├── path_helper.py               # Path normalization utilities
 ├── search_code.py               # In-project code search engine (SearchCode)
 ├── tools_interpreter.py         # Agent tool executor (ToolsInterpreter)
-├── prompts/
-│   ├── analytic_system.txt      # ANALYTIC system prompt
-│   ├── analytic_tools.py        # ANALYTIC tool definitions (JSON schemas)
-│   ├── coder_system.txt         # CODER system prompt (Jinja2 template)
-│   ├── coder_tools.py           # CODER tool definitions (JSON schemas)
-│   ├── reviewer_system.txt      # REVIEWER system prompt (Jinja2 template)
-│   ├── reviewer_tools.py        # REVIEWER tool definitions (JSON schemas)
-│   ├── step.txt                 # Shared context block (project info + file tree)
-│   ├── supervisor_system.txt    # SUPERVISOR system prompt
-│   └── supervisor_tools.py      # SUPERVISOR tool definitions (JSON schemas)
-├── templates/
-│   ├── app.html                 # Web UI (SSE client, markdown rendering)
-│   ├── error.html               # Version mismatch error page
-│   └── assets/
-│       ├── app.js               # Frontend JS logic
-│       ├── markdown.js          # Markdown renderer
-│       └── main.css             # UI styles
-├── tests/
-│   ├── __init__.py
-│   ├── testCommandsHelper.py    # Tests for parse_agent_commands
-│   ├── testDiffHelper.py        # Tests for apply_patch
-│   ├── testLLMParser.py         # Tests for parse_tags
-│   ├── testMCPHelperPure.py     # Tests for mcp_helper in pure mode
-│   └── testToolsInterpreter.py  # Tests for ToolsInterpreter
+├── log_helper.py                # Formatting all objects for pretty-print
+├── dto/
+│   ├── dto_instruction.py       # DTOInstruction dataclass (universal message object)
+│   └── enums.py                 # AgentRole and EventType enumerations
+├── prompts/                     # Propmts for agent and sub-agents
+├── templates/                   # Web UI (SSE client, markdown rendering)
+├── tests/                       # Tests of the project
 ├── conversations_log/           # Session and LLM debug logs (not in git)
 ├── storage/                     # Temp file cache (not in git)
 ├── AGENTS.md                    # This file — project reference for AI agents
@@ -411,28 +290,17 @@ project_root/
 └── requirements.txt             # Python dependencies
 ```
 
-## Agent Tool Reference
-
-| Tool | ANALYTIC | CODER | REVIEWER |
-|------|----------|-------|----------|
-| `read_file` | ✅ | ✅ | ✅ |
-| `list_in_directory` | ✅ | ✅ | ❌ |
-| `search_file` | ✅ | ❌ | ✅ |
-| `write_file` | ❌ | ✅ | ❌ |
-| `replace_code_in_file` | ❌ | ✅ | ❌ |
-| `shell_command` | ❌ | ✅ | ✅ |
-| `report` | ✅ | ✅ | ✅ |
-
 ## Logging and Observability
 
 - **Session logs**: `conversations_log/log.log` — user-facing messages
 - **Debug logs**: `conversations_log/full_log.log` — full LLM request/response log (when `DEBUG=1`)
 - **Real-time streaming**: SSE message stream to browser via `GET /events`
-- **Timestamp-based IDs**: Conversation tracking per session
 
 ## Common Development Tasks
 
-- **Add new agent**: Extend `Agent` in `agents.py`, define tools in `prompts/`, register in `Agent.PROMPTS`
+- **Add new agent**: Add a new class in `agents.py`, define prompt files in `prompts/`, register the new role in `agents.py` and `dto/enums.py`
+- **Add new agent role**: Add to `AgentRole` enum in `dto/enums.py`, create prompt files in `prompts/`, register the role in `agents.py`
+- **Add new event type**: Add value to `EventType` in `dto/enums.py` and handle rendering in `conversation.py`
 - **Add shell command**: Create a `.md` file in `.agent-commands/` with a fenced code block containing the shell command
 - **Modify prompts**: Edit templates in `prompts/` directory (Jinja2 syntax for CODER/REVIEWER)
 - **Change LLM provider**: Update `OPENAI_API_URL` and `OPENAI_API_KEY` in `.env`
@@ -442,14 +310,8 @@ project_root/
 
 ## Testing
 
-Unit tests are located in `tests/`:
-- `testCommandsHelper.py` — shell command parsing
-- `testDiffHelper.py` — code patching
-- `testLLMParser.py` — XML tag extraction
-- `testMCPHelperPure.py` — file operations in pure mode
-- `testToolsInterpreter.py` — tool execution
+Unit tests are located in `tests/`
 
-Run all tests:
-```bash
-bash run_tests.sh
-```
+## Restrictions:
+- Don't list directory `./storage` and read files into
+- Don't list directory `./conversations_log` and read files into

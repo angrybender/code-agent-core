@@ -7,6 +7,9 @@ import glob
 from jinja2 import Environment, BaseLoader
 
 import logging
+
+from log_helper import pretty_print_as_json
+
 logger = logging.getLogger('APP')
 
 from dotenv import load_dotenv
@@ -14,10 +17,10 @@ load_dotenv()
 
 from llm import llm_query
 from tools_interpreter import ToolsInterpreter
-from prompts.analytic_tools import tools as analytic_tools
-from prompts.coder_tools import tools as coder_tools
-from prompts.reviewer_tools import tools as reviewer_tools
+from tools.tools import ANALYTIC_TOOLS, CODER_TOOLS, REVIEWER_TOOLS
 from search_code import SearchCode
+from dto.dto_instruction import DTOInstruction
+from dto.enums import EventType
 
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=int(os.getenv('MAX_ITERATION'))
@@ -76,11 +79,7 @@ class BaseAgent:
         specific_model = os.environ.get(f'MODEL:{self.role}', None)
         self.search_service.reset()
 
-        yield {
-            'message': f"start {self.role}...",
-            'result': {},
-            'type': "info",
-        }
+        yield DTOInstruction(type=EventType.INFO, message=f"start {self.role}...")
 
         sub_prompt = self.step_prompt.format(
             project_description=self.project_description,
@@ -105,19 +104,14 @@ class BaseAgent:
             agent_step += 1
             if agent_step > MAX_ITERATION:
                 logger.warning("MAX_STEP exceed!")
-                yield {
-                    'message': "MAX_STEP exceed!",
-                    'result': {},
-                    'type': "error",
-                    'exit': True,
-                }
+                yield DTOInstruction(type=EventType.ERROR, message="MAX_STEP exceed!", exit=True)
                 break
 
             conversation = self.conversation_filter(conversation)
 
             is_empty_workaround = False
             while True:
-                yield {'type': 'nope'}
+                yield DTOInstruction(type=EventType.NOPE)
                 output = llm_query(conversation, tools=self.get_tools(), model_name=specific_model)
                 if output:
                     break
@@ -130,13 +124,7 @@ class BaseAgent:
                         _report = "I've completed task"
                         logger.info("Empty response [agents]")
 
-                    yield {
-                        'message': _report,
-                        'result': {},
-                        'type': "report",
-                        'exit': True,
-                        'hidden': True,
-                    }
+                    yield DTOInstruction(type=EventType.REPORT, message=_report, exit=True, hidden=True)
                     return
 
                 logger.info("Empty response. Force to using tool")
@@ -148,7 +136,6 @@ class BaseAgent:
                         'content': 'Dont answer with empty message. If you have finished the work - call `report` tool!'
                     })
 
-            self.log("============= LLM OUTPUT =============", True)
             self.log('LLM OUTPUT:\n' + output.get('output', ''), True)
 
             tool_call_description = None
@@ -170,12 +157,7 @@ class BaseAgent:
                 logger.warning("Empty response")
                 continue
             elif not current_tool_call and output['_output']:
-                yield {
-                    'message': output['_output'],
-                    'result': {},
-                    'type': "markdown",
-                    'exit': True,
-                }
+                yield DTOInstruction(type=EventType.MARKDOWN, message=output['_output'], exit=True)
 
                 conversation.append({
                     'role': 'assistant',
@@ -192,28 +174,21 @@ class BaseAgent:
             })
 
             if tool_call_description['function'] == 'report':
-                yield {
-                    'message': tool_call_description['args'][0],
-                    'result': {},
-                    'type': "report",
-                    'exit': True,
-                }
+                yield DTOInstruction(type=EventType.REPORT, message=tool_call_description['args'][0], exit=True)
                 break
             else:
-                yield {'type': 'nope'}
+                yield DTOInstruction(type=EventType.NOPE)
 
-                is_pre_output = tool_call_description['function'] in ['shell_command']
-                is_output_resul_of_tool_separate_msg = tool_call_description['function'] in ['shell_command']
-                tool_msg_prefix = "🔨"
+                is_pre_output = tool_call_description['function'] in ['shell_command', 'search_file']
+                is_output_resul_of_tool_separate_msg = tool_call_description['function'] in ['shell_command', 'search_file']
 
                 if is_pre_output:
                     _args = tool_call_description['args'][0] if tool_call_description['args'] else ''
-                    yield {
-                        'message': f"{tool_msg_prefix} {tool_call_description['function']}: {_args}",
-                        'result': {},
-                        'type': "info",
-                        'exit': False,
-                    }
+                    yield DTOInstruction(
+                        type=EventType.TOOL,
+                        function=tool_call_description['function'],
+                        args=tool_call_description['args'],
+                    )
 
                 result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
                 is_success = not result.get('error', False)
@@ -227,24 +202,18 @@ class BaseAgent:
                 if not tool_call_description['args']:
                     tool_call_description['args'] = ['']
 
-                if not is_success:
-                    tool_msg_prefix += " ❌"
-
                 if not is_pre_output:
-                    yield {
-                        'message': f"{tool_msg_prefix} {tool_call_description['function']}: {tool_call_description['args'][0]}",
-                        'result': result,
-                        'type': "info",
-                        'exit': False,
-                    }
+                    yield DTOInstruction(
+                        type=EventType.TOOL,
+                        function=tool_call_description['function'],
+                        args=tool_call_description['args'],
+                        result=result,
+                        is_success=is_success,
+                    )
 
                 if is_output_resul_of_tool_separate_msg:
-                    yield {
-                        'message': f"{tool_call_description['function']}:\n```\n{result['result']}\n```",
-                        'result': {},
-                        'type': "markdown",
-                        'exit': False,
-                    }
+                    _result = result.get('post_result', result['result'])
+                    yield DTOInstruction(type=EventType.MARKDOWN, message=_result)
 
                 result_msg = {
                     'role': 'tool',
@@ -258,17 +227,15 @@ class BaseAgent:
                 conversation.append(result_msg)
 
     def log(self, data, to_file=False):
-        if type(data) is list or type(data) is dict:
-            data = json.dumps(data, ensure_ascii=False, indent=4)
-
-        data = f"[ {self.role} ] {data}"
+        output = pretty_print_as_json(data)
+        output = f"[ {self.role} ] {output}"
 
         if not to_file:
-            logger.info(data)
+            logger.info(output)
             return
 
         with open(self.log_file, "a", encoding='utf8') as f:
-            f.write(data + "\n\n")
+            f.write(output + "\n\n")
 
     def cache_file(self, file_name: str, source_file_content: str) -> str:
         source_file_content_path = os.path.join(self.storage_path, hashlib.sha256(file_name.encode()).hexdigest() + '.txt')
@@ -294,16 +261,16 @@ def _merge_assistant_messages(conversation: list[dict]) -> list[dict]:
 class AnalyticAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
         if self.role == 'ANALYTIC':
-            return analytic_tools
+            return ANALYTIC_TOOLS
         else:
-            return reviewer_tools
+            return REVIEWER_TOOLS
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
         return _merge_assistant_messages(conversation)
 
 class CoderAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
-        return coder_tools
+        return CODER_TOOLS
 
     def _create_log(self, conversation: list[dict]):
         tools_list = [_ for _ in conversation if 'tool_calls' in _]
@@ -334,14 +301,16 @@ class CoderAgent(BaseAgent):
             if not args:
                 return conversation
 
-            js_obj_name = args[0]
             if tool.function.name == 'write_file':
                 tool_name = 'write'
+                js_obj_name = str(args[0])
             elif tool.function.name == 'replace_code_in_file':
                 # lost write diff cause less quality
                 tool_name = f'replace_code_in_file:{position}'
+                js_obj_name = str(args[0])
             else:
                 tool_name = 'read'
+                js_obj_name = ':'.join([str(_) for _ in args])
 
             if tools_map.get(js_obj_name, {}).get(tool_name, None):
                 is_convolution = True

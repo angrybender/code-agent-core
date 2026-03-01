@@ -1,3 +1,5 @@
+from dataclasses import asdict
+
 from flask import Flask, render_template, request, Response
 import json
 import time
@@ -7,10 +9,13 @@ import hashlib
 import signal
 
 import logging
+
+from dto.dto_instruction import DTOInstruction
+
 logger = logging.getLogger('APP')
 
 from algorythm import Copilot
-from conversation import get_terminal, agent_result_tpl, agent_result_of_all_active_tpl
+from conversation import get_terminal, agent_result_of_all_active_tpl, agent_tool_tpl
 
 app = Flask(__name__)
 
@@ -100,13 +105,19 @@ def process_task(user_request: str, session_id: str):
             SESSION_MANAGER_INSTANCE.commit_command(session_id)
             break
 
-        message['timestamp'] = time.time()
+        try:
+            message = agent_tool_tpl(message)
+        except Exception as e:
+            logger.error(f"Error translate message: {e}")
+            logger.error(message)
+            message = asdict(message)
+            message['hidden'] = True # workaround for prevent lost files' list
+
+        if 'tool_name' in message.get('result', {}):
+            active_responses.append({'type': 'files', 'message': message.copy()})
 
         if message.get('hidden', False):
             message = {'type': 'nope'}
-        elif 'tool_name' in message.get('result', {}):
-            active_responses.append({'type': 'files', 'message': message.copy()})
-            message = agent_result_tpl(message['result'], message['type'], message.get('message', ''))
 
         yield f"data: {json.dumps(message)}\n\n"
 
@@ -215,6 +226,9 @@ def agent_api():
             if elapsed > max_working_time:
                 timeout_occurred = True
                 break
+
+            if isinstance(message, DTOInstruction):
+                message = asdict(message)
 
             results.append(message)
 

@@ -3,7 +3,8 @@ import os
 import shutil
 import tempfile
 
-from commands_helper import parse_agent_commands
+from commands_helper import parse_agent_commands, execute_terminal_command
+from tools_interpreter import ToolsInterpreter
 
 
 class TestParseAgentCommands(unittest.TestCase):
@@ -99,7 +100,7 @@ class TestParseAgentCommands(unittest.TestCase):
         self._write('check.md', "Some desc.\n\n```\nsome cmd\n```")
         result = parse_agent_commands(self.test_dir)
         self.assertEqual(1, len(result))
-        self.assertEqual({'command', 'description', 'cmd'}, set(result[0].keys()))
+        self.assertEqual({'command', 'description', 'cmd', 'args'}, set(result[0].keys()))
 
     def test_description_is_empty_string_when_only_code_block(self):
         """Edge case: file contains only a fenced code block, description becomes empty"""
@@ -129,6 +130,12 @@ class TestParseAgentCommands(unittest.TestCase):
         result = parse_agent_commands(self.test_dir)
         self.assertEqual([], result)
 
+    def test_non_sequential_args_raises_exception(self):
+        """Command with $1 and $3 but missing $2 must raise ValueError."""
+        self._write('cmd.md', "Some description\n\n```\nfoo $1 $3\n```\n")
+        with self.assertRaises(ValueError):
+            parse_agent_commands(self.test_dir)
+
     def test_md_skip_no_block_mixed_with_valid(self):
         """Branch: .md without code block is skipped; .md with block is included"""
         self._write('no_block.md', "Plain text, no fenced code.")
@@ -136,6 +143,51 @@ class TestParseAgentCommands(unittest.TestCase):
         result = parse_agent_commands(self.test_dir)
         self.assertEqual(1, len(result))
         self.assertEqual('with_block', result[0]['command'])
+
+class TestShellCommandUnknown(unittest.TestCase):
+    """Tests for ToolsInterpreter._command_shell unknown-command error branch."""
+
+    def _make_ti(self, commands=None):
+        """Helper: create a ToolsInterpreter with given commands list."""
+        return ToolsInterpreter('', '/tmp', commands=commands or [])
+
+    def test_unknown_command_empty_commands_map(self):
+        """No commands registered → available reports 'none'"""
+        ti = self._make_ti()
+        result = ti.execute('shell_command', ['nonexistent'])
+        self.assertTrue(result.get('error'))
+        self.assertEqual('shell_command', result['tool_name'])
+        self.assertIn("Unknown command 'nonexistent'", result['result'])
+        self.assertIn('none', result['result'])
+
+    def test_unknown_command_shows_available_names(self):
+        """Known commands registered → available lists their names in the error"""
+        commands = [
+            {'command': 'build', 'cmd': 'make build', 'description': 'Build project', 'args': []},
+            {'command': 'lint',  'cmd': 'make lint',  'description': 'Run linter',    'args': []},
+        ]
+        ti = self._make_ti(commands)
+        result = ti.execute('shell_command', ['deploy'])
+        self.assertTrue(result.get('error'))
+        self.assertEqual('shell_command', result['tool_name'])
+        self.assertIn("Unknown command 'deploy'", result['result'])
+        self.assertIn('build', result['result'])
+        self.assertIn('lint', result['result'])
+
+
+class TestExecuteTerminalCommand(unittest.TestCase):
+
+    def test_wrong_command_returns_error_status(self):
+        result = execute_terminal_command("this_command_does_not_exist_xyz_123", timeout=5)
+        self.assertEqual(result['status'], 'error')
+        self.assertIn('stdout', result)
+        self.assertIn('stderr', result)
+        self.assertIn('status', result)
+
+    def test_wrong_command_does_not_raise(self):
+        result = execute_terminal_command("this_command_does_not_exist_xyz_123", timeout=5)
+        self.assertIsInstance(result, dict)
+
 
 if __name__ == '__main__':
     unittest.main()

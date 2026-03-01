@@ -105,6 +105,35 @@ button.default:disabled {
     top: 10px;
 }
 
+.tool-message {
+    background-color: #e9ecef;
+    color: #333;
+    margin-right: auto;
+}
+.tool-message * {
+    font-style: normal;
+    padding-right: 0.5em;
+}
+.tool-message cite {
+    font-family: monospace;
+    font-size: 1.2em;
+    color: rgb(111, 66, 193);
+    white-space: break-spaces;
+}
+.tool-message dfn {
+    font-family: monospace;
+    font-size: 1.1em;
+    border: 1px solid rgb(171, 41, 106);
+    border-radius: 0.3em;
+    padding: 0.3em 0.5em;
+}
+.tool-message cite::before {
+    content: "🔨 ";
+}
+.tool-message.error cite::before {
+    content: "🔨 ❌ ";
+}
+
 .error-message {
     background-color: #f2dede;
     color: #a94442;
@@ -175,20 +204,20 @@ button.default:disabled {
     background-color: #dff0d8;
 }
 
-.html-message a {
+.message a {
     cursor: pointer;
 }
-.html-message a:hover {
+.message a:hover {
     opacity: 0.7;
 }
 
-.html-message a.file_create:visited,
-.html-message a.file_create {
+.message a.file_create:visited,
+.message a.file_create {
     color: green;
     text-decoration: none;
 }
-.html-message a.file_edit:visited,
-.html-message a.file_edit {
+.message a.file_edit:visited,
+.message a.file_edit {
     color: rgb(10, 88, 202);
     text-decoration: none;
 }

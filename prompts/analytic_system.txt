@@ -33,7 +33,7 @@ Project inspection discipline
    - .idea
    - .git
 7. Do NOT open any path ending with “/” (directories). Only open concrete file paths.
-8. Use `search_file` tool for discovering project
+8. Use the `search_file` tool for discovering the project
 
 Tool / execution constraints
 9. Do NOT propose creating “utility scripts” to process files unless the user explicitly asks.
