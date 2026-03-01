@@ -53,6 +53,10 @@ class SimpleChat {
 
         this.IS_LAST_MESSAGE_SUCCESS = false;
 
+        this.attachedImageBase64 = null;
+        this.attachedImageMediaType = null;
+        this.attachedImageDataURL = null;
+
         this.init();
     }
 
@@ -65,6 +69,10 @@ class SimpleChat {
         document.getElementById('main-wrapper').classList.add('conversation-active');
         this.controlFlowStopBtn.style.display = 'block';
         this.messageInput.style.display = 'none';
+
+        const imageUploadBtn = document.getElementById('image-upload-btn');
+        if (imageUploadBtn) imageUploadBtn.style.display = 'none';
+        this._clearAttachedImage();
     }
 
     onEndConversation() {
@@ -80,6 +88,9 @@ class SimpleChat {
         this.messageInput.style.display = 'block';
         document.getElementById('main-wrapper').classList.remove('conversation-active');
         window.scrollTo(0, document.body.scrollHeight);
+
+        const imageUploadBtn = document.getElementById('image-upload-btn');
+        if (imageUploadBtn) imageUploadBtn.style.display = 'inline-flex';
     }
 
     setupEventListeners() {
@@ -151,6 +162,49 @@ class SimpleChat {
                 return false;
             }
         });
+
+        const imageInput = document.getElementById('image-upload-input');
+        if (imageInput) {
+            imageInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp'];
+                if (!allowedTypes.includes(file.type)) {
+                    this.addMessage({message: 'Error: unsupported image format. Please use JPEG, PNG, GIF, WebP or BMP.'}, 'error');
+                    imageInput.value = '';
+                    return;
+                }
+
+                const maxSize = 10 * 1024 * 1024;
+                if (file.size > maxSize) {
+                    this.addMessage({message: 'Error: image size exceeds 10 MB limit.'}, 'error');
+                    imageInput.value = '';
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const dataURL = event.target.result;
+                    this.attachedImageDataURL = dataURL;
+                    this.attachedImageMediaType = dataURL.split(';')[0].split(':')[1];
+                    this.attachedImageBase64 = dataURL.split(',')[1];
+
+                    const thumb = document.getElementById('image-preview-thumb');
+                    const previewContainer = document.getElementById('image-preview-container');
+                    if (thumb) thumb.src = dataURL;
+                    if (previewContainer) previewContainer.style.display = 'flex';
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        const removeBtn = document.getElementById('image-remove-btn');
+        if (removeBtn) {
+            removeBtn.addEventListener('click', () => {
+                this._clearAttachedImage();
+            });
+        }
 
         // Handle user's scroll by mouse and turn off/on autoscroll
         document.body.addEventListener('wheel', (event) => {
@@ -273,11 +327,13 @@ class SimpleChat {
             return;
         }
 
+        const imageDataURL = this.attachedImageDataURL;
+
         // clear response container
         this.messagesContainer.innerHTML = '';
 
         // Add user message to chat
-        this.addMessage({ message: message }, 'user');
+        this.addMessage({ message: message }, 'user', imageDataURL);
 
         try {
             const response = await fetch(APP_HOST + '/send_message', {
@@ -285,7 +341,12 @@ class SimpleChat {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ message: message, session_id: SESSION_ID })
+                body: JSON.stringify({
+                    message: message,
+                    session_id: SESSION_ID,
+                    image_base64: this.attachedImageBase64 || null,
+                    image_media_type: this.attachedImageMediaType || null,
+                })
             });
 
             const result = await response.json();
@@ -294,6 +355,7 @@ class SimpleChat {
                 this.addMessage({ message: `Error: ${result.message}` }, 'error');
             }
             else {
+                this._clearAttachedImage();
                 this.onStartConversation();
             }
         } catch (error) {
@@ -301,11 +363,28 @@ class SimpleChat {
         }
     }
 
-    addMessage(message, type) {
+    _clearAttachedImage() {
+        this.attachedImageBase64 = null;
+        this.attachedImageMediaType = null;
+        this.attachedImageDataURL = null;
+
+        const previewContainer = document.getElementById('image-preview-container');
+        if (previewContainer) previewContainer.style.display = 'none';
+
+        const imageInput = document.getElementById('image-upload-input');
+        if (imageInput) imageInput.value = '';
+
+        const thumb = document.getElementById('image-preview-thumb');
+        if (thumb) thumb.src = '';
+    }
+
+    addMessage(message, type, imageDataURL = null) {
         let messageDivClassName = `message ${type}-message`;
         if (message.is_success === false) messageDivClassName += ' error';
 
+        let isUserMessage = false;
         if (type === 'user') {
+            isUserMessage = true;
             type = 'html';
             message = { ...message, message: `<pre>${escapeHtml(message.message)}</pre>` };
             messageDivClassName = "message html-message user-message";
@@ -329,6 +408,13 @@ class SimpleChat {
             messageContent.textContent = message.message;
         }
         messageDiv.appendChild(messageContent);
+
+        if (isUserMessage && imageDataURL) {
+            const img = document.createElement('img');
+            img.className = 'user-image-preview';
+            img.src = imageDataURL;
+            messageDiv.appendChild(img);
+        }
 
         if (message.timestamp) {
             const timestampDiv = document.createElement('div');

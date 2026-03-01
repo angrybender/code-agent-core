@@ -35,10 +35,10 @@ class SessionsManaged:
         self.sessions = {}
 
     def _init_session(self, session_id: str):
-        self.sessions[session_id] = {'message': None, 'command': None, 'data': {}}
+        self.sessions[session_id] = {'message': None, 'command': None, 'image': None, 'data': {}}
 
     def add_session_parameter(self, session_id: str, key: str, value):
-        if session_id in self.sessions:
+        if session_id not in self.sessions:
             self._init_session(session_id)
 
         self.sessions[session_id]['data'][key] = value
@@ -86,15 +86,35 @@ class SessionsManaged:
 
         self.sessions[session_id]['message'] = None
 
+    def send_image(self, session_id: str, image_base64: str, image_media_type: str):
+        if session_id in self.sessions:
+            self.sessions[session_id]['image'] = {
+                'base64': image_base64,
+                'media_type': image_media_type
+            }
+
+    def get_image(self, session_id: str):
+        if session_id in self.sessions:
+            return self.sessions[session_id].get('image')
+        return None
+
+    def clear_image(self, session_id: str):
+        if session_id in self.sessions:
+            self.sessions[session_id]['image'] = None
+
     def destroy(self, session_id: str):
         if session_id in self.sessions:
             del self.sessions[session_id]
 
 SESSION_MANAGER_INSTANCE = SessionsManaged()
 
+ALLOWED_IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp'}
+MAX_IMAGE_BASE64_LEN = 27_000_000  # ~20 MB
+
 
 def process_task(user_request: str, session_id: str):
-    session = Copilot(user_request, SESSION_MANAGER_INSTANCE.get_session_data(session_id))
+    image = SESSION_MANAGER_INSTANCE.get_image(session_id)
+    session = Copilot(user_request, SESSION_MANAGER_INSTANCE.get_session_data(session_id), image=image)
 
     active_responses = []
     force_stop = False
@@ -125,6 +145,8 @@ def process_task(user_request: str, session_id: str):
         msg = agent_result_of_all_active_tpl(active_responses)
         if msg:
             yield f"data: {json.dumps(agent_result_of_all_active_tpl(active_responses))}\n\n"
+
+    SESSION_MANAGER_INSTANCE.clear_image(session_id)
 
     if force_stop:
         yield f"data: {json.dumps({'role': 'system', 'type': 'warning', 'message': '[BREAK]', 'timestamp': time.time()})}\n\n"
@@ -214,8 +236,19 @@ def agent_api():
         if not isinstance(max_working_time, int) or max_working_time <= 0:
             return json.dumps({'status': 'error', 'message': 'max_working_time must be a positive integer'}), 400
 
+        image_base64 = data.get('image_base64')
+        image_media_type = data.get('image_media_type')
+
+        image = None
+        if image_base64 and image_media_type:
+            if image_media_type not in ALLOWED_IMAGE_TYPES:
+                return json.dumps({'error': f'Unsupported image type: {image_media_type}'}), 400
+            if len(image_base64) > MAX_IMAGE_BASE64_LEN:
+                return json.dumps({'error': 'Image too large'}), 400
+            image = {'base64': image_base64, 'media_type': image_media_type}
+
         session_data = {'project_base_path': project_base_path}
-        copilot = Copilot(user_message, session_data)
+        copilot = Copilot(user_message, session_data, image=image)
 
         start_time = time.time()
         results = []
@@ -255,6 +288,16 @@ def message_action():
 
         if SESSION_MANAGER_INSTANCE.get_message(user_session_id):
             return json.dumps({'status': 'error', 'message': 'Session is locked'}), 400
+
+        image_base64 = data.get('image_base64')
+        image_media_type = data.get('image_media_type')
+
+        if image_base64 and image_media_type:
+            if image_media_type not in ALLOWED_IMAGE_TYPES:
+                return json.dumps({'error': f'Unsupported image type: {image_media_type}'}), 400
+            if len(image_base64) > MAX_IMAGE_BASE64_LEN:
+                return json.dumps({'error': 'Image too large'}), 400
+            SESSION_MANAGER_INSTANCE.send_image(user_session_id, image_base64, image_media_type)
 
         SESSION_MANAGER_INSTANCE.send_message(user_session_id, user_message)
 

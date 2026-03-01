@@ -32,13 +32,14 @@ class Copilot:
     MAX_STEP = int(MAX_ITERATION)
     LOG_FILE = './conversations_log/log.log'
 
-    def __init__(self, instruction: str, session: dict):
+    def __init__(self, instruction: str, session: dict, image: dict | None = None):
         self.output = []
         self.last_step = None
         self.last_tool = {}
         self.manifest = {}
         self.session = session
         self.instruction = instruction
+        self.image = image  # {'base64': str, 'media_type': str} or None
 
         self.interpreter = None
 
@@ -128,10 +129,7 @@ class Copilot:
                 'role': 'system',
                 'content': self.system_prompt + "\n" + sub_prompt + f"\nMaximum allowed tools calling: {self.MAX_STEP-1}; planing work with this restriction!"
             },
-            {
-                'role': 'user',
-                'content': self.instruction
-            }
+            self._build_user_message(self.instruction)
         ]
 
         agent_step_counter = 1
@@ -254,6 +252,22 @@ class Copilot:
                     })
 
             agent_step_counter += 1
+
+    def _build_user_message(self, text: str) -> dict:
+        """Build user message with optional image attachment (OpenAI Vision format)."""
+        if not self.image:
+            return {'role': 'user', 'content': text}
+
+        content = [
+            {'type': 'text', 'text': text},
+            {
+                'type': 'image_url',
+                'image_url': {
+                    'url': f"data:{self.image['media_type']};base64,{self.image['base64']}"
+                }
+            }
+        ]
+        return {'role': 'user', 'content': content}
 
     def log(self, data, to_file=False):
         output = pretty_print_as_json(data)
