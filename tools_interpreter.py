@@ -220,20 +220,24 @@ class ToolsInterpreter:
                 cmd = cmd.replace(f'${i}', str(value))
 
         raw = execute_terminal_command(cmd=cmd, timeout=SHELL_COMMAND_TIMEOUT, cwd=self.project_root)
-
-        if raw['status'] == 'ok':
-            output = raw['stdout'] if raw['stdout'] else 'ok'
-            output = f"`$ {cmd}`\n\n```{output}```"
-
-            return {'result': output, 'tool_name': 'shell_command', 'cmd': cmd, 'status': 'status'}
-        elif raw['status'] == 'timeout':
+        if raw['status'] == 'timeout':
             return {
                 'result': f"ERROR: Command timed out after {SHELL_COMMAND_TIMEOUT}s. Partial output: {raw['stdout']}",
                 'error': True,
                 'tool_name': 'shell_command',
             }
         else:
-            return {'result': f"ERROR: {raw['stderr'] or raw['stdout']}", 'error': True, 'tool_name': 'shell_command'}
+            output = f"stdout: {raw['stdout']}" if raw['stdout'] else ''
+            if raw['stderr']:
+                output += f"\n\nstderr: {raw['stderr']}"
+
+            output = output.strip()
+            if not output:
+                output = raw['status']
+
+            output = f"`$ {cmd}`\n\n```\n{output}\n```"
+
+            return {'result': output, 'tool_name': 'shell_command', 'cmd': cmd, 'status': raw['status']}
 
     def execute(self, opcode: str, arguments) -> dict:
         try:
