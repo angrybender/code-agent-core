@@ -2,6 +2,7 @@ import os
 import glob
 import re
 import subprocess
+import sys
 
 def parse_agent_commands(directory: str) -> list[dict]:
     if not os.path.isdir(directory):
@@ -62,9 +63,10 @@ def execute_terminal_command(cmd: str, timeout: int, cwd: str = None) -> dict:
             'status' (str)  – 'ok', 'timeout', or 'error'
     """
     try:
+        shell = sys.platform != "win32"
         result = subprocess.run(
             cmd,
-            shell=False,
+            shell=shell,
             capture_output=True,
             text=True,
             timeout=timeout,
