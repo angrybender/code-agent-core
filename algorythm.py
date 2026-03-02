@@ -110,7 +110,7 @@ class Copilot:
         Agent.setUp()
 
         if self.agent_commands:
-            names = "\n".join(f"- {c['command']}" for c in self.agent_commands)
+            names = "\n".join(f"- **{c['command']}** `{c['cmd']}`" for c in self.agent_commands)
             yield DTOInstruction(type=EventType.MARKDOWN, message=f"Available shell commands:\n{names}")
 
         with open(self.LOG_FILE, "w", encoding='utf8') as f:
