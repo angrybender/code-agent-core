@@ -79,8 +79,6 @@ class BaseAgent:
         specific_model = os.environ.get(f'MODEL:{self.role}', None)
         self.search_service.reset()
 
-        yield DTOInstruction(type=EventType.INFO, message=f"start {self.role}...")
-
         sub_prompt = self.step_prompt.format(
             project_description=self.project_description,
             project_structure="\n".join([f"- {path}" for path in self.project_structure]),
@@ -112,7 +110,11 @@ class BaseAgent:
             is_empty_workaround = False
             while True:
                 yield DTOInstruction(type=EventType.NOPE)
-                output = llm_query(conversation, tools=self.get_tools(), model_name=specific_model)
+
+                output = None
+                for chunk in llm_query(conversation, tools=self.get_tools(), model_name=specific_model):
+                    output = chunk
+
                 if output:
                     break
 

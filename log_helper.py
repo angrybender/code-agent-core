@@ -29,7 +29,7 @@ def pretty_print_as_json(obj, base_indent=2, truncate=10) -> str:
             return "\n".join(output)
         elif isinstance(o, str):
             o = o.split("\n")
-            if len(o) > truncate:
+            if 0 < truncate < len(o):
                 o = o[:truncate]
                 o = "\n".join(o) + '...'
             else:

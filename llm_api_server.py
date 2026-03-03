@@ -15,7 +15,7 @@ from dto.dto_instruction import DTOInstruction
 logger = logging.getLogger('APP')
 
 from algorythm import Copilot
-from conversation import get_terminal, agent_result_of_all_active_tpl, agent_tool_tpl
+from conversation import get_terminal, agent_result_of_all_active_tpl, agent_tool_tpl, _agent_call_tpl
 
 app = Flask(__name__)
 
@@ -227,9 +227,7 @@ def agent_api():
                 timeout_occurred = True
                 break
 
-            if isinstance(message, DTOInstruction):
-                message = asdict(message)
-
+            message = asdict(message)
             results.append(message)
 
         return json.dumps({

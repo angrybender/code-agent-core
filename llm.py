@@ -1,11 +1,12 @@
 import os
-from openai import OpenAI
-from dotenv import load_dotenv
+import uuid
 import time
-from llm_parser import parse_tags
-
 import logging
 
+from openai import OpenAI
+from dotenv import load_dotenv
+
+from llm_parser import parse_tags
 from log_helper import pretty_print_as_json
 
 # Load environment variables from .env file
@@ -46,7 +47,7 @@ else:
     MAX_PROMPT_OUTPUT = None
 
 
-def llm_query(messages, tags=None, tools=None, model_name=None) -> dict|None:
+def llm_query(messages, tags=None, tools=None, model_name=None):
     client = OpenAI(
         api_key=API_KEY,
         base_url=API_URL,
@@ -88,7 +89,8 @@ def llm_query(messages, tags=None, tools=None, model_name=None) -> dict|None:
             logger.debug(pretty_print_as_json(response.choices[0]) + "\n\n")
 
             if len(content) == 0 and tools and not response.choices[0].message.tool_calls:
-                return None
+                yield None
+                break
 
             if tags:
                 output = parse_tags(content, tags)
@@ -103,12 +105,112 @@ def llm_query(messages, tags=None, tools=None, model_name=None) -> dict|None:
                 if not output['_tool_calls']:
                     output['_tool_calls'] = []
 
-            return output
+            yield output
+            break
         except Exception as e:
             error = e
             logger.warning(f"Attempt {attempt + 1}: Unexpected error: {e}")
             if response:
                 logger.warning(response)
+            time.sleep(1)
+
+    if error:
+        raise error
+
+
+def llm_query_stream(messages, tags=None, tools=None, model_name=None):
+    client = OpenAI(
+        api_key=API_KEY,
+        base_url=API_URL,
+        timeout=API_TIMEOUT,
+    )
+
+    if type(messages) is str:
+        messages = [{'role': 'user', 'content': messages}]
+
+    logger.debug(f"INPUT (with tools: {'Y' if tools else 'N'}):")
+    for m in messages:
+        logger.debug(m)
+
+    options = {
+        'messages': messages,
+        'model': model_name if model_name else MODEL,
+        'max_tokens': MAX_PROMPT_OUTPUT,
+        'tools': tools,
+        'stream': True,
+    }
+
+    if REASONING_EFFORT:
+        options['reasoning_effort'] = REASONING_EFFORT
+
+    options = {k: v for k, v in options.items() if v is not None}
+
+    error = None
+    message_id = str(uuid.uuid4())
+
+    for attempt in range(5):
+        try:
+            response = client.chat.completions.create(**options)
+
+            _output = ""
+            _tool_calls = {}
+            _output_function = {}
+
+            for chunk in response:
+                if not chunk.choices:
+                    # some reasoning models
+                    yield {
+                        "id": message_id,
+                        "type": "nope",
+                    }
+                    continue
+
+                choice = chunk.choices[0]
+
+                if choice.delta.content is not None:
+                    _output += choice.delta.content
+
+                if choice.delta.tool_calls:
+                    for tool_call_delta in choice.delta.tool_calls:
+                        idx = tool_call_delta.index
+                        if idx not in _tool_calls:
+                            _tool_calls[idx] = {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
+                        tc = _tool_calls[idx]
+                        if tool_call_delta.id:
+                            tc["id"] += tool_call_delta.id
+                        if tool_call_delta.function and tool_call_delta.function.name:
+                            tc["function"]["name"] += tool_call_delta.function.name
+                        if tool_call_delta.function and tool_call_delta.function.arguments:
+                            tc["function"]["arguments"] += tool_call_delta.function.arguments
+
+
+                if _tool_calls:
+                    yield {
+                        "id": message_id,
+                        "type": "tool",
+                        "output": _output,
+                        "tool_calls": list(_tool_calls.values())
+                    }
+                else:
+                    yield {
+                        "id": message_id,
+                        "type": "nope",
+                    }
+
+            final = {
+                "id": message_id,
+                "type": "final",
+                "output": _output,
+                "tool_calls": list(_tool_calls.values())
+            }
+
+            if tags:
+                final.update(parse_tags(_output, tags))
+            yield final
+            break
+        except Exception as e:
+            error = e
+            logger.warning(f"Attempt {attempt + 1}: Unexpected error: {e}")
             time.sleep(1)
 
     if error:

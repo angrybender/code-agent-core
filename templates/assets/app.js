@@ -241,6 +241,9 @@ class SimpleChat {
                 this.addMessage(data, 'tool');
                 this.IS_LAST_MESSAGE_SUCCESS = true;
                 break;
+            case 'agent':
+                this.addMessage(data, 'agent');
+                break;
             default:
                 this.addMessage(data, 'bot');
                 this.IS_LAST_MESSAGE_SUCCESS = true;
@@ -302,6 +305,14 @@ class SimpleChat {
     }
 
     addMessage(message, type) {
+        if (message.hidden && message.message_id) {
+            const el = this.messagesContainer.querySelector(
+                `[data-message-id="${message.message_id}"]`
+            );
+            if (el) el.remove();
+
+            return;
+        }
         let messageDivClassName = `message ${type}-message`;
         if (message.is_success === false) messageDivClassName += ' error';
 
@@ -313,9 +324,20 @@ class SimpleChat {
         else if (type === 'tool') {
             type = 'html';
         }
+        else if (type === 'agent') {
+            type = 'html';
+        }
 
         const messageDiv = document.createElement('div');
         messageDiv.className = messageDivClassName;
+        messageDiv.dataset.messageId = message.message_id;
+
+        if (message.is_final === false) {
+            messageDiv.classList.add('loading');
+            const spinnerComponent = document.createElement('div');
+            spinnerComponent.className = 'spinner-component';
+            messageDiv.appendChild(spinnerComponent);
+        }
 
         const messageContent = document.createElement('div');
         if (type === 'markdown') {
@@ -337,7 +359,15 @@ class SimpleChat {
             messageDiv.appendChild(timestampDiv);
         }
 
-        this.messagesContainer.appendChild(messageDiv);
+        const existing = message.message_id && this.messagesContainer.querySelector(
+            `[data-message-id="${message.message_id}"]`
+        );
+        if (existing) {
+            existing.replaceWith(messageDiv);
+        }
+        else {
+            this.messagesContainer.appendChild(messageDiv);
+        }
 
         if (!this.ON_USER_SCROLL_SEMAPHORE) {
             window.scrollTo(0, document.body.scrollHeight);

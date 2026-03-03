@@ -1,7 +1,10 @@
 import time
-from dataclasses import asdict
-from dto.dto_instruction import DTOInstruction
+import uuid
 
+from dataclasses import asdict
+
+from dto.dto_instruction import DTOInstruction
+from dto.enums import EventType
 
 _FUNCTION_NAME_TITLES = {
     'list_in_directory': 'list  ',
@@ -23,6 +26,13 @@ def get_terminal():
 def agent_tool_tpl(message: DTOInstruction) -> dict:
     function_name = message.function
     result_message = message.message
+
+    if message.type == EventType.AGENT:
+        return _agent_call_tpl(message)
+    elif message.type == EventType.EXIT:
+        output = asdict(message)
+        output['hidden'] = True
+        return output
 
     if function_name == 'read_file':
         path = message.args[0]
@@ -64,6 +74,22 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
     output['timestamp'] = time.time()
     output['message'] = result_message
 
+    if not output['message_id']:
+        output['message_id'] = str(uuid.uuid4())
+
+    return output
+
+def _agent_call_tpl(message: DTOInstruction) -> dict:
+    agent_name = message.function
+    result_message = f'<cite>{agent_name}</cite>'
+
+    output = asdict(message)
+    output['timestamp'] = time.time()
+    output['message'] = result_message
+
+    if not output['message_id']:
+        output['message_id'] = str(uuid.uuid4())
+
     return output
 
 def _file_processing_tpl(result: dict) -> str:
@@ -94,7 +120,8 @@ def agent_result_of_all_active_tpl(messages: list[dict]) -> dict|None:
             'role': 'assistant',
             'message': message,
             'type': 'html',
-            'timestamp': time.time()
+            'timestamp': time.time(),
+            'message_id': str(uuid.uuid4())
         }
 
     return None

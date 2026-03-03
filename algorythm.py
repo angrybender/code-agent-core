@@ -7,7 +7,7 @@ from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
 from log_helper import pretty_print_as_json
 from mcp_helper import tool_call
-from llm import llm_query
+from llm import llm_query_stream
 from path_helper import get_relative_path
 from tools_interpreter import ToolsInterpreter
 from agents import Agent
@@ -143,8 +143,24 @@ class Copilot:
 
             is_empty_workaround = False
             while True:
-                yield DTOInstruction(type=EventType.NOPE)
-                output = llm_query(conversation_log, tools=SUPERVISOR_TOOLS, model_name=specific_model)
+                output = None
+                tools_arguments_parsing = {}
+                for chunk in llm_query_stream(conversation_log, tools=SUPERVISOR_TOOLS, model_name=specific_model):
+                    if chunk['type'] == 'final':
+                        output = chunk
+                        break
+                    elif chunk['type'] == 'tool':
+                        _tool_call = chunk['tool_calls'][0]
+
+                        try:
+                            tools_arguments_parsing = json.loads(_tool_call['function']['arguments']) if _tool_call['function']['arguments'] else {}
+                        except:
+                            pass
+
+                        yield DTOInstruction(type=EventType.AGENT, is_final=False, message_id=chunk['id'], function=tools_arguments_parsing.get('agent_name', ''))
+                    else:
+                        yield DTOInstruction(type=EventType.NOPE)
+
                 if output:
                     break
 
@@ -164,37 +180,39 @@ class Copilot:
 
             tool_call_description = None
             current_tool_call = None
-            for tool_call in output['_tool_calls']:
+            for tool_call in output['tool_calls']:
+                function_name = tool_call['function']['name']
+
                 tool_call_description = {
-                    'function': tool_call.function.name,
-                    'id': tool_call.id,
+                    'function': function_name,
+                    'id': tool_call['id'],
                 }
 
-                arguments = json.loads(tool_call.function.arguments) if tool_call.function.arguments else []
+                arguments = json.loads(tool_call['function']['arguments']) if tool_call['function']['arguments'] else []
 
-                if tool_call.function.name == 'call_agent':
+                if function_name == 'call_agent':
                     instruction = arguments.get('instruction', None)
                     agent_name = arguments.get('agent_name', None)
                     tool_call_description['args'] = [agent_name, instruction]
-                elif tool_call.function.name == 'message':
+                elif function_name == 'message':
                     tool_call_description['args'] = [arguments.get('text', None)]
 
                 current_tool_call = tool_call
                 break
 
-            if not tool_call_description and output['_output']:
+            if not tool_call_description and output['output']:
                 conversation_log.append({
                     'role': 'assistant',
-                    'content': output['_output'],
+                    'content': output['output'],
                 })
-                self.log(output['_output'], True)
+                self.log(output['output'], True)
 
-                yield DTOInstruction(type=EventType.MARKDOWN, message=output['_output'])
+                yield DTOInstruction(type=EventType.MARKDOWN, message=output['output'])
 
                 agent_step_counter += 1
                 continue
 
-            if not tool_call_description and not output['_output']:
+            if not tool_call_description and not output['output']:
                 yield DTOInstruction(type=EventType.ERROR, message="Agent call error (empty)")
                 break
 
@@ -202,20 +220,29 @@ class Copilot:
 
             agent_complete_report = None
             if tool_call_description['function'] == 'exit':
+                yield DTOInstruction(type=EventType.EXIT, message_id=output['id'])
                 break
             elif tool_call_description['function'] == 'message':
-                yield DTOInstruction(type=EventType.MARKDOWN, message=tool_call_description['args'][0])
+                yield DTOInstruction(type=EventType.MARKDOWN, message=tool_call_description['args'][0], message_id=output['id'])
 
                 agent_complete_report = 'message print to user'
             elif tool_call_description['function'] == 'call_agent':
                 agent_name, agent_instruction = tool_call_description['args']
                 if agent_name not in Agent.PROMPTS:
-                    yield DTOInstruction(type=EventType.ERROR, message=f"Agent call error (name), name=`{agent_name}`")
+                    yield DTOInstruction(type=EventType.ERROR, message=f"Agent call error (name), name=`{agent_name}`", message_id=output['id'])
                     break
 
                 if not agent_instruction:
-                    yield DTOInstruction(type=EventType.ERROR, message=f"Agent call error (empty instruction)")
+                    yield DTOInstruction(type=EventType.ERROR, message=f"Agent call error (empty instruction)", message_id=output['id'])
                     break
+
+                yield DTOInstruction(
+                    type=EventType.AGENT,
+                    function=agent_name,
+                    message=agent_name,
+                    args=[agent_name, agent_instruction],
+                    message_id=output['id'],
+                )
 
                 agent = Agent.fabric(agent_name, self.agent_commands)
                 agent.init(agent_instruction, self.manifest, self.LOG_FILE)
@@ -235,21 +262,23 @@ class Copilot:
                     if is_agent_completes_work:
                         break
             else:
-                yield DTOInstruction(type=EventType.ERROR, message="Agent call error (wrong tool)")
+                self.log("ERROR: \n" + pretty_print_as_json(output, truncate=0), True)
+
+                yield DTOInstruction(type=EventType.ERROR, message="Agent call error (wrong tool)", message_id=output['id'])
                 break
 
             if current_tool_call:
                 conversation_log.append({
                     'role': 'assistant',
-                    'content': output['_output'],
+                    'content': output['output'],
                     'tool_calls': [current_tool_call]
                 })
 
                 if agent_complete_report:
                     conversation_log.append({
                         'role': 'tool',
-                        'tool_call_id': current_tool_call.id,
-                        'name': current_tool_call.function.name,
+                        'tool_call_id': current_tool_call['id'],
+                        'name': current_tool_call['function']['name'],
                         'content': agent_complete_report
                     })
 
