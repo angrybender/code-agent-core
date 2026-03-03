@@ -69,7 +69,6 @@ button.default:disabled {
 
 .chat-messages {
     margin-bottom: 20px;
-    background-color: #fafafa;
 }
 .chat-messages pre {
     white-space: pre-wrap;
@@ -334,8 +333,9 @@ button.default:disabled {
 
 .message.loading {
     position: relative;
+    background: none;
+    border: none;
 }
-
 .message.loading .spinner-component {
     display: block;
     width: 16px;
@@ -349,7 +349,10 @@ button.default:disabled {
     left: 10px;
     z-index: 1;
 }
-
 .message.loading cite::before {
     opacity: 0;
+    border-left: 3px solid #2e86c1;
+}
+.message.loading .timestamp {
+    display: none;
 }
