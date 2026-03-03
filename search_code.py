@@ -152,6 +152,7 @@ class SearchCode:
         self._files_cache = {}
 
     def search(self, project_path: str, needle: str, extension: str) -> tuple[int, list[dict]]:
+        needle = str(needle)
         _start_time = time.time()
 
         extension = extension.strip().strip('*').strip('.')

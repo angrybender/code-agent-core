@@ -190,6 +190,9 @@ class ToolsInterpreter:
     def _search_file(self, needle, extension=None):
         if self.search_service is None:
             return {'error': 'Search service is not available'}
+        needle = str(needle).strip()
+        if not needle:
+            return {'error': 'needle must be a non-empty string', 'tool_name': 'search_file'}
         total_count, results = self.search_service.search(self.project_root, needle, str(extension))
         if not results:
             return {"result": "ERROR: empty search result", "tool_name": "search_file"}
