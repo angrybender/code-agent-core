@@ -199,6 +199,30 @@ button.default:disabled {
     margin-top: 0;
 }
 
+/* Table styles for markdown-rendered content */
+.markdown-message table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 1em;
+    font-size: 0.95em;
+}
+.markdown-message th,
+.markdown-message td {
+    border: 1px solid #ccc;
+    padding: 6px 12px;
+    text-align: left;
+}
+.markdown-message thead tr {
+    background-color: #e9ecef;
+    font-weight: bold;
+}
+.markdown-message tbody tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+.markdown-message tbody tr:hover {
+    background-color: #f0f0f0;
+}
+
 .finished-message {
     color: #3c763d;
     background-color: #dff0d8;
