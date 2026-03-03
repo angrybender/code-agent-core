@@ -143,19 +143,13 @@ class Copilot:
             is_empty_workaround = False
             while True:
                 output = None
-                tools_arguments_parsing = {}
                 for chunk in llm_query_stream(conversation_log, tools=SUPERVISOR_TOOLS, model_name=specific_model):
                     if chunk['type'] == 'final':
                         output = chunk
                         break
                     elif chunk['type'] == 'tool':
                         _tool_call = chunk['tool_calls'][0]
-
-                        try:
-                            tools_arguments_parsing = json.loads(_tool_call['function']['arguments']) if _tool_call['function']['arguments'] else {}
-                        except:
-                            pass
-
+                        tools_arguments_parsing = _tool_call['function']['arguments_parsed'] if _tool_call['function']['arguments_parsed'] else {}
                         yield DTOInstruction(type=EventType.AGENT, is_final=False, message_id=chunk['id'], function=tools_arguments_parsing.get('agent_name', ''))
                     else:
                         yield DTOInstruction(type=EventType.NOPE)

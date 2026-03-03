@@ -15,7 +15,7 @@ logger = logging.getLogger('APP')
 from dotenv import load_dotenv
 load_dotenv()
 
-from llm import llm_query
+from llm import llm_query, llm_query_stream
 from tools_interpreter import ToolsInterpreter
 from tools.tools import ANALYTIC_TOOLS, CODER_TOOLS, REVIEWER_TOOLS
 from search_code import SearchCode
@@ -112,8 +112,15 @@ class BaseAgent:
                 yield DTOInstruction(type=EventType.NOPE)
 
                 output = None
-                for chunk in llm_query(conversation, tools=self.get_tools(), model_name=specific_model):
-                    output = chunk
+                for chunk in llm_query_stream(conversation, tools=self.get_tools(), model_name=specific_model):
+                    if chunk['type'] == 'final':
+                        output = chunk
+                        break
+                    elif chunk['type'] == 'tool':
+                        _tool_call = chunk['tool_calls'][0]
+                        yield DTOInstruction(type=EventType.TOOL, is_final=False, function=_tool_call['function']['name'], message_id=chunk['id'])
+                    else:
+                        yield DTOInstruction(type=EventType.NOPE)
 
                 if output:
                     break
@@ -142,28 +149,28 @@ class BaseAgent:
 
             tool_call_description = None
             current_tool_call = None
-            tool_calls = output.get('_tool_calls', [])
+            tool_calls = output.get('tool_calls', [])
             if not tool_calls:
                 tool_calls = []
 
             for tool_call in tool_calls:
                 tool_call_description = {
-                    'function': tool_call.function.name,
-                    'id': tool_call.id,
-                    'args': list(_parse_tool_arguments(tool_call.function.arguments).values()) if tool_call.function.arguments else []
+                    'function': tool_call['function']['name'],
+                    'id': tool_call['id'],
+                    'args': list(_parse_tool_arguments(tool_call['function']['arguments']).values()) if tool_call['function']['arguments'] else []
                 }
                 current_tool_call = tool_call
                 break
 
-            if not current_tool_call and not output['_output']:
+            if not current_tool_call and not output['output']:
                 logger.warning("Empty response")
                 continue
-            elif not current_tool_call and output['_output']:
-                yield DTOInstruction(type=EventType.MARKDOWN, message=output['_output'], exit=True)
+            elif not current_tool_call and output['output']:
+                yield DTOInstruction(type=EventType.MARKDOWN, message=output['output'], exit=True)
 
                 conversation.append({
                     'role': 'assistant',
-                    'content': output['_output'],
+                    'content': output['output'],
                 })
 
                 continue
@@ -171,12 +178,12 @@ class BaseAgent:
             self.log(tool_call_description, True)
             conversation.append({
                 'role': 'assistant',
-                'content': output['_output'],
+                'content': output['output'],
                 'tool_calls': [current_tool_call]
             })
 
             if tool_call_description['function'] == 'report':
-                yield DTOInstruction(type=EventType.REPORT, message=tool_call_description['args'][0], exit=True)
+                yield DTOInstruction(type=EventType.REPORT, message=tool_call_description['args'][0], exit=True, message_id=output['id'])
                 break
             else:
                 yield DTOInstruction(type=EventType.NOPE)
@@ -190,6 +197,7 @@ class BaseAgent:
                         type=EventType.TOOL,
                         function=tool_call_description['function'],
                         args=tool_call_description['args'],
+                        message_id=output['id']
                     )
 
                 result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
@@ -211,16 +219,17 @@ class BaseAgent:
                         args=tool_call_description['args'],
                         result=result,
                         is_success=is_success,
+                        message_id=output['id']
                     )
 
                 if is_output_resul_of_tool_separate_msg:
                     _result = result.get('post_result', result['result'])
-                    yield DTOInstruction(type=EventType.MARKDOWN, message=_result)
+                    yield DTOInstruction(type=EventType.MARKDOWN, message=_result, message_id=output['id'])
 
                 result_msg = {
                     'role': 'tool',
-                    'tool_call_id': current_tool_call.id,
-                    'name': current_tool_call.function.name,
+                    'tool_call_id': current_tool_call['id'],
+                    'name': current_tool_call['function']['name'],
                     'content': result['result'],
                 }
                 self.log("TOOL RESULT:", True)
@@ -296,17 +305,17 @@ class CoderAgent(BaseAgent):
                 continue
 
             tool = m['tool_calls'][0]
-            if tool.function.name == 'report':
+            if tool['function']['name'] == 'report':
                 return conversation
 
-            args = list(_parse_tool_arguments(tool.function.arguments).values()) if tool.function.arguments else []
+            args = list(_parse_tool_arguments(tool['function']['arguments']).values()) if tool['function']['arguments'] else []
             if not args:
                 return conversation
 
-            if tool.function.name == 'write_file':
+            if tool['function']['name'] == 'write_file':
                 tool_name = 'write'
                 js_obj_name = str(args[0])
-            elif tool.function.name == 'replace_code_in_file':
+            elif tool['function']['name'] == 'replace_code_in_file':
                 # lost write diff cause less quality
                 tool_name = f'replace_code_in_file:{position}'
                 js_obj_name = str(args[0])

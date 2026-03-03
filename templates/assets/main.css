@@ -334,7 +334,7 @@ button.default:disabled {
 .message.loading {
     position: relative;
     background: none;
-    border: none;
+    border: 1px solid #ddd;
 }
 .message.loading .spinner-component {
     display: block;
@@ -354,5 +354,5 @@ button.default:disabled {
     border-left: 3px solid #2e86c1;
 }
 .message.loading .timestamp {
-    display: none;
+    opacity: 0;
 }

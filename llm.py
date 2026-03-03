@@ -2,6 +2,7 @@ import os
 import uuid
 import time
 import logging
+import json
 
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -115,6 +116,9 @@ def llm_query(messages, tags=None, tools=None, model_name=None):
             time.sleep(1)
 
     if error:
+        with open('./conversations_log/llm.error', 'w', encoding='utf8') as f:
+            f.write("INPUT: \n" + pretty_print_as_json(messages) +"\n\nERROR:\n" + pretty_print_as_json(error))
+
         raise error
 
 
@@ -148,6 +152,7 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
     error = None
     message_id = str(uuid.uuid4())
 
+    pre_parsed_tools = {}
     for attempt in range(5):
         try:
             response = client.chat.completions.create(**options)
@@ -185,11 +190,20 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
 
 
                 if _tool_calls:
+                    for _id, tool in _tool_calls.items():
+                        if _id not in pre_parsed_tools:
+                            pre_parsed_tools[_id] = tool
+
+                        try:
+                            pre_parsed_tools[_id]['function']['arguments_parsed'] = json.loads(tool['function']['arguments']) if tool['function']['arguments'] else {}
+                        except:
+                            pass
+
                     yield {
                         "id": message_id,
                         "type": "tool",
                         "output": _output,
-                        "tool_calls": list(_tool_calls.values())
+                        "tool_calls": list(pre_parsed_tools.values())
                     }
                 else:
                     yield {
@@ -214,4 +228,7 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
             time.sleep(1)
 
     if error:
+        with open('./conversations_log/llm.error', 'w', encoding='utf8') as f:
+            f.write("INPUT: \n" + pretty_print_as_json(messages) +"\n\nERROR:\n" + pretty_print_as_json(error))
+
         raise error
