@@ -10,6 +10,7 @@ class AgentRole(str, Enum):
 
 class EventType(str, Enum):
     NOPE     = "nope"
+    PENDING  = "pending"
     INFO     = "info"
     MARKDOWN = "markdown"
     TOOL     = "tool"

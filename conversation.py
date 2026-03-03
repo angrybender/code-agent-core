@@ -36,6 +36,11 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
         output = asdict(message)
         output['hidden'] = True
         return output
+    elif message.type == EventType.PENDING:
+        message.is_final = False
+        message.type = EventType.HTML
+        result_message = message.message + "&nbsp;"
+
 
     if message.type == EventType.TOOL and not message.is_final:
         suffix = f"<dfn>{message.args[0]}</dfn>" if message.args else ''

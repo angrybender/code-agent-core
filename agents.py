@@ -112,7 +112,9 @@ class BaseAgent:
                 yield DTOInstruction(type=EventType.NOPE)
 
                 output = None
+                message_id = None
                 for chunk in llm_query_stream(conversation, tools=self.get_tools(), model_name=specific_model):
+                    message_id = chunk['id']
                     if chunk['type'] == 'final':
                         output = chunk
                         break
@@ -120,10 +122,12 @@ class BaseAgent:
                         _tool_call = chunk['tool_calls'][0]
                         yield DTOInstruction(type=EventType.TOOL, is_final=False, function=_tool_call['function']['name'], message_id=chunk['id'])
                     else:
-                        yield DTOInstruction(type=EventType.NOPE)
+                        yield DTOInstruction(type=EventType.PENDING, message_id=chunk['id'])
 
                 if output:
                     break
+                else:
+                    yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id)
 
                 if not AVOID_EMPTY_RESPONSE:
                     if conversation[-1]['role'] == 'assistant' and conversation[-1]['content'].strip():
@@ -133,7 +137,7 @@ class BaseAgent:
                         _report = "I've completed task"
                         logger.info("Empty response [agents]")
 
-                    yield DTOInstruction(type=EventType.REPORT, message=_report, exit=True, hidden=True)
+                    yield DTOInstruction(type=EventType.REPORT, message=_report, exit=True, hidden=True, message_id=message_id)
                     return
 
                 logger.info("Empty response. Force to using tool")
@@ -164,6 +168,8 @@ class BaseAgent:
 
             if not current_tool_call and not output['output']:
                 logger.warning("Empty response")
+                yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id)
+
                 continue
             elif not current_tool_call and output['output']:
                 yield DTOInstruction(type=EventType.MARKDOWN, message=output['output'], exit=True)

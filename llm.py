@@ -152,6 +152,11 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
     error = None
     message_id = str(uuid.uuid4())
 
+    yield {
+        "id": message_id,
+        "type": "pending",
+    }
+
     pre_parsed_tools = {}
     for attempt in range(5):
         try:
@@ -166,7 +171,7 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
                     # some reasoning models
                     yield {
                         "id": message_id,
-                        "type": "nope",
+                        "type": "pending",
                     }
                     continue
 
@@ -208,7 +213,7 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
                 else:
                     yield {
                         "id": message_id,
-                        "type": "nope",
+                        "type": "pending",
                     }
 
             final = {
