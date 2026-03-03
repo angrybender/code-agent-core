@@ -72,11 +72,13 @@ class SimpleChat {
             this.messageInput.value = "";
             this.messageInput.style.height = 'auto';
             localStorage.removeItem('promptInputValue_' + SESSION_ID);
+            this.messagesContainer.querySelectorAll('div.message.loading').forEach(el => el.remove());
+        } else {
+            this.messagesContainer.querySelectorAll('div.message').forEach(el => el.classList.remove('loading'));
         }
 
         this.controlFlowStopBtn.style.display = 'none';
         this.controlFlowStopBtn.classList.remove('loading');
-
         this.messageInput.style.display = 'block';
         document.getElementById('main-wrapper').classList.remove('conversation-active');
         window.scrollTo(0, document.body.scrollHeight);
