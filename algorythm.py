@@ -104,7 +104,6 @@ class Copilot:
 
     def run(self):
         specific_model = os.environ.get('MODEL:SUPERVISOR', None)
-        yield DTOInstruction(type=EventType.INFO, message="start SUPERVISOR...")
 
         self._init()
         Agent.setUp()
