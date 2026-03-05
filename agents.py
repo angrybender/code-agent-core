@@ -8,7 +8,6 @@ from jinja2 import Environment, BaseLoader
 
 import logging
 
-from log_helper import pretty_print_as_json
 from logger_mixin import LoggerMixin
 
 logger = logging.getLogger('APP')
@@ -190,7 +189,7 @@ class BaseAgent(LoggerMixin):
             })
 
             if tool_call_description['function'] == 'report':
-                yield DTOInstruction(type=EventType.REPORT, message=tool_call_description['args'][0], exit=True, message_id=output['id'])
+                yield DTOInstruction(type=EventType.REPORT, message=tool_call_description['args'][0] if tool_call_description['args'] else '', exit=True, message_id=output['id'])
                 break
             else:
                 yield DTOInstruction(type=EventType.NOPE)

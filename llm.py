@@ -48,6 +48,29 @@ else:
     MAX_PROMPT_OUTPUT = None
 
 
+def _parse_json(json_str: str):
+    if not isinstance(json_str, str):
+        return None
+
+    try:
+        return json.loads(json_str)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    closers = ["}", '"}', "]", '"]']
+
+    for i in range(len(json_str), 0, -1):
+        _json_str = json_str[:i]
+
+        for closer in closers:
+            try:
+                return json.loads(_json_str + closer)
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+    return None
+
+
 def llm_query(messages, tags=None, tools=None, model_name=None):
     client = OpenAI(
         api_key=API_KEY,
@@ -198,10 +221,9 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
                         if _id not in pre_parsed_tools:
                             pre_parsed_tools[_id] = tool
 
-                        try:
-                            pre_parsed_tools[_id]['function']['arguments_parsed'] = json.loads(tool['function']['arguments']) if tool['function']['arguments'] else {}
-                        except (json.JSONDecodeError, TypeError, ValueError):
-                            pass
+                        _args = _parse_json(tool['function']['arguments']) if tool['function']['arguments'] else {}
+                        if _args:
+                            pre_parsed_tools[_id]['function']['arguments_parsed'] = _args
 
                     yield {
                         "id": message_id,
