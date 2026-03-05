@@ -300,7 +300,7 @@ class CoderAgent(BaseAgent):
         tools_list = [_ for _ in conversation if 'tool_calls' in _]
         for tool in tools_list:
             tool_call = tool['tool_calls'][0]
-            tool['args'] = list(_parse_tool_arguments(tool_call['function']['arguments']).values()) if tool_call.function.arguments else []
+            tool['args'] = list(_parse_tool_arguments(tool_call['function']['arguments']).values()) if tool_call['function']['arguments'] else []
 
         return "; ".join([f'{m['tool_calls'][0]['function']['name']}:{m['args'][0]}' for m in tools_list])
 

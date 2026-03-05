@@ -151,8 +151,10 @@ class Copilot:
                         break
                     elif chunk['type'] == 'tool':
                         _tool_call = chunk['tool_calls'][0]
-                        tools_arguments_parsing = _tool_call['function']['arguments_parsed'] if _tool_call['function']['arguments_parsed'] else {}
-                        yield DTOInstruction(type=EventType.AGENT, is_final=False, message_id=chunk['id'], function=tools_arguments_parsing.get('agent_name', ''))
+                        tools_arguments_parsing = _tool_call['function']['arguments_parsed'] if _tool_call['function'].get('arguments_parsed') else {}
+                        agent_name = tools_arguments_parsing.get('agent_name', '')
+                        if agent_name:
+                            yield DTOInstruction(type=EventType.AGENT, is_final=False, message_id=chunk['id'], function=agent_name)
                     else:
                         yield DTOInstruction(type=EventType.AGENT, is_final=False, message_id=chunk['id'], function="SUPERVISOR")
 
@@ -164,6 +166,7 @@ class Copilot:
                 if not AVOID_EMPTY_RESPONSE:
                     # == exit
                     logger.info("Empty response. Stop working")
+                    yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id)
                     return True
 
                 logger.info("Empty response. Force to using tool")
