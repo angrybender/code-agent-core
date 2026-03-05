@@ -23,6 +23,7 @@ load_dotenv()
 HTTP_PORT = int(os.getenv('HTTP_PORT', 5000))
 MODEL = os.getenv('MODEL')
 IS_DEBUG = int(os.environ.get('DEBUG', 0)) == 1
+STREAM_PENDING_PERIOD = 1
 VERSION_TAG = 2
 
 if IS_DEBUG:
@@ -98,12 +99,21 @@ def process_task(user_request: str, session_id: str):
 
     active_responses = []
     force_stop = False
+    last_pending_sent = 0
     for message in session.run():
         command = SESSION_MANAGER_INSTANCE.get_command(session_id)
         if command == 'stop':
             force_stop = True
             SESSION_MANAGER_INSTANCE.commit_command(session_id)
             break
+
+        if not message.is_final and time.time() - last_pending_sent < STREAM_PENDING_PERIOD:
+            continue
+
+        if not message.is_final:
+            last_pending_sent = time.time()
+        else:
+            last_pending_sent = 0
 
         try:
             message = agent_tool_tpl(message)

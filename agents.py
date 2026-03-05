@@ -122,7 +122,7 @@ class BaseAgent:
                         _tool_call = chunk['tool_calls'][0]
                         yield DTOInstruction(type=EventType.TOOL, is_final=False, function=_tool_call['function']['name'], message_id=chunk['id'])
                     else:
-                        yield DTOInstruction(type=EventType.PENDING, message_id=chunk['id'])
+                        yield DTOInstruction(type=EventType.PENDING, message_id=chunk['id'], is_final=False)
 
                 if output:
                     break
@@ -293,9 +293,9 @@ class CoderAgent(BaseAgent):
         tools_list = [_ for _ in conversation if 'tool_calls' in _]
         for tool in tools_list:
             tool_call = tool['tool_calls'][0]
-            tool['args'] = list(_parse_tool_arguments(tool_call.function.arguments).values()) if tool_call.function.arguments else []
+            tool['args'] = list(_parse_tool_arguments(tool_call['function']['arguments']).values()) if tool_call.function.arguments else []
 
-        return "; ".join([f'{m['tool_calls'][0].function.name}:{m['args'][0]}' for m in tools_list])
+        return "; ".join([f'{m['tool_calls'][0]['function']['name']}:{m['args'][0]}' for m in tools_list])
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
         conversation = _merge_assistant_messages(conversation)
@@ -344,8 +344,8 @@ class CoderAgent(BaseAgent):
         for _, obj_tools in tools_map.items():
             for _, [m, position] in obj_tools.items():
                 modified_conversation.append([10*position, m])
-                if m['tool_calls'][0].id in tools_answers:
-                    modified_conversation.append([10*position + 5, tools_answers[ m['tool_calls'][0].id ] ])
+                if m['tool_calls'][0]['id'] in tools_answers:
+                    modified_conversation.append([10*position + 5, tools_answers[ m['tool_calls'][0]['id'] ] ])
 
         modified_conversation = sorted(modified_conversation, key=lambda pos_m: pos_m[0])
         modified_conversation = [_[1] for _ in modified_conversation]
