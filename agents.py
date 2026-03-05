@@ -196,6 +196,7 @@ class BaseAgent:
 
                 is_pre_output = tool_call_description['function'] in ['shell_command', 'search_file']
                 is_output_resul_of_tool_separate_msg = tool_call_description['function'] in ['shell_command', 'search_file']
+                response_message_id = output['id'] + ':response'
 
                 if is_pre_output:
                     _args = tool_call_description['args'][0] if tool_call_description['args'] else ''
@@ -204,6 +205,12 @@ class BaseAgent:
                         function=tool_call_description['function'],
                         args=tool_call_description['args'],
                         message_id=output['id']
+                    )
+
+                    yield DTOInstruction(
+                        type=EventType.PENDING,
+                        message_id=response_message_id,
+                        is_final=False
                     )
 
                 result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
@@ -230,7 +237,7 @@ class BaseAgent:
 
                 if is_output_resul_of_tool_separate_msg:
                     _result = result.get('post_result', result['result'])
-                    yield DTOInstruction(type=EventType.MARKDOWN, message=_result, message_id=output['id'])
+                    yield DTOInstruction(type=EventType.MARKDOWN, message=_result, message_id=response_message_id)
 
                 result_msg = {
                     'role': 'tool',
