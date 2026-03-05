@@ -368,6 +368,7 @@ class SimpleChat {
             existing.replaceWith(messageDiv);
         }
         else {
+            this.messagesContainer.querySelectorAll('div.loading').forEach(el => el.remove());
             this.messagesContainer.appendChild(messageDiv);
         }
 
