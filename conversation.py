@@ -2,6 +2,7 @@ import time
 import uuid
 
 from dataclasses import asdict
+from markupsafe import escape
 
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
@@ -62,7 +63,7 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
         result_message = f'<cite>{function_alias}</cite> <dfn>{path}{suffix}</dfn>'
 
     elif function_name == 'search_file':
-        needle = message.args[0].replace('<', '').replace('>', '')
+        needle = str(escape(message.args[0]))
         ext = message.args[1] if len(message.args) == 2 else ''
         ext = f"*.{ext}" if ext else '*.*'
         result_message = f'<cite>{function_alias}</cite> <dfn>{ext}</dfn> <dfn>{needle}</dfn>'

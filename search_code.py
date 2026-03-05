@@ -181,7 +181,7 @@ class SearchCode:
                     with open(file_path, 'r', encoding='utf-8') as f:
                         code = f.read()
                     self._files_cache[file_path] = code
-                except:
+                except (OSError, UnicodeDecodeError):
                     continue
 
             lines = code.split("\n")

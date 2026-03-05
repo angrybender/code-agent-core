@@ -9,6 +9,7 @@ from jinja2 import Environment, BaseLoader
 import logging
 
 from log_helper import pretty_print_as_json
+from logger_mixin import LoggerMixin
 
 logger = logging.getLogger('APP')
 
@@ -38,7 +39,7 @@ def _parse_tool_arguments(json_data: str):
         return json.loads(json_data)
 
 
-class BaseAgent:
+class BaseAgent(LoggerMixin):
     DEEP_THINK_TAG = 'work_plan'
     STORAGE_PATH = './storage'
 
@@ -250,17 +251,6 @@ class BaseAgent:
 
                 conversation.append(result_msg)
 
-    def log(self, data, to_file=False):
-        output = pretty_print_as_json(data)
-        output = f"[ {self.role} ] {output}"
-
-        if not to_file:
-            logger.info(output)
-            return
-
-        with open(self.log_file, "a", encoding='utf8') as f:
-            f.write(output + "\n\n")
-
     def cache_file(self, file_name: str, source_file_content: str) -> str:
         source_file_content_path = os.path.join(self.storage_path, hashlib.sha256(file_name.encode()).hexdigest() + '.txt')
         if not os.path.exists(source_file_content_path):
@@ -379,7 +369,7 @@ class Agent:
             shutil.rmtree(cache_path)
 
     @staticmethod
-    def fabric(role, agent_commands: list = None) -> BaseAgent:
+    def create(role, agent_commands: list = None) -> BaseAgent:
         assert role in Agent.PROMPTS, f'invalid role: {role}'
 
         thinking = role in DEEPTHINKING_AGENTS

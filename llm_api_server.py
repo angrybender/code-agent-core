@@ -4,6 +4,7 @@ from flask import Flask, render_template, request, Response
 import json
 import time
 import os
+import threading
 from dotenv import load_dotenv
 import hashlib
 import signal
@@ -34,62 +35,66 @@ else:
 class SessionsManaged:
     def __init__(self):
         self.sessions = {}
+        self._lock = threading.Lock()
 
     def _init_session(self, session_id: str):
         self.sessions[session_id] = {'message': None, 'command': None, 'data': {}}
 
     def add_session_parameter(self, session_id: str, key: str, value):
-        if session_id in self.sessions:
-            self._init_session(session_id)
-
-        self.sessions[session_id]['data'][key] = value
+        with self._lock:
+            if session_id not in self.sessions:
+                self._init_session(session_id)
+            self.sessions[session_id]['data'][key] = value
 
     def get_session_data(self, session_id: str) -> dict:
-        return self.sessions.get(session_id, {}).get('data', {})
+        with self._lock:
+            return self.sessions.get(session_id, {}).get('data', {})
 
     def acquire(self, session_id: str):
-        if session_id in self.sessions:
-            return False
-
-        self._init_session(session_id)
-        return True
+        with self._lock:
+            if session_id in self.sessions:
+                return False
+            self._init_session(session_id)
+            return True
 
     def send_message(self, session_id: str, message: str):
-        self.sessions[session_id]['message'] = message
+        with self._lock:
+            self.sessions[session_id]['message'] = message
 
     def send_command(self, session_id: str, command: str):
-        if not session_id in self.sessions:
-            self._init_session(session_id)
-
-        self.sessions[session_id]['command'] = command
+        with self._lock:
+            if session_id not in self.sessions:
+                self._init_session(session_id)
+            self.sessions[session_id]['command'] = command
 
     def get_message(self, session_id: str):
-        if session_id not in self.sessions:
-            return None
-
-        return self.sessions[session_id]['message']
+        with self._lock:
+            if session_id not in self.sessions:
+                return None
+            return self.sessions[session_id]['message']
 
     def get_command(self, session_id: str):
-        if session_id not in self.sessions:
-            return None
-
-        return self.sessions[session_id]['command']
+        with self._lock:
+            if session_id not in self.sessions:
+                return None
+            return self.sessions[session_id]['command']
 
     def commit_command(self, session_id):
-        if session_id not in self.sessions:
-            return None
-
-        self.sessions[session_id]['command'] = None
+        with self._lock:
+            if session_id not in self.sessions:
+                return None
+            self.sessions[session_id]['command'] = None
 
     def commit_message(self, session_id):
-        if session_id not in self.sessions:
-            self._init_session(session_id)
-
-        self.sessions[session_id]['message'] = None
+        with self._lock:
+            if session_id not in self.sessions:
+                self._init_session(session_id)
+            self.sessions[session_id]['message'] = None
 
     def destroy(self, session_id: str):
-        if session_id in self.sessions:
-            del self.sessions[session_id]
+        with self._lock:
+            if session_id in self.sessions:
+                del self.sessions[session_id]
 
 SESSION_MANAGER_INSTANCE = SessionsManaged()
 
@@ -215,6 +220,11 @@ def agent_api():
         if not os.path.exists(project_base_path):
             return json.dumps({'status': 'error', 'message': 'project_base_path is not exists'}), 400
 
+        if not os.path.isabs(project_base_path):
+            return json.dumps({'status': 'error', 'message': 'project_base_path must be an absolute path'}), 400
+
+        project_base_path = os.path.realpath(project_base_path)
+
         if not user_message:
             return json.dumps({'status': 'error', 'message': 'message is required and must be non-empty'}), 400
 
@@ -279,7 +289,7 @@ def _get_project_status(session: dict):
         session_id = session['id']
         project_path = SESSION_MANAGER_INSTANCE.get_session_data(session_id)['project_base_path']
         return f"data: {json.dumps({'role': 'system', 'type': 'status', 'message': project_path})}\n\n"
-    except:
+    except (KeyError, TypeError):
         return f"data: {json.dumps({'role': 'system', 'type': 'status', 'message': 'unknown project'})}\n\n"
 
 def event_stream(session: dict):

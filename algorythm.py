@@ -12,6 +12,7 @@ from path_helper import get_relative_path
 from tools_interpreter import ToolsInterpreter
 from agents import Agent
 from tools.tools import SUPERVISOR_TOOLS
+from logger_mixin import LoggerMixin
 
 from commands_helper import parse_agent_commands
 from dotenv import load_dotenv
@@ -27,7 +28,7 @@ logger = logging.getLogger('APP')
 logging.basicConfig(level=logging.INFO)
 
 
-class Copilot:
+class Copilot(LoggerMixin):
     PROJECT_DESCRIPTION = "./AGENTS.md"
     MAX_STEP = int(MAX_ITERATION)
     LOG_FILE = './conversations_log/log.log'
@@ -41,6 +42,8 @@ class Copilot:
         self.instruction = instruction
 
         self.interpreter = None
+        self.role = 'SUPERVISOR'
+        self.log_file = self.LOG_FILE
 
         self.system_prompt = ''
         self.prompt = ''
@@ -64,10 +67,12 @@ class Copilot:
         assert 'project_base_path' in self.session, 'Session not contains `project_base_path`'
 
         if not self.system_prompt:
-            self.system_prompt = open('./prompts/supervisor_system.txt', 'r', encoding='utf8').read()
+            with open('./prompts/supervisor_system.txt', 'r', encoding='utf8') as f:
+                self.system_prompt = f.read()
 
         if not self.prompt:
-            self.prompt = open('./prompts/step.txt', 'r', encoding='utf8').read()
+            with open('./prompts/step.txt', 'r', encoding='utf8') as f:
+                self.prompt = f.read()
 
         assert self.instruction, 'Empty instruction'
 
@@ -244,16 +249,16 @@ class Copilot:
                     message_id=output['id'],
                 )
 
-                agent = Agent.fabric(agent_name, self.agent_commands)
+                agent = Agent.create(agent_name, self.agent_commands)
                 agent.init(agent_instruction, self.manifest, self.LOG_FILE)
 
                 is_agent_completes_work = False
                 for agent_step in agent.run():
-                    if agent_step.type == 'report':
+                    if agent_step.type == EventType.REPORT:
                         is_agent_completes_work = True
                         agent_complete_report = agent_step.message
-                        agent_step.type = 'markdown'
-                    elif agent_step.type == 'error':
+                        agent_step.type = EventType.MARKDOWN
+                    elif agent_step.type == EventType.ERROR:
                         agent_complete_report = 'Agent cant complete a work, try another approach: add more details, rewrite instruction for agent! Agent returns error: ' + agent_step.message
                         is_agent_completes_work = True
 
@@ -283,14 +288,3 @@ class Copilot:
                     })
 
             agent_step_counter += 1
-
-    def log(self, data, to_file=False):
-        output = pretty_print_as_json(data)
-        output = f"[ SUPERVISOR ] {output}"
-
-        if not to_file:
-            logger.info(output)
-            return
-
-        with open(self.LOG_FILE, "a", encoding='utf8') as f:
-            f.write(output + "\n\n")

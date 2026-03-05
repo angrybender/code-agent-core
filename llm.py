@@ -164,7 +164,6 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
 
             _output = ""
             _tool_calls = {}
-            _output_function = {}
 
             for chunk in response:
                 if not chunk.choices:
@@ -201,7 +200,7 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
 
                         try:
                             pre_parsed_tools[_id]['function']['arguments_parsed'] = json.loads(tool['function']['arguments']) if tool['function']['arguments'] else {}
-                        except:
+                        except (json.JSONDecodeError, TypeError, ValueError):
                             pass
 
                     yield {
