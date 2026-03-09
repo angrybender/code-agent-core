@@ -104,7 +104,13 @@ class ToolsInterpreter:
                     result.append(f"- {_path}/ (permission denied)")
             else:
                 file_size = os.path.getsize(full_path)
-                result.append(f"- {_path} ({file_size} bytes)")
+                try:
+                    with open(full_path, 'rb') as f:
+                        line_count = f.read().count(b'\n')
+                except (PermissionError, OSError):
+                    line_count = None
+                lines_str = f"{line_count} lines" if line_count is not None else "? lines"
+                result.append(f"- {_path} ({file_size} bytes, {lines_str})")
 
         return {'result': "\n".join(result), 'tool_name': 'list_in_directory'}
 
