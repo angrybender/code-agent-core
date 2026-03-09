@@ -37,6 +37,15 @@ CODER → REVIEWER
 
 ### Agent Hierarchy
 
+**Internal class hierarchy in `agents.py`:**
+```
+BaseAgent(LoggerMixin)         # Abstract base — main run() loop, LLM query, tool dispatch
+  ├── AnalyticAgent(BaseAgent) # Handles both ANALYTIC and REVIEWER roles
+  └── CoderAgent(BaseAgent)    # Handles the CODER role
+Agent                          # Static factory: Agent.create(role), Agent.setUp()
+```
+Note: The REVIEWER role is implemented by `AnalyticAgent` (not a separate class). `AnalyticAgent.get_tools()` returns `ANALYTIC_TOOLS` or `REVIEWER_TOOLS` depending on `self.role`.
+
 1. **SUPERVISOR** (implemented in `algorythm.py`)
    - Orchestrates the entire workflow
    - Delegates tasks to specialized agents via `call_agent` tool
@@ -125,6 +134,15 @@ Stops a running agent session:
 - Supports function calling (tool use)
 - Per-agent model selection via `MODEL:<ROLE>` env variables
 - Environment-based configuration
+- Errors logged to `conversations_log/llm.error` after 5 failed retry attempts
+
+### Logging Mixin
+
+**`logger_mixin.py`** — Logging mixin
+- Provides `LoggerMixin` base class with `log(data, to_file=False)` method
+- Used by `Copilot` (`algorythm.py`) and `BaseAgent` (`agents.py`)
+- Formats output via `pretty_format()` from `log_helper.py`
+- When `to_file=True`, appends structured output to the agent's designated log file
 
 ## Technology Stack
 
@@ -137,9 +155,9 @@ Stops a running agent session:
 - **mcp 1.15** — Model Context Protocol for IDE integration
 
 ### Frontend
-- Vanilla JavaScript with SSE
-- Markdown rendering (`markdown.js`)
-- Custom CSS chat interface (`assets/main.css`)
+- Vanilla JavaScript with SSE (`templates/assets/app.js` — SSE client, message rendering, UI logic)
+- Markdown rendering (`templates/assets/markdown.js`)
+- Custom CSS chat interface (`templates/assets/main.css`)
 
 ### Integration
 - **MCP (Model Context Protocol)** — Connects to JetBrains IDE (default port 63342)
@@ -207,6 +225,7 @@ Browser SSE connection → GET /events → Incremental messages streamed
 - Timeout enforced per command (`SHELL_COMMAND_TIMEOUT`, default 30 sec)
 - CODER uses shell commands for builds/tests during implementation
 - REVIEWER uses shell commands to run test suites for verification
+- Shell commands support **positional arguments** via `$1`, `$2`, ... placeholders in the command Markdown file. Argument descriptions are parsed from lines matching `$N - description` format. The `shell_command` tool accepts an optional `args` list; `$1` maps to `args[0]`, `$2` to `args[1]`, etc. `commands_helper.py` validates that the correct number of arguments is provided before execution.
 
 ### Search System
 - ANALYTIC and REVIEWER use `search_file` tool powered by `SearchCode`
@@ -245,9 +264,6 @@ Browser SSE connection → GET /events → Incremental messages streamed
 | `OPENAI_API_KEY` | — | API authentication key |
 | `OPENAI_API_TIMEOUT` | 1200 | LLM request timeout in seconds |
 | `MODEL` | claude-sonnet-4.5 | Default model identifier |
-| `MODEL:SUPERVISOR` | — | Model override for SUPERVISOR agent |
-| `MODEL:ANALYTIC` | — | Model override for ANALYTIC agent |
-| `MODEL:CODER` | — | Model override for CODER agent |
 | `MAX_PROMPT_OUTPUT` | — | Max output tokens limit |
 | `REASONING_EFFORT` | low | For o1/o3 models: `low` / `medium` / `high` |
 | `IDE_MCP_HOST` | http://127.0.0.1:63342/ | JetBrains IDE MCP server URL |
@@ -264,25 +280,38 @@ Browser SSE connection → GET /events → Incremental messages streamed
 
 ```
 project_root/
-├── agents.py                    # Agent implementations (ANALYTIC, CODER, REVIEWER)
+├── agents.py                    # Agent implementations (ANALYTIC, CODER, REVIEWER) — class hierarchy: BaseAgent → AnalyticAgent / CoderAgent; Agent factory
 ├── algorythm.py                 # SUPERVISOR orchestrator (Copilot class)
-├── commands_helper.py           # .agent-commands/ parser and shell executor
+├── commands_helper.py           # .agent-commands/ parser and shell executor (supports $N positional args)
 ├── conversation.py              # UI message formatting (DTOInstruction → HTML/text)
 ├── diff_helper.py               # Code patching utilities (apply_patch, PatchError)
-├── llm.py                       # OpenAI-compatible LLM client
+├── llm.py                       # OpenAI-compatible LLM client; errors logged to conversations_log/llm.error
 ├── llm_api_server.py            # Flask HTTP server (Web UI + REST API)
 ├── llm_parser.py                # XML tag parsing from LLM responses
-├── mcp_helper.py                # File operations abstraction (mcp / pure modes)
+├── logger_mixin.py              # LoggerMixin base class — structured logging for agents and Copilot
+├── log_helper.py                # Formatting all objects for pretty-print
+├── mcp_helper.py                # File operations abstraction (reads always pure; writes: mcp or pure mode)
 ├── path_helper.py               # Path normalization utilities
 ├── search_code.py               # In-project code search engine (SearchCode)
 ├── tools_interpreter.py         # Agent tool executor (ToolsInterpreter)
-├── log_helper.py                # Formatting all objects for pretty-print
+├── run_tests.sh                 # Test runner: sets AGENT_FILE_TOOLS=pure, runs unittest discover on tests/
 ├── dto/
 │   ├── dto_instruction.py       # DTOInstruction dataclass (universal message object)
 │   └── enums.py                 # AgentRole and EventType enumerations
-├── prompts/                     # Propmts for agent and sub-agents
+├── prompts/                     # Prompts for agent and sub-agents
+│   ├── analytic_system.txt      # System prompt for ANALYTIC agent
+│   ├── coder_system.txt         # System prompt for CODER agent (Jinja2 templated)
+│   ├── reviewer_system.txt      # System prompt for REVIEWER agent (Jinja2 templated)
+│   ├── supervisor_system.txt    # System prompt for SUPERVISOR agent
+│   └── step.txt                 # Shared project-context sub-prompt (injected into all agents)
+├── tools/
+│   └── tools.py                 # All agent tool schema definitions (ANALYTIC/CODER/REVIEWER/SUPERVISOR_TOOLS)
 ├── templates/                   # Web UI (SSE client, markdown rendering)
-├── tests/                       # Tests of the project
+│   └── assets/
+│       ├── app.js               # SSE client, message rendering, UI interaction logic
+│       ├── main.css             # Chat interface styles
+│       └── markdown.js          # Markdown rendering library
+├── tests/                       # Unit tests (testCommandsHelper, testDiffHelper, testLLMParser, testMCPHelperPure, testParseJson, testSearchCode, testToolsInterpreter)
 ├── conversations_log/           # Session and LLM debug logs (not in git)
 ├── storage/                     # Temp file cache (not in git)
 ├── AGENTS.md                    # This file — project reference for AI agents
@@ -294,6 +323,7 @@ project_root/
 
 - **Session logs**: `conversations_log/log.log` — user-facing messages
 - **Debug logs**: `conversations_log/full_log.log` — full LLM request/response log (when `DEBUG=1`)
+- **LLM error log**: `conversations_log/llm.error` — written after 5 failed LLM API retry attempts (contains last request and error details)
 - **Real-time streaming**: SSE message stream to browser via `GET /events`
 
 ## Common Development Tasks
