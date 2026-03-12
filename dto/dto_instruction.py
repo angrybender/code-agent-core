@@ -13,6 +13,6 @@ class DTOInstruction:
     exit: bool = False
     hidden: bool = False
     function: Optional[str] = None
-    args: list = field(default_factory=list)
+    args: dict = field(default_factory=dict)
     is_success: bool = True
     is_final: bool = True

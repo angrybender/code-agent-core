@@ -5,7 +5,7 @@ import datetime
 
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
-from log_helper import pretty_print_as_json
+from log_helper import pretty_format
 from mcp_helper import tool_call
 from llm import llm_query_stream
 from path_helper import get_relative_path
@@ -267,7 +267,7 @@ class Copilot(LoggerMixin):
                     if is_agent_completes_work:
                         break
             else:
-                self.log("ERROR: \n" + pretty_print_as_json(output, truncate=0), True)
+                self.log("ERROR: \n" + pretty_format(output, truncate=0), True)
 
                 yield DTOInstruction(type=EventType.ERROR, message="Agent call error (wrong tool)", message_id=output['id'])
                 break
@@ -280,6 +280,8 @@ class Copilot(LoggerMixin):
                 })
 
                 if agent_complete_report:
+                    self.log(f"Agent report: \n{pretty_format(agent_complete_report)}", True)
+
                     conversation_log.append({
                         'role': 'tool',
                         'tool_call_id': current_tool_call['id'],

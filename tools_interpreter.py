@@ -44,11 +44,11 @@ class ToolsInterpreter:
         project_root_real = os.path.realpath(self.project_root)
         return real_path.startswith(project_root_real + os.sep)
 
-    def _command_read(self, file_path: str, offset: int = 0, limit: int = None) -> dict:
-        if not self._validate_path(file_path):
+    def _command_read(self, path: str, offset: int = 0, limit: int = None) -> dict:
+        if not self._validate_path(path):
             return {'result': 'ERROR: Invalid path', 'error': True}
         content = tool_call(self.mcp_host, 'get_file_text_by_path', {
-            'pathInProject': file_path,
+            'pathInProject': path,
             'projectPath': self.project_root,
         })
 
@@ -73,7 +73,7 @@ class ToolsInterpreter:
         response = {'result': result, 'exists': 'status' in content}
         if is_success:
             response['tool_name'] = 'read'
-            response['file_path'] = file_path
+            response['file_path'] = path
             response['total_lines'] = total_lines
             response['offset'] = offset
             response['returned_lines'] = len(lines)
@@ -114,37 +114,37 @@ class ToolsInterpreter:
 
         return {'result': "\n".join(result), 'tool_name': 'list_in_directory'}
 
-    def _command_write(self, file_path, data) -> dict:
-        if not self._validate_path(file_path):
+    def _command_write(self, path, content) -> dict:
+        if not self._validate_path(path):
             return {'result': 'ERROR: Invalid path', 'error': True}
         # looking for file exists:
-        source_file = self._command_read(file_path)
+        source_file = self._command_read(path)
         is_exist = source_file['exists']
 
-        data = self._correction_write_arg(data)
-        if type(data) is not str:
+        content = self._correction_write_arg(content)
+        if type(content) is not str:
             return {'result': "ERROR: file content must be string!"}
 
-        data = data.strip()
-        if re.match(r'^```[a-z]+\s', data):
-            data = re.sub(r'^```[a-z]+\s', '', data)
-        elif data[:3] == '```':
-            data = data[3:]
+        content = content.strip()
+        if re.match(r'^```[a-z]+\s', content):
+            content = re.sub(r'^```[a-z]+\s', '', content)
+        elif content[:3] == '```':
+            content = content[3:]
 
-        data = re.sub(r'```$', '', data)
+        content = re.sub(r'```$', '', content)
 
-        content = tool_call(self.mcp_host, 'create_new_file', {
-            'pathInProject': file_path,
-            'text': data.strip(),
+        mcp_result = tool_call(self.mcp_host, 'create_new_file', {
+            'pathInProject': path,
+            'text': content.strip(),
             'projectPath': self.project_root,
             'overwrite': True,
         })
 
-        result = {'result': "True" if 'status' in content else "ERROR: " + content['error']}
-        if 'status' in content:
+        result = {'result': "True" if 'status' in mcp_result else "ERROR: " + mcp_result['error']}
+        if 'status' in mcp_result:
             result['tool_name'] = 'write'
-            result['file_path'] = os.path.join(self.project_root, file_path)
-            result['file_name'] = file_path
+            result['file_path'] = os.path.join(self.project_root, path)
+            result['file_name'] = path
 
             if is_exist:
                 result['file_edit'] = True
@@ -156,10 +156,10 @@ class ToolsInterpreter:
 
         return result
 
-    def _command_write_diff(self, file_path, str_find, str_replace):
-        if not self._validate_path(file_path):
+    def _command_write_diff(self, path, str_find, str_replace):
+        if not self._validate_path(path):
             return {'result': 'ERROR: Invalid path', 'error': True}
-        source_file = self._command_read(file_path)
+        source_file = self._command_read(path)
         if not source_file['exists']:
             return {'result': "ERROR: file not exist"}
 
@@ -175,7 +175,7 @@ class ToolsInterpreter:
             return {'result': f"ERROR: {e}", 'error': True}
 
         content = tool_call(self.mcp_host, 'create_new_file', {
-            'pathInProject': file_path,
+            'pathInProject': path,
             'text': patched_file.strip(),
             'projectPath': self.project_root,
             'overwrite': True,
@@ -185,8 +185,8 @@ class ToolsInterpreter:
         if 'status' in content:
             result['file_edit'] = True
             result['tool_name'] = 'write_diff'
-            result['file_path'] = os.path.join(self.project_root, file_path)
-            result['file_name'] = file_path
+            result['file_path'] = os.path.join(self.project_root, path)
+            result['file_name'] = path
             result['source_file_content'] = source_file['result']
         else:
             result['error'] = True
@@ -258,11 +258,11 @@ class ToolsInterpreter:
             'shell_command': self._command_shell,
         }
 
-    def execute(self, opcode: str, arguments) -> dict:
+    def execute(self, opcode: str, arguments: dict) -> dict:
         try:
             handler = self._get_handlers().get(opcode)
             if not handler:
                 return {"result": "ERROR: wrong tool name, check tools list and call correct", 'error': True}
-            return handler(*arguments)
+            return handler(**arguments)
         except TypeError:
             return {"result": "ERROR: wrong command code/arguments, check tools list and call correct", 'error': True}

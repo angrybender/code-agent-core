@@ -154,7 +154,7 @@ class TestShellCommandUnknown(unittest.TestCase):
     def test_unknown_command_empty_commands_map(self):
         """No commands registered → available reports 'none'"""
         ti = self._make_ti()
-        result = ti.execute('shell_command', ['nonexistent'])
+        result = ti.execute('shell_command', {'command_name': 'nonexistent'})
         self.assertTrue(result.get('error'))
         self.assertEqual('shell_command', result['tool_name'])
         self.assertIn("Unknown command 'nonexistent'", result['result'])
@@ -167,7 +167,7 @@ class TestShellCommandUnknown(unittest.TestCase):
             {'command': 'lint',  'cmd': 'make lint',  'description': 'Run linter',    'args': []},
         ]
         ti = self._make_ti(commands)
-        result = ti.execute('shell_command', ['deploy'])
+        result = ti.execute('shell_command', {'command_name': 'deploy'})
         self.assertTrue(result.get('error'))
         self.assertEqual('shell_command', result['tool_name'])
         self.assertIn("Unknown command 'deploy'", result['result'])

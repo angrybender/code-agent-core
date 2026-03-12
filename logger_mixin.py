@@ -10,8 +10,10 @@ class LoggerMixin:
     log_file: str = ''
 
     def log(self, data, to_file=False):
-        output = pretty_format(data)
-        output = f"[ {self.role} ] {output}"
+        if not isinstance(data, str):
+            data = pretty_format(data)
+
+        output = f"[ {self.role} ] {data}"
 
         if not to_file:
             logger.info(output)

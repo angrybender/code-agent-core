@@ -38,6 +38,26 @@ def _parse_tool_arguments(json_data: str):
         return json.loads(json_data)
 
 
+def _create_report(conversation: list[dict]):
+    report = ""
+    last_message = ""
+    for message in conversation:
+        if message['role'] == 'assistant':
+            _content = message['content'].strip()
+            if _content:
+                last_message = _content
+
+            for tool in message.get('tool_calls', []):
+                if tool['function']['name'] == 'report':
+                    report += tool['function']['arguments_parsed'].get('text', '')
+
+    report = report.strip()
+    if report:
+        return report
+    else:
+        return last_message
+
+
 class BaseAgent(LoggerMixin):
     DEEP_THINK_TAG = 'work_plan'
     STORAGE_PATH = './storage'
@@ -130,7 +150,8 @@ class BaseAgent(LoggerMixin):
                     yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id)
 
                 if not AVOID_EMPTY_RESPONSE:
-                    if conversation[-1]['role'] == 'assistant' and conversation[-1]['content'].strip():
+                    _report = _create_report(conversation)
+                    if _report:
                         _report = conversation[-1]['content']
                         logger.info("Empty response. Create report from previous message")
                     else:
@@ -161,16 +182,21 @@ class BaseAgent(LoggerMixin):
                 tool_call_description = {
                     'function': tool_call['function']['name'],
                     'id': tool_call['id'],
-                    'args': list(_parse_tool_arguments(tool_call['function']['arguments']).values()) if tool_call['function']['arguments'] else []
+                    'args': _parse_tool_arguments(tool_call['function']['arguments']) if tool_call['function']['arguments'] else {}
                 }
                 current_tool_call = tool_call
                 break
 
             if not current_tool_call and not output['output']:
-                logger.warning("Empty response")
-                yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id)
+                _report = _create_report(conversation)
+                if _report:
+                    logger.info("Empty response. Create report from previous message (2)")
+                else:
+                    _report = "Agent has not completed work, empty response"
 
-                continue
+                yield DTOInstruction(type=EventType.REPORT, message=_report, exit=True, hidden=True, message_id=message_id)
+                return
+
             elif not current_tool_call and output['output']:
                 yield DTOInstruction(type=EventType.MARKDOWN, message=output['output'], exit=True)
 
@@ -189,7 +215,7 @@ class BaseAgent(LoggerMixin):
             })
 
             if tool_call_description['function'] == 'report':
-                yield DTOInstruction(type=EventType.REPORT, message=tool_call_description['args'][0] if tool_call_description['args'] else '', exit=True, message_id=output['id'])
+                yield DTOInstruction(type=EventType.REPORT, message=tool_call_description['args'].get('text', '') if tool_call_description['args'] else '', exit=True, message_id=output['id'])
                 break
             else:
                 yield DTOInstruction(type=EventType.NOPE)
@@ -199,7 +225,6 @@ class BaseAgent(LoggerMixin):
                 response_message_id = output['id'] + ':response'
 
                 if is_pre_output:
-                    _args = tool_call_description['args'][0] if tool_call_description['args'] else ''
                     yield DTOInstruction(
                         type=EventType.TOOL,
                         function=tool_call_description['function'],
@@ -223,7 +248,7 @@ class BaseAgent(LoggerMixin):
                     result['source_file_path'] = self.cache_file(result['file_name'], result['source_file_content'])
 
                 if not tool_call_description['args']:
-                    tool_call_description['args'] = ['']
+                    tool_call_description['args'] = {}
 
                 if not is_pre_output:
                     yield DTOInstruction(
@@ -260,6 +285,7 @@ class BaseAgent(LoggerMixin):
 
 def _merge_assistant_messages(conversation: list[dict]) -> list[dict]:
     # merge multiply assistant messages to once
+
     merged = True
     while merged:
         merged = False

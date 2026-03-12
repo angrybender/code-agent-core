@@ -8,7 +8,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 
 from llm_parser import parse_tags
-from log_helper import pretty_print_as_json
+from log_helper import pretty_format
 
 # Load environment variables from .env file
 load_dotenv()
@@ -110,7 +110,7 @@ def llm_query(messages, tags=None, tools=None, model_name=None):
             content = response.choices[0].message.content.strip() if response.choices[0].message.content else ''
 
             logger.debug("OUTPUT:")
-            logger.debug(pretty_print_as_json(response.choices[0]) + "\n\n")
+            logger.debug(pretty_format(response.choices[0]) + "\n\n")
 
             if len(content) == 0 and tools and not response.choices[0].message.tool_calls:
                 yield None
@@ -140,7 +140,7 @@ def llm_query(messages, tags=None, tools=None, model_name=None):
 
     if error:
         with open('./conversations_log/llm.error', 'w', encoding='utf8') as f:
-            f.write("INPUT: \n" + pretty_print_as_json(messages) +"\n\nERROR:\n" + pretty_print_as_json(error))
+            f.write("INPUT: \n" + pretty_format(messages) +"\n\nERROR:\n" + pretty_format(error))
 
         raise error
 
@@ -255,6 +255,6 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
 
     if error:
         with open('./conversations_log/llm.error', 'w', encoding='utf8') as f:
-            f.write("INPUT: \n" + pretty_print_as_json(messages) +"\n\nERROR:\n" + pretty_print_as_json(error))
+            f.write("INPUT: \n" + pretty_format(messages) +"\n\nERROR:\n" + pretty_format(error))
 
         raise error

@@ -34,6 +34,3 @@ def pretty_format(obj, base_indent=2, truncate=10) -> str:
             return str(o)
 
     return to_dict(obj, 0)
-
-
-pretty_print_as_json = pretty_format

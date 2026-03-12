@@ -123,6 +123,7 @@ def process_task(user_request: str, session_id: str):
         try:
             message = agent_tool_tpl(message)
         except Exception as e:
+            raise e
             logger.error(f"Error translate message: {e}")
             logger.error(message)
             message = asdict(message)

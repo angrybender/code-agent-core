@@ -15,6 +15,14 @@ _FUNCTION_NAME_TITLES = {
     'read_file': 'read  ',
 }
 
+_FUNCTION_ARG_PRINT = {
+    'list_in_directory': 'path',
+    'write_file': 'path',
+    'replace_code_in_file': 'path',
+    'shell_command': 'command_name',
+    'read_file': 'path',
+}
+
 def get_message(message: str, role: str, message_type: str=None) -> dict:
     return {
         'role': role,
@@ -42,15 +50,10 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
         message.type = EventType.HTML
         result_message = message.message + "&nbsp;"
 
-
-    if message.type == EventType.TOOL and not message.is_final:
-        suffix = f"<dfn>{message.args[0]}</dfn>" if message.args else ''
-        result_message = f'<cite>{function_alias}</cite> {suffix}'
-
-    elif function_name == 'read_file':
-        path = message.args[0]
-        offset = message.args[1] if len(message.args) >= 2 else None
-        limit = message.args[2] if len(message.args) == 3 else None
+    if function_name == 'read_file' and message.is_final:
+        path = message.args['path']
+        offset = message.args.get('offset')
+        limit = message.args.get('limit')
         if offset is not None and limit is not None:
             suffix = f"[{offset + 1}:{offset + limit + 1}]"
         elif offset is not None:
@@ -62,25 +65,30 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
 
         result_message = f'<cite>{function_alias}</cite> <dfn>{path}{suffix}</dfn>'
 
-    elif function_name == 'search_file':
-        needle = str(escape(message.args[0]))
-        ext = message.args[1] if len(message.args) == 2 else ''
+    elif function_name == 'search_file' and message.is_final:
+        needle = str(escape(message.args['needle']))
+        ext = message.args.get('extension', '')
         ext = f"*.{ext}" if ext else '*.*'
         result_message = f'<cite>{function_alias}</cite> <dfn>{ext}</dfn> <dfn>{needle}</dfn>'
 
-    elif function_name == 'shell_command':
-        command_name = [f"<dfn>{message.args[0]}</dfn>"]
+    elif function_name == 'shell_command' and message.is_final:
+        command_name = [f"<dfn>{message.args['command_name']}</dfn>"]
 
-        if len(message.args) > 1:
-            command_name += [f"<dfn>{_}</dfn>" for _ in message.args[1]]
+        if 'args' in message.args:
+            command_name += [f"<dfn>{_}</dfn>" for _ in message.args['args']]
         result_message = f'<cite>{function_alias}</cite> {" ".join(command_name)}'
 
-    elif function_name in ['write_file', 'replace_code_in_file']:
+    elif function_name in ['write_file', 'replace_code_in_file'] and message.is_final:
         file_link = _file_processing_tpl(message.result)
         result_message = f'<cite>{function_alias}</cite> {file_link}'
 
     elif message.type == EventType.TOOL:
-        suffix = f"<dfn>{message.args[0]}</dfn>" if message.args else ''
+        _arg_name = _FUNCTION_ARG_PRINT.get(str(function_name))
+        if _arg_name and _arg_name in message.args:
+            suffix = f"<dfn>{message.args[_arg_name]}</dfn>"
+        else:
+            suffix = ''
+
         result_message = f'<cite>{function_alias}</cite> {suffix}'
 
     output = asdict(message)

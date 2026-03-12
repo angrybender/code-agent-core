@@ -24,24 +24,6 @@ TOOL_READ_FILE = {
     }
 }
 
-TOOL_READ_FILE_SIMPLE = {
-    "type": "function",
-    "function": {
-        "name": "read_file",
-        "description": "Read file by path and return its content",
-        "parameters": {
-            "type": "object",
-            "required": ["path"],
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "path to file"
-                }
-            }
-        }
-    }
-}
-
 TOOL_LIST_IN_DIRECTORY = {
     "type": "function",
     "function": {
@@ -250,5 +232,5 @@ TOOL_EXIT = {
 
 ANALYTIC_TOOLS = [TOOL_READ_FILE, TOOL_LIST_IN_DIRECTORY, TOOL_SEARCH_FILE, TOOL_REPORT]
 CODER_TOOLS = [TOOL_READ_FILE, TOOL_LIST_IN_DIRECTORY, TOOL_WRITE_FILE, TOOL_REPLACE_CODE_IN_FILE, TOOL_SHELL_COMMAND, TOOL_REPORT]
-REVIEWER_TOOLS = [TOOL_READ_FILE_SIMPLE, TOOL_SEARCH_FILE, TOOL_SHELL_COMMAND, TOOL_REPORT]
+REVIEWER_TOOLS = [TOOL_READ_FILE, TOOL_SEARCH_FILE, TOOL_SHELL_COMMAND, TOOL_REPORT]
 SUPERVISOR_TOOLS = [TOOL_CALL_AGENT, TOOL_MESSAGE, TOOL_EXIT]
