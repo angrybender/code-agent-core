@@ -6,14 +6,14 @@ def parse_tags(content: str, tags: list, support_tag_attr=False) -> dict:
         pattern1 = rf'<{tag}>(.*?)</{tag}>'
         pattern2 = rf'<{tag} [a-z]+=[^>]+>(.*?)</{tag}>'
 
-        # Search for the pattern in the provided text
         match = re.findall(pattern1, content, re.DOTALL)
         match_with_attrs = re.findall(pattern2, content, re.DOTALL)
 
-        # If a match is found, return the content; otherwise, return None
-        if match:
+        if match and not support_tag_attr:
             output[tag] = match
         elif match_with_attrs:
             output[tag] = match_with_attrs
+        elif match:
+            output[tag] = match
 
     return output

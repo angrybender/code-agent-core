@@ -4,6 +4,7 @@ from flask import Flask, render_template, request, Response
 import json
 import time
 import os
+import threading
 from dotenv import load_dotenv
 import hashlib
 import signal
@@ -15,7 +16,7 @@ from dto.dto_instruction import DTOInstruction
 logger = logging.getLogger('APP')
 
 from algorythm import Copilot
-from conversation import get_terminal, agent_result_of_all_active_tpl, agent_tool_tpl
+from conversation import get_terminal, agent_result_of_all_active_tpl, agent_tool_tpl, _agent_call_tpl
 
 app = Flask(__name__)
 
@@ -23,6 +24,7 @@ load_dotenv()
 HTTP_PORT = int(os.getenv('HTTP_PORT', 5000))
 MODEL = os.getenv('MODEL')
 IS_DEBUG = int(os.environ.get('DEBUG', 0)) == 1
+STREAM_PENDING_PERIOD = 1
 VERSION_TAG = 2
 
 if IS_DEBUG:
@@ -33,62 +35,66 @@ else:
 class SessionsManaged:
     def __init__(self):
         self.sessions = {}
+        self._lock = threading.Lock()
 
     def _init_session(self, session_id: str):
         self.sessions[session_id] = {'message': None, 'command': None, 'data': {}}
 
     def add_session_parameter(self, session_id: str, key: str, value):
-        if session_id in self.sessions:
-            self._init_session(session_id)
-
-        self.sessions[session_id]['data'][key] = value
+        with self._lock:
+            if session_id not in self.sessions:
+                self._init_session(session_id)
+            self.sessions[session_id]['data'][key] = value
 
     def get_session_data(self, session_id: str) -> dict:
-        return self.sessions.get(session_id, {}).get('data', {})
+        with self._lock:
+            return self.sessions.get(session_id, {}).get('data', {})
 
     def acquire(self, session_id: str):
-        if session_id in self.sessions:
-            return False
-
-        self._init_session(session_id)
-        return True
+        with self._lock:
+            if session_id in self.sessions:
+                return False
+            self._init_session(session_id)
+            return True
 
     def send_message(self, session_id: str, message: str):
-        self.sessions[session_id]['message'] = message
+        with self._lock:
+            self.sessions[session_id]['message'] = message
 
     def send_command(self, session_id: str, command: str):
-        if not session_id in self.sessions:
-            self._init_session(session_id)
-
-        self.sessions[session_id]['command'] = command
+        with self._lock:
+            if session_id not in self.sessions:
+                self._init_session(session_id)
+            self.sessions[session_id]['command'] = command
 
     def get_message(self, session_id: str):
-        if session_id not in self.sessions:
-            return None
-
-        return self.sessions[session_id]['message']
+        with self._lock:
+            if session_id not in self.sessions:
+                return None
+            return self.sessions[session_id]['message']
 
     def get_command(self, session_id: str):
-        if session_id not in self.sessions:
-            return None
-
-        return self.sessions[session_id]['command']
+        with self._lock:
+            if session_id not in self.sessions:
+                return None
+            return self.sessions[session_id]['command']
 
     def commit_command(self, session_id):
-        if session_id not in self.sessions:
-            return None
-
-        self.sessions[session_id]['command'] = None
+        with self._lock:
+            if session_id not in self.sessions:
+                return None
+            self.sessions[session_id]['command'] = None
 
     def commit_message(self, session_id):
-        if session_id not in self.sessions:
-            self._init_session(session_id)
-
-        self.sessions[session_id]['message'] = None
+        with self._lock:
+            if session_id not in self.sessions:
+                self._init_session(session_id)
+            self.sessions[session_id]['message'] = None
 
     def destroy(self, session_id: str):
-        if session_id in self.sessions:
-            del self.sessions[session_id]
+        with self._lock:
+            if session_id in self.sessions:
+                del self.sessions[session_id]
 
 SESSION_MANAGER_INSTANCE = SessionsManaged()
 
@@ -98,12 +104,21 @@ def process_task(user_request: str, session_id: str):
 
     active_responses = []
     force_stop = False
+    last_pending_sent = 0
     for message in session.run():
         command = SESSION_MANAGER_INSTANCE.get_command(session_id)
         if command == 'stop':
             force_stop = True
             SESSION_MANAGER_INSTANCE.commit_command(session_id)
             break
+
+        if not message.is_final and time.time() - last_pending_sent < STREAM_PENDING_PERIOD:
+            continue
+
+        if not message.is_final:
+            last_pending_sent = time.time()
+        else:
+            last_pending_sent = 0
 
         try:
             message = agent_tool_tpl(message)
@@ -205,6 +220,11 @@ def agent_api():
         if not os.path.exists(project_base_path):
             return json.dumps({'status': 'error', 'message': 'project_base_path is not exists'}), 400
 
+        if not os.path.isabs(project_base_path):
+            return json.dumps({'status': 'error', 'message': 'project_base_path must be an absolute path'}), 400
+
+        project_base_path = os.path.realpath(project_base_path)
+
         if not user_message:
             return json.dumps({'status': 'error', 'message': 'message is required and must be non-empty'}), 400
 
@@ -227,9 +247,7 @@ def agent_api():
                 timeout_occurred = True
                 break
 
-            if isinstance(message, DTOInstruction):
-                message = asdict(message)
-
+            message = asdict(message)
             results.append(message)
 
         return json.dumps({
@@ -271,7 +289,7 @@ def _get_project_status(session: dict):
         session_id = session['id']
         project_path = SESSION_MANAGER_INSTANCE.get_session_data(session_id)['project_base_path']
         return f"data: {json.dumps({'role': 'system', 'type': 'status', 'message': project_path})}\n\n"
-    except:
+    except (KeyError, TypeError):
         return f"data: {json.dumps({'role': 'system', 'type': 'status', 'message': 'unknown project'})}\n\n"
 
 def event_stream(session: dict):

@@ -1,10 +1,4 @@
-def _detect_class(obj):
-    cls = type(obj)
-    return hasattr(cls, '__module__') and cls.__module__ not in ('builtins', '__builtin__', None)
-
-def pretty_print_as_json(obj, base_indent=2, truncate=10) -> str:
-    """Convert to dict and print as JSON"""
-
+def pretty_format(obj, base_indent=2, truncate=10) -> str:
     def to_dict(o, indent) -> str:
         if hasattr(o, '__dict__'):
             output = [str(type(o)) + "("]
@@ -29,7 +23,7 @@ def pretty_print_as_json(obj, base_indent=2, truncate=10) -> str:
             return "\n".join(output)
         elif isinstance(o, str):
             o = o.split("\n")
-            if len(o) > truncate:
+            if 0 < truncate < len(o):
                 o = o[:truncate]
                 o = "\n".join(o) + '...'
             else:
@@ -40,3 +34,6 @@ def pretty_print_as_json(obj, base_indent=2, truncate=10) -> str:
             return str(o)
 
     return to_dict(obj, 0)
+
+
+pretty_print_as_json = pretty_format

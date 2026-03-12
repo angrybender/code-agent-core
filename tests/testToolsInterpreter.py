@@ -12,7 +12,7 @@ class TestToolsInterpreter(unittest.TestCase):
 
         result = result['result'] + '\n'
         self.assertTrue(re.search(r'- tests/ \(total \d+ files\)\n', result), 'dir check - should show file count')
-        self.assertTrue(re.search(r'- env\.example \(\d+ bytes\)\n', result), 'file size check')
+        self.assertTrue(re.search(r'- env\.example \(\d+ bytes, \d+ lines\)\n', result), 'file size check')
 
     def test_command_list2(self):
         root_path = os.path.join(os.path.dirname(__file__), '..', '_invalid_dir')

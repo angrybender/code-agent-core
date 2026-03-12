@@ -52,6 +52,7 @@ class SimpleChat {
         this.ON_USER_SCROLL_SEMAPHORE_TIMER = null;
 
         this.IS_LAST_MESSAGE_SUCCESS = false;
+        this.IS_ON_END_CONVERSATION = false; // mutex for debounce
 
         this.init();
     }
@@ -65,21 +66,30 @@ class SimpleChat {
         document.getElementById('main-wrapper').classList.add('conversation-active');
         this.controlFlowStopBtn.style.display = 'block';
         this.messageInput.style.display = 'none';
+        this.IS_ON_END_CONVERSATION = false;
     }
 
     onEndConversation() {
+        if (this.IS_ON_END_CONVERSATION) {
+            return;
+        }
+
         if (this.IS_LAST_MESSAGE_SUCCESS) {
             this.messageInput.value = "";
             this.messageInput.style.height = 'auto';
             localStorage.removeItem('promptInputValue_' + SESSION_ID);
+            this.messagesContainer.querySelectorAll('div.message.loading').forEach(el => el.remove());
+        } else {
+            this.messagesContainer.querySelectorAll('div.message').forEach(el => el.classList.remove('loading'));
         }
 
         this.controlFlowStopBtn.style.display = 'none';
         this.controlFlowStopBtn.classList.remove('loading');
-
         this.messageInput.style.display = 'block';
         document.getElementById('main-wrapper').classList.remove('conversation-active');
         window.scrollTo(0, document.body.scrollHeight);
+
+        this.IS_ON_END_CONVERSATION = true;
     }
 
     setupEventListeners() {
@@ -241,6 +251,9 @@ class SimpleChat {
                 this.addMessage(data, 'tool');
                 this.IS_LAST_MESSAGE_SUCCESS = true;
                 break;
+            case 'agent':
+                this.addMessage(data, 'agent');
+                break;
             default:
                 this.addMessage(data, 'bot');
                 this.IS_LAST_MESSAGE_SUCCESS = true;
@@ -302,6 +315,14 @@ class SimpleChat {
     }
 
     addMessage(message, type) {
+        if (message.hidden && message.message_id) {
+            const el = this.messagesContainer.querySelector(
+                `[data-message-id="${message.message_id}"]`
+            );
+            if (el) el.remove();
+
+            return;
+        }
         let messageDivClassName = `message ${type}-message`;
         if (message.is_success === false) messageDivClassName += ' error';
 
@@ -313,9 +334,20 @@ class SimpleChat {
         else if (type === 'tool') {
             type = 'html';
         }
+        else if (type === 'agent') {
+            type = 'html';
+        }
 
         const messageDiv = document.createElement('div');
         messageDiv.className = messageDivClassName;
+        messageDiv.dataset.messageId = message.message_id;
+
+        if (message.is_final === false) {
+            messageDiv.classList.add('loading');
+            const spinnerComponent = document.createElement('div');
+            spinnerComponent.className = 'spinner-component';
+            messageDiv.appendChild(spinnerComponent);
+        }
 
         const messageContent = document.createElement('div');
         if (type === 'markdown') {
@@ -337,7 +369,16 @@ class SimpleChat {
             messageDiv.appendChild(timestampDiv);
         }
 
-        this.messagesContainer.appendChild(messageDiv);
+        const existing = message.message_id && this.messagesContainer.querySelector(
+            `[data-message-id="${message.message_id}"]`
+        );
+        if (existing) {
+            existing.replaceWith(messageDiv);
+        }
+        else {
+            this.messagesContainer.querySelectorAll('div.loading').forEach(el => el.remove());
+            this.messagesContainer.appendChild(messageDiv);
+        }
 
         if (!this.ON_USER_SCROLL_SEMAPHORE) {
             window.scrollTo(0, document.body.scrollHeight);

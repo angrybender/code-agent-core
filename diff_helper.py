@@ -12,8 +12,8 @@ def apply_patch(source_code: str, str_find: str, str_replace: str) -> str:
         return source_code.replace(str_find, str_replace)
 
     source_code = source_code.split("\n")
-    hashed_source = [re.sub(r'[\s+]', '', line) for line in source_code]
-    hashed_str_find = [re.sub(r'[\s+]', '', line) for line in str_find.split("\n")]
+    hashed_source = [re.sub(r'\s+', '', line) for line in source_code]
+    hashed_str_find = [re.sub(r'\s+', '', line) for line in str_find.split("\n")]
 
     cmp_hash_find = " ".join(hashed_str_find)
     start_line = -1

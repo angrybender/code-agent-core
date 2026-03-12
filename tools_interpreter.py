@@ -104,7 +104,13 @@ class ToolsInterpreter:
                     result.append(f"- {_path}/ (permission denied)")
             else:
                 file_size = os.path.getsize(full_path)
-                result.append(f"- {_path} ({file_size} bytes)")
+                try:
+                    with open(full_path, 'rb') as f:
+                        line_count = f.read().count(b'\n')
+                except (PermissionError, OSError):
+                    line_count = None
+                lines_str = f"{line_count} lines" if line_count is not None else "? lines"
+                result.append(f"- {_path} ({file_size} bytes, {lines_str})")
 
         return {'result': "\n".join(result), 'tool_name': 'list_in_directory'}
 
@@ -220,7 +226,7 @@ class ToolsInterpreter:
 
         if args:
             for i, value in enumerate(args, start=1):
-                cmd = cmd.replace(f'${i}', str(value))
+                cmd = cmd.replace(f'${i}', shlex.quote(str(value)))
 
         raw = execute_terminal_command(cmd=cmd, timeout=SHELL_COMMAND_TIMEOUT, cwd=self.project_root)
         if raw['status'] == 'timeout':
@@ -242,21 +248,21 @@ class ToolsInterpreter:
 
             return {'result': output, 'tool_name': 'shell_command', 'cmd': cmd, 'status': raw['status']}
 
+    def _get_handlers(self) -> dict:
+        return {
+            'read_file': self._command_read,
+            'list_in_directory': self._command_list,
+            'write_file': self._command_write,
+            'replace_code_in_file': self._command_write_diff,
+            'search_file': self._search_file,
+            'shell_command': self._command_shell,
+        }
+
     def execute(self, opcode: str, arguments) -> dict:
         try:
-            if opcode == 'read_file':
-                return self._command_read(*arguments)
-            elif opcode == 'list_in_directory':
-                return self._command_list(*arguments)
-            elif opcode == 'write_file':
-                return self._command_write(*arguments)
-            elif opcode == 'replace_code_in_file':
-                return self._command_write_diff(*arguments)
-            elif opcode == 'search_file':
-                return self._search_file(*arguments)
-            elif opcode == 'shell_command':
-                return self._command_shell(*arguments)
-            else:
+            handler = self._get_handlers().get(opcode)
+            if not handler:
                 return {"result": "ERROR: wrong tool name, check tools list and call correct", 'error': True}
+            return handler(*arguments)
         except TypeError:
             return {"result": "ERROR: wrong command code/arguments, check tools list and call correct", 'error': True}

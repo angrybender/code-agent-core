@@ -1,12 +1,18 @@
 import time
-from dataclasses import asdict
-from dto.dto_instruction import DTOInstruction
+import uuid
 
+from dataclasses import asdict
+from markupsafe import escape
+
+from dto.dto_instruction import DTOInstruction
+from dto.enums import EventType
 
 _FUNCTION_NAME_TITLES = {
     'list_in_directory': 'list  ',
     'write_file': 'write ',
     'replace_code_in_file': 'patch ',
+    'shell_command': 'shell ',
+    'read_file': 'read  ',
 }
 
 def get_message(message: str, role: str, message_type: str=None) -> dict:
@@ -23,8 +29,25 @@ def get_terminal():
 def agent_tool_tpl(message: DTOInstruction) -> dict:
     function_name = message.function
     result_message = message.message
+    function_alias = _FUNCTION_NAME_TITLES.get(function_name, function_name)
 
-    if function_name == 'read_file':
+    if message.type == EventType.AGENT:
+        return _agent_call_tpl(message)
+    elif message.type == EventType.EXIT:
+        output = asdict(message)
+        output['hidden'] = True
+        return output
+    elif message.type == EventType.PENDING:
+        message.is_final = False
+        message.type = EventType.HTML
+        result_message = message.message + "&nbsp;"
+
+
+    if message.type == EventType.TOOL and not message.is_final:
+        suffix = f"<dfn>{message.args[0]}</dfn>" if message.args else ''
+        result_message = f'<cite>{function_alias}</cite> {suffix}'
+
+    elif function_name == 'read_file':
         path = message.args[0]
         offset = message.args[1] if len(message.args) >= 2 else None
         limit = message.args[2] if len(message.args) == 3 else None
@@ -37,32 +60,48 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
         else:
             suffix = ''
 
-        result_message = f'<cite>read  </cite> <dfn>{path}{suffix}</dfn>'
+        result_message = f'<cite>{function_alias}</cite> <dfn>{path}{suffix}</dfn>'
 
     elif function_name == 'search_file':
-        needle = message.args[0].replace('<', '').replace('>', '')
+        needle = str(escape(message.args[0]))
         ext = message.args[1] if len(message.args) == 2 else ''
         ext = f"*.{ext}" if ext else '*.*'
-        result_message = f'<cite>search</cite> <dfn>{ext}</dfn> <dfn>{needle}</dfn>'
+        result_message = f'<cite>{function_alias}</cite> <dfn>{ext}</dfn> <dfn>{needle}</dfn>'
 
     elif function_name == 'shell_command':
         command_name = [f"<dfn>{message.args[0]}</dfn>"]
 
         if len(message.args) > 1:
             command_name += [f"<dfn>{_}</dfn>" for _ in message.args[1]]
-        result_message = f'<cite>shell </cite> {" ".join(command_name)}'
+        result_message = f'<cite>{function_alias}</cite> {" ".join(command_name)}'
 
     elif function_name in ['write_file', 'replace_code_in_file']:
         file_link = _file_processing_tpl(message.result)
-        result_message = f'<cite>{_FUNCTION_NAME_TITLES.get(function_name, function_name)}</cite> {file_link}'
+        result_message = f'<cite>{function_alias}</cite> {file_link}'
 
-    elif message.type == 'tool':
+    elif message.type == EventType.TOOL:
         suffix = f"<dfn>{message.args[0]}</dfn>" if message.args else ''
-        result_message = f'<cite>{_FUNCTION_NAME_TITLES.get(function_name, function_name)}</cite> {suffix}'
+        result_message = f'<cite>{function_alias}</cite> {suffix}'
 
     output = asdict(message)
     output['timestamp'] = time.time()
     output['message'] = result_message
+
+    if not output['message_id']:
+        output['message_id'] = str(uuid.uuid4())
+
+    return output
+
+def _agent_call_tpl(message: DTOInstruction) -> dict:
+    agent_name = message.function
+    result_message = f'<cite>{agent_name}</cite>'
+
+    output = asdict(message)
+    output['timestamp'] = time.time()
+    output['message'] = result_message
+
+    if not output['message_id']:
+        output['message_id'] = str(uuid.uuid4())
 
     return output
 
@@ -94,7 +133,8 @@ def agent_result_of_all_active_tpl(messages: list[dict]) -> dict|None:
             'role': 'assistant',
             'message': message,
             'type': 'html',
-            'timestamp': time.time()
+            'timestamp': time.time(),
+            'message_id': str(uuid.uuid4())
         }
 
     return None

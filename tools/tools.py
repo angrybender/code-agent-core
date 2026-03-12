@@ -65,9 +65,9 @@ TOOL_SEARCH_FILE = {
     "function": {
         "name": "search_file",
         "description": (
-            "Searches for `needle` across all project files. Uses the `ast-grep` Python library for understanding language structure and simple string search for text and config files. "
+            "Searches for `needle` across all project files using fuzzy token matching. "
             "Supports languages: PHP, JS, Java, Scala, C#, Go, Ruby, HTML, CSS, YML, bash. "
-            "Returns the file path and lines that contain the most relevant needle. "
+            "Returns the file path and lines that contain the most relevant match. "
             "Returns the first 10 results."
         ),
         "parameters": {

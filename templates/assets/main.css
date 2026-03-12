@@ -69,7 +69,6 @@ button.default:disabled {
 
 .chat-messages {
     margin-bottom: 20px;
-    background-color: #fafafa;
 }
 .chat-messages pre {
     white-space: pre-wrap;
@@ -132,6 +131,31 @@ button.default:disabled {
 }
 .tool-message.error cite::before {
     content: "🔨 ❌ ";
+}
+
+.agent-message {
+    background-color: #e8f4fd;
+    color: #1a5276;
+    margin-right: auto;
+    border-left: 3px solid #2e86c1;
+}
+.agent-message * {
+    font-style: normal;
+    padding-right: 0.5em;
+}
+.agent-message cite {
+    font-family: monospace;
+    font-size: 1.2em;
+    font-weight: bold;
+    color: #1a5276;
+    white-space: break-spaces;
+    text-transform: uppercase;
+}
+.agent-message cite::before {
+    content: "🤖 ";
+}
+.agent-message.error cite::before {
+    content: "🤖 ❌ ";
 }
 
 .error-message {
@@ -199,7 +223,6 @@ button.default:disabled {
     margin-top: 0;
 }
 
-/* Table styles for markdown-rendered content */
 .markdown-message table {
     border-collapse: collapse;
     width: 100%;
@@ -280,6 +303,7 @@ button.default:disabled {
     position: fixed;
     bottom: 10px;
     left: 10px;
+    left: 10px;
     right: 10px;
 }
 
@@ -301,4 +325,34 @@ button.default:disabled {
     cursor: pointer;
     opacity: 0.6;
     transition: opacity 0.2s;
+}
+
+.message .spinner-component {
+    display: none;
+}
+
+.message.loading {
+    position: relative;
+    background: none;
+    border: 1px solid #ddd;
+}
+.message.loading .spinner-component {
+    display: block;
+    width: 16px;
+    height: 16px;
+    vertical-align: middle;
+    margin-right: 6px;
+    border-width: 3px;
+    font-size: 0;
+    position: absolute;
+    top: 12px;
+    left: 10px;
+    z-index: 1;
+}
+.message.loading cite::before {
+    opacity: 0;
+    border-left: 3px solid #2e86c1;
+}
+.message.loading .timestamp {
+    opacity: 0;
 }
