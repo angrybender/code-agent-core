@@ -1,4 +1,3 @@
-import json
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -6,6 +5,8 @@ import time
 from llm_parser import parse_tags
 
 import logging
+
+from log_helper import pretty_print_as_json
 
 # Load environment variables from .env file
 load_dotenv()
@@ -83,8 +84,11 @@ def llm_query(messages, tags=None, tools=None, model_name=None) -> dict|None:
             response = client.chat.completions.create(**options)
             content = response.choices[0].message.content.strip() if response.choices[0].message.content else ''
 
+            logger.debug("OUTPUT:")
+            logger.debug(pretty_print_as_json(response.choices[0]) + "\n\n")
+
             if len(content) == 0 and tools and not response.choices[0].message.tool_calls:
-                raise Exception("Empty response")
+                return None
 
             if tags:
                 output = parse_tags(content, tags)
@@ -98,9 +102,6 @@ def llm_query(messages, tags=None, tools=None, model_name=None) -> dict|None:
 
                 if not output['_tool_calls']:
                     output['_tool_calls'] = []
-
-            logger.debug("OUTPUT:")
-            logger.debug(output)
 
             return output
         except Exception as e:

@@ -1,3 +1,5 @@
+from dataclasses import asdict
+
 from flask import Flask, render_template, request, Response
 import json
 import time
@@ -7,10 +9,13 @@ import hashlib
 import signal
 
 import logging
+
+from dto.dto_instruction import DTOInstruction
+
 logger = logging.getLogger('APP')
 
 from algorythm import Copilot
-from conversation import get_terminal, agent_result_tpl, agent_result_of_all_active_tpl
+from conversation import get_terminal, agent_result_of_all_active_tpl, agent_tool_tpl
 
 app = Flask(__name__)
 
@@ -18,7 +23,7 @@ load_dotenv()
 HTTP_PORT = int(os.getenv('HTTP_PORT', 5000))
 MODEL = os.getenv('MODEL')
 IS_DEBUG = int(os.environ.get('DEBUG', 0)) == 1
-VERSION_TAG = 1
+VERSION_TAG = 2
 
 if IS_DEBUG:
     logging.getLogger().setLevel(logging.DEBUG)
@@ -100,11 +105,19 @@ def process_task(user_request: str, session_id: str):
             SESSION_MANAGER_INSTANCE.commit_command(session_id)
             break
 
-        message['timestamp'] = time.time()
+        try:
+            message = agent_tool_tpl(message)
+        except Exception as e:
+            logger.error(f"Error translate message: {e}")
+            logger.error(message)
+            message = asdict(message)
+            message['hidden'] = True # workaround for prevent lost files' list
 
         if 'tool_name' in message.get('result', {}):
             active_responses.append({'type': 'files', 'message': message.copy()})
-            message = agent_result_tpl(message['result'], message['type'], message.get('message', ''))
+
+        if message.get('hidden', False):
+            message = {'type': 'nope'}
 
         yield f"data: {json.dumps(message)}\n\n"
 
@@ -176,6 +189,58 @@ def control_action():
     SESSION_MANAGER_INSTANCE.send_command(user_session_id, command)
 
     return json.dumps({'status': 'success'})
+
+
+@app.route('/api/agent', methods=['POST'])
+def agent_api():
+    try:
+        data = request.get_json()
+        user_message = data.get('message', '').strip()
+        project_base_path = data.get('project_base_path', '').strip()
+        max_working_time = data.get('max_working_time')
+
+        if not project_base_path:
+            return json.dumps({'status': 'error', 'message': 'project_base_path is required and must be non-empty'}), 400
+
+        if not os.path.exists(project_base_path):
+            return json.dumps({'status': 'error', 'message': 'project_base_path is not exists'}), 400
+
+        if not user_message:
+            return json.dumps({'status': 'error', 'message': 'message is required and must be non-empty'}), 400
+
+        if max_working_time is None:
+            return json.dumps({'status': 'error', 'message': 'max_working_time is required'}), 400
+
+        if not isinstance(max_working_time, int) or max_working_time <= 0:
+            return json.dumps({'status': 'error', 'message': 'max_working_time must be a positive integer'}), 400
+
+        session_data = {'project_base_path': project_base_path}
+        copilot = Copilot(user_message, session_data)
+
+        start_time = time.time()
+        results = []
+        timeout_occurred = False
+
+        for message in copilot.run():
+            elapsed = time.time() - start_time
+            if elapsed > max_working_time:
+                timeout_occurred = True
+                break
+
+            if isinstance(message, DTOInstruction):
+                message = asdict(message)
+
+            results.append(message)
+
+        return json.dumps({
+            'status': 'success',
+            'results': results,
+            'timeout': timeout_occurred,
+            'elapsed_time': time.time() - start_time
+        })
+
+    except Exception as e:
+        return json.dumps({'status': 'error', 'message': str(e)}), 500
 
 
 @app.route('/send_message', methods=['POST'])

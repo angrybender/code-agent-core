@@ -1,21 +1,22 @@
 import unittest
 import os
+import re
 
-from command_interpreter import CommandInterpreter
+from tools_interpreter import ToolsInterpreter
 
-class TestCommandInterpreter(unittest.TestCase):
+class TestToolsInterpreter(unittest.TestCase):
     def test_command_list1(self):
         root_path = os.path.join(os.path.dirname(__file__), '..')
-        instance = CommandInterpreter('', str(root_path))
+        instance = ToolsInterpreter('', str(root_path))
         result = instance.execute('list_in_directory', ['.'])
 
         result = result['result'] + '\n'
-        self.assertIn('- .env\n', result, 'file check')
-        self.assertIn('- tests/\n', result, 'dir check')
+        self.assertTrue(re.search(r'- tests/ \(total \d+ files\)\n', result), 'dir check - should show file count')
+        self.assertTrue(re.search(r'- env\.example \(\d+ bytes\)\n', result), 'file size check')
 
     def test_command_list2(self):
         root_path = os.path.join(os.path.dirname(__file__), '..', '_invalid_dir')
-        instance = CommandInterpreter('', str(root_path))
+        instance = ToolsInterpreter('', str(root_path))
         result = instance.execute('list_in_directory', ['.'])
 
         self.assertIn('ERROR:', result['result'])

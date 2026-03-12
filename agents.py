@@ -7,19 +7,25 @@ import glob
 from jinja2 import Environment, BaseLoader
 
 import logging
+
+from log_helper import pretty_print_as_json
+
 logger = logging.getLogger('APP')
 
 from dotenv import load_dotenv
 load_dotenv()
 
 from llm import llm_query
-from command_interpreter import CommandInterpreter
-from prompts.analytic_tools import tools as analytic_tools
-from prompts.coder_tools import tools as coder_tools
+from tools_interpreter import ToolsInterpreter
+from tools.tools import ANALYTIC_TOOLS, CODER_TOOLS, REVIEWER_TOOLS
+from search_code import SearchCode
+from dto.dto_instruction import DTOInstruction
+from dto.enums import EventType
 
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=int(os.getenv('MAX_ITERATION'))
 DEEPTHINKING_AGENTS=os.getenv('DEEPTHINKING_AGENTS', '').split(',')
+AVOID_EMPTY_RESPONSE = int(os.getenv('AVOID_EMPTY_RESPONSE', 0)) == 1
 
 def _parse_tool_arguments(json_data: str):
     try:
@@ -49,6 +55,7 @@ class BaseAgent:
         self.log_file = role
         self.thinking = thinking
         self.storage_path = None
+        self.search_service = SearchCode()
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
         return conversation
@@ -60,7 +67,7 @@ class BaseAgent:
         self.instruction = instruction
         self.project_description = manifest['description']
         self.project_structure = manifest['files_structure']
-        self.interpreter = CommandInterpreter(IDE_MCP_HOST, manifest['base_path'])
+        self.interpreter = ToolsInterpreter(IDE_MCP_HOST, manifest['base_path'], self.search_service, commands=manifest.get('agent_commands', []))
         self.log_file = log_file
 
         self.storage_path = os.path.join(self.STORAGE_PATH, hashlib.sha256(manifest['base_path'].encode()).hexdigest())
@@ -70,12 +77,9 @@ class BaseAgent:
     def run(self):
         assert self.instruction, 'Init() s required'
         specific_model = os.environ.get(f'MODEL:{self.role}', None)
+        self.search_service.reset()
 
-        yield {
-            'message': f"start {self.role}...",
-            'result': {},
-            'type': "info",
-        }
+        yield DTOInstruction(type=EventType.INFO, message=f"start {self.role}...")
 
         sub_prompt = self.step_prompt.format(
             project_description=self.project_description,
@@ -87,7 +91,7 @@ class BaseAgent:
         conversation = [
             {
                 'role': 'system',
-                'content': self.system_prompt + "\n" + sub_prompt
+                'content': self.system_prompt + "\n" + sub_prompt + f"\nMaximum allowed tools calling: {MAX_ITERATION-1}, dont exceed it!"
             },
             {
                 'role': 'user',
@@ -95,42 +99,43 @@ class BaseAgent:
             }
         ]
 
-        agent_step = 1
-        max_skip_command = 3
+        agent_step = 0
         while True:
+            agent_step += 1
             if agent_step > MAX_ITERATION:
                 logger.warning("MAX_STEP exceed!")
-                yield {
-                    'message': "MAX_STEP exceed!",
-                    'result': {},
-                    'type': "error",
-                    'exit': True,
-                }
+                yield DTOInstruction(type=EventType.ERROR, message="MAX_STEP exceed!", exit=True)
                 break
 
             conversation = self.conversation_filter(conversation)
 
-            yield {'type': 'nope'}
-            if self.thinking:
-                think_output = llm_query(conversation, model_name=specific_model)
-                think_output = think_output.get('_output', '')
-                if think_output and think_output.find(f'<{self.DEEP_THINK_TAG}>') > -1:
-                    think_output_msg = think_output\
-                                            .replace(f'<{self.DEEP_THINK_TAG}>', '')\
-                                            .replace(f'</{self.DEEP_THINK_TAG}>', '')
-                    yield {
-                        'message': think_output_msg,
-                        'result': {},
-                        'type': "markdown",
-                    }
+            is_empty_workaround = False
+            while True:
+                yield DTOInstruction(type=EventType.NOPE)
+                output = llm_query(conversation, tools=self.get_tools(), model_name=specific_model)
+                if output:
+                    break
 
+                if not AVOID_EMPTY_RESPONSE:
+                    if conversation[-1]['role'] == 'assistant' and conversation[-1]['content'].strip():
+                        _report = conversation[-1]['content']
+                        logger.info("Empty response. Create report from previous message")
+                    else:
+                        _report = "I've completed task"
+                        logger.info("Empty response [agents]")
+
+                    yield DTOInstruction(type=EventType.REPORT, message=_report, exit=True, hidden=True)
+                    return
+
+                logger.info("Empty response. Force to using tool")
+
+                if not is_empty_workaround:
+                    is_empty_workaround = True
                     conversation.append({
-                        'role': 'assistant',
-                        'content': think_output
+                        'role': 'user',
+                        'content': 'Dont answer with empty message. If you have finished the work - call `report` tool!'
                     })
 
-            output = llm_query(conversation, tools=self.get_tools(), model_name=specific_model)
-            self.log("============= LLM OUTPUT =============", True)
             self.log('LLM OUTPUT:\n' + output.get('output', ''), True)
 
             tool_call_description = None
@@ -148,23 +153,11 @@ class BaseAgent:
                 current_tool_call = tool_call
                 break
 
-            if not current_tool_call and (max_skip_command <= 0 or not output['_output']):
-                yield {
-                    'message': "Not commands (1), early stop",
-                    'result': {},
-                    'type': "error",
-                    'exit': True,
-                }
-                break
+            if not current_tool_call and not output['_output']:
+                logger.warning("Empty response")
+                continue
             elif not current_tool_call and output['_output']:
-                max_skip_command -= 1
-
-                yield {
-                    'message': output['_output'],
-                    'result': {},
-                    'type': "markdown",
-                    'exit': True,
-                }
+                yield DTOInstruction(type=EventType.MARKDOWN, message=output['_output'], exit=True)
 
                 conversation.append({
                     'role': 'assistant',
@@ -181,15 +174,22 @@ class BaseAgent:
             })
 
             if tool_call_description['function'] == 'report':
-                yield {
-                    'message': tool_call_description['args'][0],
-                    'result': {},
-                    'type': "report",
-                    'exit': True,
-                }
+                yield DTOInstruction(type=EventType.REPORT, message=tool_call_description['args'][0], exit=True)
                 break
             else:
-                yield {'type': 'nope'}
+                yield DTOInstruction(type=EventType.NOPE)
+
+                is_pre_output = tool_call_description['function'] in ['shell_command', 'search_file']
+                is_output_resul_of_tool_separate_msg = tool_call_description['function'] in ['shell_command', 'search_file']
+
+                if is_pre_output:
+                    _args = tool_call_description['args'][0] if tool_call_description['args'] else ''
+                    yield DTOInstruction(
+                        type=EventType.TOOL,
+                        function=tool_call_description['function'],
+                        args=tool_call_description['args'],
+                    )
+
                 result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
                 is_success = not result.get('error', False)
 
@@ -202,13 +202,18 @@ class BaseAgent:
                 if not tool_call_description['args']:
                     tool_call_description['args'] = ['']
 
-                if is_success:
-                    yield {
-                        'message': f"🔨 {tool_call_description['function']}: {tool_call_description['args'][0]}",
-                        'result': result,
-                        'type': "info",
-                        'exit': False,
-                    }
+                if not is_pre_output:
+                    yield DTOInstruction(
+                        type=EventType.TOOL,
+                        function=tool_call_description['function'],
+                        args=tool_call_description['args'],
+                        result=result,
+                        is_success=is_success,
+                    )
+
+                if is_output_resul_of_tool_separate_msg:
+                    _result = result.get('post_result', result['result'])
+                    yield DTOInstruction(type=EventType.MARKDOWN, message=_result)
 
                 result_msg = {
                     'role': 'tool',
@@ -221,20 +226,16 @@ class BaseAgent:
 
                 conversation.append(result_msg)
 
-                agent_step += 1
-
     def log(self, data, to_file=False):
-        if type(data) is list or type(data) is dict:
-            data = json.dumps(data, ensure_ascii=False, indent=4)
-
-        data = f"[ {self.role} ] {data}"
+        output = pretty_print_as_json(data)
+        output = f"[ {self.role} ] {output}"
 
         if not to_file:
-            logger.info(data)
+            logger.info(output)
             return
 
         with open(self.log_file, "a", encoding='utf8') as f:
-            f.write(data + "\n\n")
+            f.write(output + "\n\n")
 
     def cache_file(self, file_name: str, source_file_content: str) -> str:
         source_file_content_path = os.path.join(self.storage_path, hashlib.sha256(file_name.encode()).hexdigest() + '.txt')
@@ -244,50 +245,106 @@ class BaseAgent:
 
         return os.path.abspath(source_file_content_path)
 
+def _merge_assistant_messages(conversation: list[dict]) -> list[dict]:
+    # merge multiply assistant messages to once
+    merged = True
+    while merged:
+        merged = False
+        if len(conversation) >= 2:
+            if conversation[-1]['role'] == 'assistant' and conversation[-2]['role'] == 'assistant':
+                conversation[-2]['content'] += "\n" + conversation[-1]['content']
+                conversation = conversation[:-1]
+                merged = True
+
+    return conversation
 
 class AnalyticAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
-        return analytic_tools
+        if self.role == 'ANALYTIC':
+            return ANALYTIC_TOOLS
+        else:
+            return REVIEWER_TOOLS
+
+    def conversation_filter(self, conversation: list[dict]) -> list[dict]:
+        return _merge_assistant_messages(conversation)
 
 class CoderAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
-        return coder_tools
+        return CODER_TOOLS
+
+    def _create_log(self, conversation: list[dict]):
+        tools_list = [_ for _ in conversation if 'tool_calls' in _]
+        for tool in tools_list:
+            tool_call = tool['tool_calls'][0]
+            tool['args'] = list(_parse_tool_arguments(tool_call.function.arguments).values()) if tool_call.function.arguments else []
+
+        return "; ".join([f'{m['tool_calls'][0].function.name}:{m['args'][0]}' for m in tools_list])
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
-        last_tool = ''
-        modified_conversation = []
-        for m in conversation:
-            modified_conversation.append(m)
+        conversation = _merge_assistant_messages(conversation)
+
+        tools_map = {}
+        tools_answers = {}
+        is_convolution = False
+        for position, m in enumerate(conversation):
+            if 'tool_call_id' in m:
+                tools_answers[m['tool_call_id']] = m
 
             if 'tool_calls' not in m:
                 continue
 
             tool = m['tool_calls'][0]
-            _hash = tool.function.name + ':' + tool.function.arguments
+            if tool.function.name == 'report':
+                return conversation
 
-            if tool.function.name != 'read_file':
-                last_tool = _hash
-                continue
+            args = list(_parse_tool_arguments(tool.function.arguments).values()) if tool.function.arguments else []
+            if not args:
+                return conversation
 
-            if _hash == last_tool:
-                modified_conversation.append({
-                    'role': 'tool',
-                    'tool_call_id': tool.id,
-                    'name': tool.function.name,
-                    'content': 'File has read above!',
-                })
-
-                return modified_conversation
+            if tool.function.name == 'write_file':
+                tool_name = 'write'
+                js_obj_name = str(args[0])
+            elif tool.function.name == 'replace_code_in_file':
+                # lost write diff cause less quality
+                tool_name = f'replace_code_in_file:{position}'
+                js_obj_name = str(args[0])
             else:
-                last_tool = _hash
+                tool_name = 'read'
+                js_obj_name = ':'.join([str(_) for _ in args])
 
-        return conversation
+            if tools_map.get(js_obj_name, {}).get(tool_name, None):
+                is_convolution = True
+
+            if js_obj_name not in tools_map:
+                tools_map[js_obj_name] = {}
+
+            tools_map[js_obj_name][tool_name] = [m, position]
+
+        if not is_convolution:
+            return conversation
+
+        modified_conversation = []
+        for _, obj_tools in tools_map.items():
+            for _, [m, position] in obj_tools.items():
+                modified_conversation.append([10*position, m])
+                if m['tool_calls'][0].id in tools_answers:
+                    modified_conversation.append([10*position + 5, tools_answers[ m['tool_calls'][0].id ] ])
+
+        modified_conversation = sorted(modified_conversation, key=lambda pos_m: pos_m[0])
+        modified_conversation = [_[1] for _ in modified_conversation]
+
+        logger.info(
+            "Conv context! Before: " + self._create_log(conversation) + " After: " + self._create_log(modified_conversation)
+        )
+
+        return conversation[:2] + modified_conversation
 
 
 class Agent:
     PROMPTS = {
         'ANALYTIC': './prompts/analytic_system.txt',
         'CODER': './prompts/coder_system.txt',
+        'REVIEWER': './prompts/reviewer_system.txt',
     }
 
     STEP_PROMPT = './prompts/step.txt'
@@ -298,7 +355,7 @@ class Agent:
             shutil.rmtree(cache_path)
 
     @staticmethod
-    def fabric(role) -> BaseAgent:
+    def fabric(role, agent_commands: list = None) -> BaseAgent:
         assert role in Agent.PROMPTS, f'invalid role: {role}'
 
         thinking = role in DEEPTHINKING_AGENTS
@@ -308,14 +365,14 @@ class Agent:
 
             rtemplate = Environment(loader=BaseLoader).from_string(system_prompt)
             system_prompt = rtemplate.render(params={
-                'thinking': thinking
+                'thinking': thinking,
+                'agent_commands': agent_commands or []
             })
 
         with open(Agent.STEP_PROMPT, 'r', encoding='utf8') as f:
             step_prompt = f.read()
 
-
-        if role == 'ANALYTIC':
+        if role == 'ANALYTIC' or role == 'REVIEWER':
             return AnalyticAgent(role, system_prompt, step_prompt, thinking)
         elif role == 'CODER':
             return CoderAgent(role, system_prompt, step_prompt, False)
