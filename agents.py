@@ -140,7 +140,13 @@ class BaseAgent(LoggerMixin):
                         break
                     elif chunk['type'] == 'tool':
                         _tool_call = chunk['tool_calls'][0]
-                        yield DTOInstruction(type=EventType.TOOL, is_final=False, function=_tool_call['function']['name'], message_id=chunk['id'])
+                        yield DTOInstruction(
+                            type=EventType.TOOL,
+                            is_final=False,
+                            function=_tool_call['function']['name'],
+                            args=_tool_call['function'].get('arguments_parsed', {}),
+                            message_id=chunk['id']
+                        )
                     else:
                         yield DTOInstruction(type=EventType.PENDING, message_id=chunk['id'], is_final=False)
 

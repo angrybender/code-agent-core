@@ -48,6 +48,45 @@ else:
     MAX_PROMPT_OUTPUT = None
 
 
+def _sanitise_json_string(s: str) -> str:
+    """
+    Best-effort fix for JSON strings that contain unescaped double-quotes
+    or bare control characters (newlines, tabs, etc.) inside string values.
+    """
+    result = []
+    in_string = False
+    i = 0
+    while i < len(s):
+        ch = s[i]
+        if in_string:
+            if ch == '\\':
+                result.append(ch)
+                i += 1
+                if i < len(s):
+                    result.append(s[i])
+                    i += 1
+                continue
+            elif ch == '"':
+                in_string = False
+                result.append(ch)
+            elif ch == '\n':
+                result.append('\\n')
+            elif ch == '\r':
+                result.append('\\r')
+            elif ch == '\t':
+                result.append('\\t')
+            else:
+                result.append(ch)
+        else:
+            if ch == '"':
+                in_string = True
+                result.append(ch)
+            else:
+                result.append(ch)
+        i += 1
+    return ''.join(result)
+
+
 def _parse_json(json_str: str):
     if not isinstance(json_str, str):
         return None
@@ -57,11 +96,16 @@ def _parse_json(json_str: str):
     except (json.JSONDecodeError, ValueError):
         pass
 
+    sanitised = _sanitise_json_string(json_str)
+
+    try:
+        return json.loads(sanitised)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
     closers = ["}", '"}', "]", '"]']
-
-    for i in range(len(json_str), 0, -1):
-        _json_str = json_str[:i]
-
+    for i in range(len(sanitised), 0, -1):
+        _json_str = sanitised[:i]
         for closer in closers:
             try:
                 return json.loads(_json_str + closer)

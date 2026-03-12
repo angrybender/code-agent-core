@@ -83,6 +83,13 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
         file_link = _file_processing_tpl(message.result)
         result_message = f'<cite>{function_alias}</cite> {file_link}'
 
+    elif function_name == 'report' and not message.is_final:
+        result_message = message.args.get('text', '')
+        if result_message:
+            message = DTOInstruction(type=EventType.MARKDOWN, message_id=message.message_id)
+        else:
+            result_message = f'<cite>{function_alias}</cite>'
+
     elif message.type == EventType.TOOL:
         _arg_name = _FUNCTION_ARG_PRINT.get(str(function_name))
         if _arg_name and _arg_name in message.args:
