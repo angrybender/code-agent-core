@@ -52,6 +52,7 @@ class SimpleChat {
         this.ON_USER_SCROLL_SEMAPHORE_TIMER = null;
 
         this.IS_LAST_MESSAGE_SUCCESS = false;
+        this.IS_ON_END_CONVERSATION = false; // mutex for debounce
 
         this.init();
     }
@@ -65,9 +66,14 @@ class SimpleChat {
         document.getElementById('main-wrapper').classList.add('conversation-active');
         this.controlFlowStopBtn.style.display = 'block';
         this.messageInput.style.display = 'none';
+        this.IS_ON_END_CONVERSATION = false;
     }
 
     onEndConversation() {
+        if (this.IS_ON_END_CONVERSATION) {
+            return;
+        }
+
         if (this.IS_LAST_MESSAGE_SUCCESS) {
             this.messageInput.value = "";
             this.messageInput.style.height = 'auto';
@@ -82,6 +88,8 @@ class SimpleChat {
         this.messageInput.style.display = 'block';
         document.getElementById('main-wrapper').classList.remove('conversation-active');
         window.scrollTo(0, document.body.scrollHeight);
+
+        this.IS_ON_END_CONVERSATION = true;
     }
 
     setupEventListeners() {
