@@ -13,6 +13,7 @@ _FUNCTION_NAME_TITLES = {
     'replace_code_in_file': 'patch ',
     'shell_command': 'shell ',
     'read_file': 'read  ',
+    'search_file': 'search',
 }
 
 _FUNCTION_ARG_PRINT = {
