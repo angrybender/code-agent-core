@@ -30,12 +30,15 @@ def _read_file_pure(project_path: str, path_in_project: str) -> dict:
         if not os.path.exists(abs_path):
             return {'error': f"File: {path_in_project} doesn't exist or can't be opened"}
 
+        if os.path.isdir(abs_path):
+            return {'error': f"Path: {path_in_project} is a directory, not a file"}
+
         with open(abs_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
         return {'status': content}
 
-    except (FileNotFoundError, PermissionError, UnicodeDecodeError):
+    except (FileNotFoundError, PermissionError, UnicodeDecodeError, IsADirectoryError):
         return {'error': f"File: {path_in_project} doesn't exist or can't be opened"}
 
 
