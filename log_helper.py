@@ -11,13 +11,18 @@ def pretty_format(obj, base_indent=2, truncate=10) -> str:
             output = ["["]
             for item in o:
                 output.append(" "*(indent+base_indent) + to_dict(item, indent + base_indent))
+
             output.append(" " * indent + "]")
 
             return "\n".join(output)
         elif isinstance(o, dict):
             output = ["{"]
             for k,v in o.items():
-                output.append(" "*(indent+base_indent) + k + " = " + to_dict(v, indent + base_indent))
+                try:
+                    output.append(" "*(indent+base_indent) + k + " = " + to_dict(v, indent + base_indent))
+                except RecursionError:
+                    output.append(" " * (indent + base_indent) + k + " = ...")
+
             output.append(" " * indent + "}")
 
             return "\n".join(output)
