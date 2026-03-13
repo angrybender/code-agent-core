@@ -38,4 +38,7 @@ def pretty_format(obj, base_indent=2, truncate=10) -> str:
         else:
             return str(o)
 
-    return to_dict(obj, 0)
+    try:
+        return to_dict(obj, 0)
+    except RecursionError:
+        return "..."
