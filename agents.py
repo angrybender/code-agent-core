@@ -17,7 +17,7 @@ load_dotenv()
 
 from llm import llm_query, llm_query_stream
 from tools_interpreter import ToolsInterpreter
-from tools.tools import ANALYTIC_TOOLS, CODER_TOOLS, REVIEWER_TOOLS
+from tools.tools import ANALYTIC_TOOLS, CODER_TOOLS, REVIEWER_TOOLS, get_coder_tools, get_reviewer_tools
 from search_code import SearchCode
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
@@ -62,7 +62,7 @@ class BaseAgent(LoggerMixin):
     DEEP_THINK_TAG = 'work_plan'
     STORAGE_PATH = './storage'
 
-    def __init__(self, role: str, system_prompt: str, step_prompt: str, thinking: bool):
+    def __init__(self, role: str, system_prompt: str, step_prompt: str, thinking: bool, has_shell_commands: bool = True):
         self.system_prompt = system_prompt
         self.step_prompt = step_prompt
 
@@ -76,6 +76,7 @@ class BaseAgent(LoggerMixin):
         self.thinking = thinking
         self.storage_path = None
         self.search_service = SearchCode()
+        self.has_shell_commands = has_shell_commands
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
         return conversation
@@ -308,14 +309,14 @@ class AnalyticAgent(BaseAgent):
         if self.role == 'ANALYTIC':
             return ANALYTIC_TOOLS
         else:
-            return REVIEWER_TOOLS
+            return get_reviewer_tools(self.has_shell_commands)
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
         return _merge_assistant_messages(conversation)
 
 class CoderAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
-        return CODER_TOOLS
+        return get_coder_tools(self.has_shell_commands)
 
     def _create_log(self, conversation: list[dict]):
         tools_list = [_ for _ in conversation if 'tool_calls' in _]
@@ -404,6 +405,7 @@ class Agent:
         assert role in Agent.PROMPTS, f'invalid role: {role}'
 
         thinking = role in DEEPTHINKING_AGENTS
+        has_shell_commands = bool(agent_commands and len(agent_commands) > 0)
         system_prompt = Agent.PROMPTS[role]
         with open(system_prompt, 'r', encoding='utf8') as f:
             system_prompt = f.read()
@@ -418,6 +420,6 @@ class Agent:
             step_prompt = f.read()
 
         if role == 'ANALYTIC' or role == 'REVIEWER':
-            return AnalyticAgent(role, system_prompt, step_prompt, thinking)
+            return AnalyticAgent(role, system_prompt, step_prompt, thinking, has_shell_commands)
         elif role == 'CODER':
-            return CoderAgent(role, system_prompt, step_prompt, False)
+            return CoderAgent(role, system_prompt, step_prompt, False, has_shell_commands)

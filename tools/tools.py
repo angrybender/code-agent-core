@@ -230,7 +230,21 @@ TOOL_EXIT = {
     }
 }
 
+def get_coder_tools(has_shell_commands: bool) -> list:
+    """Return CODER_TOOLS with or without shell command support."""
+    if has_shell_commands:
+        return [TOOL_READ_FILE, TOOL_LIST_IN_DIRECTORY, TOOL_WRITE_FILE, TOOL_REPLACE_CODE_IN_FILE, TOOL_SHELL_COMMAND, TOOL_REPORT]
+    return [TOOL_READ_FILE, TOOL_LIST_IN_DIRECTORY, TOOL_WRITE_FILE, TOOL_REPLACE_CODE_IN_FILE, TOOL_REPORT]
+
+
+def get_reviewer_tools(has_shell_commands: bool) -> list:
+    """Return REVIEWER_TOOLS with or without shell command support."""
+    if has_shell_commands:
+        return [TOOL_READ_FILE, TOOL_SEARCH_FILE, TOOL_SHELL_COMMAND, TOOL_REPORT]
+    return [TOOL_READ_FILE, TOOL_SEARCH_FILE, TOOL_REPORT]
+
+
 ANALYTIC_TOOLS = [TOOL_READ_FILE, TOOL_LIST_IN_DIRECTORY, TOOL_SEARCH_FILE, TOOL_REPORT]
-CODER_TOOLS = [TOOL_READ_FILE, TOOL_LIST_IN_DIRECTORY, TOOL_WRITE_FILE, TOOL_REPLACE_CODE_IN_FILE, TOOL_SHELL_COMMAND, TOOL_REPORT]
-REVIEWER_TOOLS = [TOOL_READ_FILE, TOOL_SEARCH_FILE, TOOL_SHELL_COMMAND, TOOL_REPORT]
+CODER_TOOLS = get_coder_tools(True)
+REVIEWER_TOOLS = get_reviewer_tools(True)
 SUPERVISOR_TOOLS = [TOOL_CALL_AGENT, TOOL_MESSAGE, TOOL_EXIT]
