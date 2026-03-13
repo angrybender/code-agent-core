@@ -172,7 +172,8 @@ class SimpleChat {
             const scrollTop = window.scrollY;
             const windowHeight = window.innerHeight;
             const documentHeight = document.documentElement.scrollHeight;
-            const scrollPercentage = (scrollTop + windowHeight) / documentHeight;
+            const maxScrollTop = documentHeight - windowHeight;
+            const scrollPercentage = maxScrollTop > 0 ? scrollTop / maxScrollTop : 1;
             if (scrollPercentage > 0.95) {
                 this.ON_USER_SCROLL_SEMAPHORE = false;
                 return true;
