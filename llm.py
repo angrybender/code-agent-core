@@ -243,7 +243,7 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
                     for tool_call_delta in choice.delta.tool_calls:
                         idx = tool_call_delta.index
                         if idx not in _tool_calls:
-                            _tool_calls[idx] = {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
+                            _tool_calls[idx] = {"id": "", "type": "function", "function": {"name": "", "arguments": ""}, "_position": len(_tool_calls)}
                         tc = _tool_calls[idx]
                         if tool_call_delta.id:
                             tc["id"] += tool_call_delta.id
@@ -282,7 +282,7 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
                 "id": message_id,
                 "type": "final",
                 "output": _output,
-                "tool_calls": list(_tool_calls.values()),
+                "tool_calls": sorted(list(_tool_calls.values()), key=lambda _: _['_position']),
                 "tokens_usage": _tokens_usage,
             }
 
@@ -296,7 +296,7 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
             time.sleep(1)
 
     if error:
-        with open('./conversations_log/llm.error', 'w', encoding='utf8') as f:
+        with open('./conversations_log/llm.error.log', 'w', encoding='utf8') as f:
             f.write("INPUT: \n" + pretty_format(messages) +"\n\nERROR:\n" + pretty_format(error))
 
         raise error
