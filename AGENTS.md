@@ -106,7 +106,7 @@ Synchronous, blocking endpoint — no session management or SSE required.
 {
   "status": "success",
   "results": [
-    {"id": "uuid", "type": "info", "message": "...", "result": {}, "exit": false, "hidden": false, "function": null, "args": [], "is_success": true}
+    {"message_id": "uuid", "type": "info", "message": "...", "result": {}, "exit": false, "hidden": false, "function": null, "args": {}, "is_success": true, "is_final": true, "metadata": null, "context_window": null}
   ],
   "timeout": false,
   "elapsed_time": 12.5
@@ -117,6 +117,11 @@ Synchronous, blocking endpoint — no session management or SSE required.
 |-------|------|-------------|
 | `status` | string | `success` or `error` |
 | `results` | array | List of serialized DTOInstruction objects from agent execution |
+| `results[].message_id` | string | Unique message identifier |
+| `results[].args` | object | Tool arguments (if applicable) |
+| `results[].is_final` | boolean | Whether this is the final message |
+| `results[].metadata` | object/null | Agent artifacts metadata (files created/modified, commands run) |
+| `results[].context_window` | object/null | Token usage info (`{"used": N, "limit": N}`) |
 | `timeout` | boolean | Whether execution was terminated due to timeout |
 | `elapsed_time` | number | Actual execution time in seconds |
 
@@ -134,7 +139,7 @@ Stops a running agent session:
 - Supports function calling (tool use)
 - Per-agent model selection via `MODEL:<ROLE>` env variables
 - Environment-based configuration
-- Errors logged to `conversations_log/llm.error` after 5 failed retry attempts
+- Error logging: `llm_query()` logs to `conversations_log/llm.error`, `llm_query_stream()` logs to `conversations_log/llm.error.log` — both after 5 failed retry attempts
 
 ### Logging Mixin
 
@@ -242,7 +247,7 @@ Browser SSE connection → GET /events → Incremental messages streamed
 
 ### Configuration-Driven
 - `.env` for API keys, model selection, timeouts, modes
-- Project manifest (`AGENTS.md` or `.copilot_project.xml`) for project metadata
+- Project manifest (`AGENTS.md`) for project metadata
 
 ### Separation of Concerns
 - **SUPERVISOR**: Task delegation and orchestration only
@@ -253,6 +258,15 @@ Browser SSE connection → GET /events → Incremental messages streamed
 ### Safety Features
 - Agents can only execute shell commands from a predefined whitelist
 - `MAX_ITERATION` prevents runaway execution
+
+### Agent Artifacts Tracking
+- Agents track artifacts during execution: `files_read`, `files_created`, `files_modified`, `commands_run`
+- Artifacts are passed as `metadata` in the report `DTOInstruction`
+- The SUPERVISOR enriches agent reports with structured artifact summaries
+
+### Conversation Context Filtering
+- `AnalyticAgent` merges consecutive assistant messages to reduce context size
+- `CoderAgent` additionally performs "convolution" — removes duplicate read/write tool calls for the same file
 
 ## Project Configuration
 
@@ -272,8 +286,9 @@ Browser SSE connection → GET /events → Incremental messages streamed
 | `SHELL_COMMAND_TIMEOUT` | 30 | Timeout for shell commands in seconds |
 | `SHELL_COMMAND_DIRECTORY` | .agent-commands | Directory with predefined shell commands |
 | `DEBUG` | 0 | Enable verbose LLM logging to `full_log.log` |
-| `DEEPTHINKING_AGENTS` | — | Comma-separated agent names for deep thinking mode |
+| `DEEPTHINKING_AGENTS` | — | Comma-separated agent names for deep thinking mode (does **not** affect CODER — CODER always runs with `thinking=False`) |
 | `AVOID_EMPTY_RESPONSE` | 0 | Force non-empty LLM responses |
+| `MAX_CONTEXT_WINDOW_SIZE` | 100000 | Maximum context window size in tokens for prompt usage tracking |
 
 ## Directory Structure
 
@@ -284,7 +299,7 @@ project_root/
 ├── commands_helper.py           # .agent-commands/ parser and shell executor (supports $N positional args)
 ├── conversation.py              # UI message formatting (DTOInstruction → HTML/text)
 ├── diff_helper.py               # Code patching utilities (apply_patch, PatchError)
-├── llm.py                       # OpenAI-compatible LLM client; errors logged to conversations_log/llm.error
+├── llm.py                       # OpenAI-compatible LLM client; errors logged to conversations_log/llm.error and llm.error.log
 ├── llm_api_server.py            # Flask HTTP server (Web UI + REST API)
 ├── llm_parser.py                # XML tag parsing from LLM responses
 ├── logger_mixin.py              # LoggerMixin base class — structured logging for agents and Copilot
@@ -306,6 +321,8 @@ project_root/
 ├── tools/
 │   └── tools.py                 # All agent tool schema definitions (ANALYTIC/CODER/REVIEWER/SUPERVISOR_TOOLS)
 ├── templates/                   # Web UI (SSE client, markdown rendering)
+│   ├── app.html                 # Main Jinja2 template for web UI
+│   ├── error.html               # Version mismatch error page
 │   └── assets/
 │       ├── app.js               # SSE client, message rendering, UI interaction logic
 │       ├── main.css             # Chat interface styles
@@ -322,14 +339,15 @@ project_root/
 
 - **Session logs**: `conversations_log/log.log` — user-facing messages
 - **Debug logs**: `conversations_log/full_log.log` — full LLM request/response log (when `DEBUG=1`)
-- **LLM error log**: `conversations_log/llm.error` — written after 5 failed LLM API retry attempts (contains last request and error details)
+- **LLM error log**: `conversations_log/llm.error` — from `llm_query()` after 5 failed retry attempts (contains last request and error details)
+- **LLM stream error log**: `conversations_log/llm.error.log` — from `llm_query_stream()` after 5 failed retry attempts
 - **Real-time streaming**: SSE message stream to browser via `GET /events`
 
 ## Common Development Tasks
 
 - **Add new agent**: Add a new class in `agents.py`, define prompt files in `prompts/`, register the new role in `agents.py` and `dto/enums.py`
 - **Add new agent role**: Add to `AgentRole` enum in `dto/enums.py`, create prompt files in `prompts/`, register the role in `agents.py`
-- **Add new event type**: Add value to `EventType` in `dto/enums.py` and handle rendering in `conversation.py`
+- **Add new event type**: Add value to `EventType` in `dto/enums.py` and handle rendering in `conversation.py`. Note: `EventType.CONTEXT` is used for token usage tracking, emitting context window usage information (`used` and `limit` values)
 - **Add shell command**: Create a `.md` file in `.agent-commands/` with a fenced code block containing the shell command
 - **Modify prompts**: Edit templates in `prompts/` directory (Jinja2 syntax for CODER/REVIEWER)
 - **Change LLM provider**: Update `OPENAI_API_URL` and `OPENAI_API_KEY` in `.env`
