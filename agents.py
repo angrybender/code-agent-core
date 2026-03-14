@@ -26,6 +26,7 @@ IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=int(os.getenv('MAX_ITERATION'))
 DEEPTHINKING_AGENTS=os.getenv('DEEPTHINKING_AGENTS', '').split(',')
 AVOID_EMPTY_RESPONSE = int(os.getenv('AVOID_EMPTY_RESPONSE', 0)) == 1
+MAX_CONTEXT_WINDOW_SIZE = int(os.getenv('MAX_CONTEXT_WINDOW_SIZE', 100000))
 
 def _parse_tool_arguments(json_data: str):
     try:
@@ -189,6 +190,13 @@ class BaseAgent(LoggerMixin):
                         'role': 'user',
                         'content': 'Dont answer with empty message. If you have finished the work - call `report` tool!'
                     })
+
+            _prompt_tokens = output.get('tokens_usage', {}).get('prompt', 0)
+            if _prompt_tokens > 0:
+                yield DTOInstruction(
+                    type=EventType.CONTEXT,
+                    context_window={"used": _prompt_tokens, "limit": MAX_CONTEXT_WINDOW_SIZE}
+                )
 
             self.log('LLM OUTPUT:\n' + output.get('output', ''), True)
 

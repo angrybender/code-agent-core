@@ -22,6 +22,7 @@ load_dotenv()
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=os.getenv('MAX_ITERATION')
 AVOID_EMPTY_RESPONSE = int(os.getenv('AVOID_EMPTY_RESPONSE', 0)) == 1
+MAX_CONTEXT_WINDOW_SIZE = int(os.getenv('MAX_CONTEXT_WINDOW_SIZE', 100000))
 
 import logging
 logger = logging.getLogger('APP')
@@ -182,6 +183,13 @@ class Copilot(LoggerMixin):
                         'role': 'user',
                         'content': 'Dont answer with empty message. If you have finished the work - call `exit` tool!'
                     })
+
+            _prompt_tokens = output.get('tokens_usage', {}).get('prompt', 0)
+            if _prompt_tokens > 0:
+                yield DTOInstruction(
+                    type=EventType.CONTEXT,
+                    context_window={"used": _prompt_tokens, "limit": MAX_CONTEXT_WINDOW_SIZE}
+                )
 
             tool_call_description = None
             current_tool_call = None

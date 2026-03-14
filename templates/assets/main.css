@@ -1,7 +1,6 @@
 body {
     font-family: Arial, sans-serif;
     margin: 0 auto;
-    background-color: #f5f5f5;
     font-size: 1.1em;
     padding-top: 10px;
 
@@ -61,13 +60,10 @@ button.default:disabled {
 }
 
 .chat-container {
-    background: white;
-    border-radius: 10px;
-    padding: 10px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    padding-top: 10px;
 }
 
-.chat-messages {
+#main-wrapper.conversation-active .chat-messages {
     margin-bottom: 20px;
 }
 .chat-messages pre {
@@ -209,6 +205,7 @@ button.default:disabled {
 .markdown-message {
     border: 1px solid #ddd;
     border-radius: 5px;
+    background: white;
 }
 .markdown-message code {
     font-size: 120%;
@@ -305,7 +302,13 @@ button.default:disabled {
     left: 10px;
     left: 10px;
     right: 10px;
+    z-index: 10;
 }
+
+#main-wrapper {
+    padding: 0 10px;
+}
+
 
 #main-wrapper.conversation-active {
     padding-bottom: 40px;
@@ -355,4 +358,48 @@ button.default:disabled {
 }
 .message.loading .timestamp {
     opacity: 0;
+}
+
+/* Context Window Progress Bar */
+#context-window-bar {
+    display: none;
+    position: relative;
+    left: 0;
+    right: 0;
+    bottom: 15px;
+    height: 22px;
+    background-color: #e9ecef;
+    z-index: 1;
+    font-size: 11px;
+    line-height: 22px;
+    overflow: hidden;
+}
+
+#context-window-bar .context-bar-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    transition: width 0.3s ease;
+    border-radius: 0 2px 2px 0;
+}
+
+#context-window-bar .context-bar-label {
+    position: relative;
+    z-index: 1;
+    padding-left: 8px;
+    font-family: monospace;
+    color: #333;
+}
+
+#context-window-bar.context-level-ok .context-bar-fill {
+    background-color: #82e0aa;
+}
+
+#context-window-bar.context-level-warn .context-bar-fill {
+    background-color: #f9e79f;
+}
+
+#context-window-bar.context-level-danger .context-bar-fill {
+    background-color: #f1948a;
 }

@@ -67,6 +67,9 @@ class SimpleChat {
         this.controlFlowStopBtn.style.display = 'block';
         this.messageInput.style.display = 'none';
         this.IS_ON_END_CONVERSATION = false;
+
+        const ctxBar = document.getElementById('context-window-bar');
+        if (ctxBar) ctxBar.style.display = 'none';
     }
 
     onEndConversation() {
@@ -88,6 +91,9 @@ class SimpleChat {
         this.messageInput.style.display = 'block';
         document.getElementById('main-wrapper').classList.remove('conversation-active');
         window.scrollTo(0, document.body.scrollHeight);
+
+        const ctxBar = document.getElementById('context-window-bar');
+        if (ctxBar) ctxBar.style.display = 'none';
 
         this.IS_ON_END_CONVERSATION = true;
     }
@@ -255,6 +261,9 @@ class SimpleChat {
             case 'agent':
                 this.addMessage(data, 'agent');
                 break;
+            case 'context':
+                this.updateContextBar(data.context_window);
+                break;
             default:
                 this.addMessage(data, 'bot');
                 this.IS_LAST_MESSAGE_SUCCESS = true;
@@ -412,6 +421,34 @@ class SimpleChat {
         });
 
         messageDiv.appendChild(copyButton);
+    }
+
+    updateContextBar(contextWindow) {
+        if (!contextWindow || !contextWindow.limit) return;
+
+        const used = contextWindow.used;
+        const limit = contextWindow.limit;
+        const percentage = Math.min(Math.round((used / limit) * 100), 100);
+
+        let bar = document.getElementById('context-window-bar');
+        if (!bar) return;
+
+        const fill = bar.querySelector('.context-bar-fill');
+        const label = bar.querySelector('.context-bar-label');
+
+        fill.style.width = percentage + '%';
+        label.textContent = percentage + '% (' + used.toLocaleString() + ' / ' + limit.toLocaleString() + ')';
+
+        bar.classList.remove('context-level-ok', 'context-level-warn', 'context-level-danger');
+        if (percentage < 60) {
+            bar.classList.add('context-level-ok');
+        } else if (percentage < 85) {
+            bar.classList.add('context-level-warn');
+        } else {
+            bar.classList.add('context-level-danger');
+        }
+
+        bar.style.display = 'block';
     }
 
     updateStatus(message, className) {

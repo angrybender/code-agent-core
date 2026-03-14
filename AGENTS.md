@@ -264,7 +264,6 @@ Browser SSE connection → GET /events → Incremental messages streamed
 | `OPENAI_API_KEY` | — | API authentication key |
 | `OPENAI_API_TIMEOUT` | 1200 | LLM request timeout in seconds |
 | `MODEL` | claude-sonnet-4.5 | Default model identifier |
-| `MAX_PROMPT_OUTPUT` | — | Max output tokens limit |
 | `REASONING_EFFORT` | low | For o1/o3 models: `low` / `medium` / `high` |
 | `IDE_MCP_HOST` | http://127.0.0.1:63342/ | JetBrains IDE MCP server URL |
 | `HTTP_PORT` | 5000 | Flask server port |

@@ -36,6 +36,11 @@ def get_terminal():
     return get_message('[DONE]', 'assistant', 'end')
 
 def agent_tool_tpl(message: DTOInstruction) -> dict:
+    if message.type == EventType.CONTEXT:
+        output = asdict(message)
+        output['timestamp'] = time.time()
+        return output
+
     function_name = message.function
     result_message = message.message
     function_alias = _FUNCTION_NAME_TITLES.get(function_name, function_name)

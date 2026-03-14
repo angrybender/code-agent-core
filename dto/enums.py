@@ -23,3 +23,4 @@ class EventType(str, Enum):
     STATUS   = "status"
     WARNING  = "warning"
     EXIT    = "exit"
+    CONTEXT = "context"

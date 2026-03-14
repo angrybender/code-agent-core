@@ -17,3 +17,4 @@ class DTOInstruction:
     is_success: bool = True
     is_final: bool = True
     metadata: Optional[dict] = None
+    context_window: Optional[dict] = None

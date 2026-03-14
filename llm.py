@@ -41,12 +41,6 @@ API_TIMEOUT = int(os.getenv('OPENAI_API_TIMEOUT'))
 MODEL = os.getenv('MODEL')
 REASONING_EFFORT = os.getenv('REASONING_EFFORT')
 
-MAX_PROMPT_OUTPUT = os.getenv('MAX_PROMPT_OUTPUT', '')
-if MAX_PROMPT_OUTPUT:
-    MAX_PROMPT_OUTPUT = int(MAX_PROMPT_OUTPUT)
-else:
-    MAX_PROMPT_OUTPUT = None
-
 
 def _sanitise_json_string(s: str) -> str:
     """
@@ -141,7 +135,6 @@ def llm_query(messages, tags=None, tools=None, model_name=None):
     options = {
         'messages': messages,
         'model': model_name if model_name else MODEL,
-        'max_tokens': MAX_PROMPT_OUTPUT,
         'tools': tools,
     }
 
@@ -206,7 +199,6 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
     options = {
         'messages': messages,
         'model': model_name if model_name else MODEL,
-        'max_tokens': MAX_PROMPT_OUTPUT,
         'tools': tools,
         'stream': True,
     }
@@ -231,6 +223,7 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
 
             _output = ""
             _tool_calls = {}
+            _tokens_usage = {}
 
             for chunk in response:
                 if not chunk.choices:
@@ -281,11 +274,16 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
                         "type": "pending",
                     }
 
+
+                if chunk.usage:
+                    _tokens_usage = {"prompt": chunk.usage.prompt_tokens, "completion": chunk.usage.completion_tokens}
+
             final = {
                 "id": message_id,
                 "type": "final",
                 "output": _output,
-                "tool_calls": list(_tool_calls.values())
+                "tool_calls": list(_tool_calls.values()),
+                "tokens_usage": _tokens_usage,
             }
 
             if tags:
