@@ -17,10 +17,11 @@ load_dotenv()
 
 from llm import llm_query, llm_query_stream
 from tools_interpreter import ToolsInterpreter
-from tools.tools import ANALYTIC_TOOLS, CODER_TOOLS, REVIEWER_TOOLS, get_coder_tools, get_reviewer_tools
+from tools.tools import ANALYTIC_TOOLS, get_coder_tools, get_reviewer_tools
 from search_code import SearchCode
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
+from context_helper import compact_conversation_remove_redundant
 
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=int(os.getenv('MAX_ITERATION'))
@@ -38,6 +39,19 @@ def _parse_tool_arguments(json_data: str):
 
         return json.loads(json_data)
 
+def _merge_assistant_messages(conversation: list[dict]) -> list[dict]:
+    # merge multiply assistant messages to once
+
+    merged = True
+    while merged:
+        merged = False
+        if len(conversation) >= 2:
+            if conversation[-1]['role'] == 'assistant' and conversation[-2]['role'] == 'assistant':
+                conversation[-2]['content'] += "\n" + conversation[-1]['content']
+                conversation = conversation[:-1]
+                merged = True
+
+    return conversation
 
 def _create_report(conversation: list[dict]):
     report = ""
@@ -86,7 +100,26 @@ class BaseAgent(LoggerMixin):
         }
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
-        return conversation
+        conversation = _merge_assistant_messages(conversation)
+        before_len = len(conversation)
+        new_conversation = compact_conversation_remove_redundant(conversation)
+
+        if len(new_conversation) < before_len:
+            def _create_log(conversation: list[dict]):
+                tools_list = [_ for _ in conversation if 'tool_calls' in _]
+                for tool in tools_list:
+                    tool_call = tool['tool_calls'][0]
+                    tool['args'] = list(_parse_tool_arguments(tool_call['function']['arguments']).values()) if \
+                    tool_call['function']['arguments'] else []
+
+                return "; ".join([f'{m['tool_calls'][0]['function']['name']}:{m['args'][0]}' for m in tools_list])
+
+            logger.info(
+                "Conv context! Before: " + _create_log(conversation) + " After: " + _create_log(
+                    new_conversation)
+            )
+
+        return new_conversation
 
     def get_tools(self) -> list[dict]:
         return []
@@ -207,12 +240,14 @@ class BaseAgent(LoggerMixin):
                 tool_calls = []
 
             for tool_call in tool_calls:
+                _args = _parse_tool_arguments(tool_call['function']['arguments']) if tool_call['function']['arguments'] else {}
                 tool_call_description = {
                     'function': tool_call['function']['name'],
                     'id': tool_call['id'],
-                    'args': _parse_tool_arguments(tool_call['function']['arguments']) if tool_call['function']['arguments'] else {}
+                    'args': _args,
                 }
                 current_tool_call = tool_call
+                current_tool_call['function']['arguments'] = json.dumps(_args) # correct json always
                 break
 
             if not current_tool_call and not output['output']:
@@ -342,19 +377,6 @@ class BaseAgent(LoggerMixin):
 
         return os.path.abspath(source_file_content_path)
 
-def _merge_assistant_messages(conversation: list[dict]) -> list[dict]:
-    # merge multiply assistant messages to once
-
-    merged = True
-    while merged:
-        merged = False
-        if len(conversation) >= 2:
-            if conversation[-1]['role'] == 'assistant' and conversation[-2]['role'] == 'assistant':
-                conversation[-2]['content'] += "\n" + conversation[-1]['content']
-                conversation = conversation[:-1]
-                merged = True
-
-    return conversation
 
 class AnalyticAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
@@ -363,79 +385,9 @@ class AnalyticAgent(BaseAgent):
         else:
             return get_reviewer_tools(self.has_shell_commands)
 
-    def conversation_filter(self, conversation: list[dict]) -> list[dict]:
-        return _merge_assistant_messages(conversation)
-
 class CoderAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
         return get_coder_tools(self.has_shell_commands)
-
-    def _create_log(self, conversation: list[dict]):
-        tools_list = [_ for _ in conversation if 'tool_calls' in _]
-        for tool in tools_list:
-            tool_call = tool['tool_calls'][0]
-            tool['args'] = list(_parse_tool_arguments(tool_call['function']['arguments']).values()) if tool_call['function']['arguments'] else []
-
-        return "; ".join([f'{m['tool_calls'][0]['function']['name']}:{m['args'][0]}' for m in tools_list])
-
-    def conversation_filter(self, conversation: list[dict]) -> list[dict]:
-        conversation = _merge_assistant_messages(conversation)
-
-        tools_map = {}
-        tools_answers = {}
-        is_convolution = False
-        for position, m in enumerate(conversation):
-            if 'tool_call_id' in m:
-                tools_answers[m['tool_call_id']] = m
-
-            if 'tool_calls' not in m:
-                continue
-
-            tool = m['tool_calls'][0]
-            if tool['function']['name'] == 'report':
-                return conversation
-
-            args = list(_parse_tool_arguments(tool['function']['arguments']).values()) if tool['function']['arguments'] else []
-            if not args:
-                return conversation
-
-            if tool['function']['name'] == 'write_file':
-                tool_name = 'write'
-                js_obj_name = str(args[0])
-            elif tool['function']['name'] == 'replace_code_in_file':
-                # lost write diff cause less quality
-                tool_name = f'replace_code_in_file:{position}'
-                js_obj_name = str(args[0])
-            else:
-                tool_name = 'read'
-                js_obj_name = ':'.join([str(_) for _ in args])
-
-            if tools_map.get(js_obj_name, {}).get(tool_name, None):
-                is_convolution = True
-
-            if js_obj_name not in tools_map:
-                tools_map[js_obj_name] = {}
-
-            tools_map[js_obj_name][tool_name] = [m, position]
-
-        if not is_convolution:
-            return conversation
-
-        modified_conversation = []
-        for _, obj_tools in tools_map.items():
-            for _, [m, position] in obj_tools.items():
-                modified_conversation.append([10*position, m])
-                if m['tool_calls'][0]['id'] in tools_answers:
-                    modified_conversation.append([10*position + 5, tools_answers[ m['tool_calls'][0]['id'] ] ])
-
-        modified_conversation = sorted(modified_conversation, key=lambda pos_m: pos_m[0])
-        modified_conversation = [_[1] for _ in modified_conversation]
-
-        logger.info(
-            "Conv context! Before: " + self._create_log(conversation) + " After: " + self._create_log(modified_conversation)
-        )
-
-        return conversation[:2] + modified_conversation
 
 
 class Agent:
