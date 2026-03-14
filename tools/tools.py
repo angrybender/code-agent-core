@@ -164,14 +164,14 @@ TOOL_REPORT = {
     "type": "function",
     "function": {
         "name": "report",
-        "description": "Print a short report of your work.\nUse this command when you have completely executed the instructions and have decided to finish the work.",
+        "description": "Print a short report of your work.\nUse this command when you have completely executed the instructions and have decided to finish the work.\nInclude in your report: summary of work done, list of files analyzed/created/modified, and any issues found.",
         "parameters": {
             "type": "object",
             "required": ["text"],
             "properties": {
                 "text": {
                     "type": "string",
-                    "description": "Text is a report in the Markdown format. Don't write the full content of the files — a short description is enough!"
+                    "description": "Text is a report in the Markdown format. Don't write the full content of the files — a short description is enough! Include a '## Files' section listing all files you created or modified."
                 }
             }
         }
@@ -182,7 +182,7 @@ TOOL_CALL_AGENT = {
     "type": "function",
     "function": {
         "name": "call_agent",
-        "description": "Call an agent to execute a sub-task",
+        "description": "Call an agent to execute a sub-task. Include ALL necessary context in the instruction — sub-agents have NO access to your conversation history. Always include relevant file paths, task details, and any previous agent findings.",
         "parameters": {
             "type": "object",
             "required": ["agent_name", "instruction"],
@@ -193,7 +193,7 @@ TOOL_CALL_AGENT = {
                 },
                 "instruction": {
                     "type": "string",
-                    "description": "instruction is a prompt for the selected agent; you must put all data needed by the target agent into the instruction"
+                    "description": "A complete, self-contained instruction for the agent. Must include all file paths, context, and requirements — the agent cannot see your conversation."
                 }
             }
         }

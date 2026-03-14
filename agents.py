@@ -77,6 +77,12 @@ class BaseAgent(LoggerMixin):
         self.storage_path = None
         self.search_service = SearchCode()
         self.has_shell_commands = has_shell_commands
+        self.artifacts = {
+            'files_read': [],
+            'files_created': [],
+            'files_modified': [],
+            'commands_run': [],
+        }
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
         return conversation
@@ -94,6 +100,13 @@ class BaseAgent(LoggerMixin):
         self.storage_path = os.path.join(self.STORAGE_PATH, hashlib.sha256(manifest['base_path'].encode()).hexdigest())
         if not os.path.exists(self.storage_path):
             os.mkdir(self.storage_path)
+
+        self.artifacts = {
+            'files_read': [],
+            'files_created': [],
+            'files_modified': [],
+            'commands_run': [],
+        }
 
     def run(self):
         assert self.instruction, 'Init() s required'
@@ -154,7 +167,7 @@ class BaseAgent(LoggerMixin):
                 if output:
                     break
                 else:
-                    yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id)
+                    yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id, metadata=self.artifacts)
 
                 if not AVOID_EMPTY_RESPONSE:
                     _report = _create_report(conversation)
@@ -165,7 +178,7 @@ class BaseAgent(LoggerMixin):
                         _report = "I've completed task"
                         logger.info("Empty response [agents]")
 
-                    yield DTOInstruction(type=EventType.REPORT, message=_report, exit=True, hidden=True, message_id=message_id)
+                    yield DTOInstruction(type=EventType.REPORT, message=_report, exit=True, hidden=True, message_id=message_id, metadata=self.artifacts)
                     return
 
                 logger.info("Empty response. Force to using tool")
@@ -201,7 +214,7 @@ class BaseAgent(LoggerMixin):
                 else:
                     _report = "Agent has not completed work, empty response"
 
-                yield DTOInstruction(type=EventType.REPORT, message=_report, exit=True, hidden=True, message_id=message_id)
+                yield DTOInstruction(type=EventType.REPORT, message=_report, exit=True, hidden=True, message_id=message_id, metadata=self.artifacts)
                 return
 
             elif not current_tool_call and output['output']:
@@ -222,7 +235,13 @@ class BaseAgent(LoggerMixin):
             })
 
             if tool_call_description['function'] == 'report':
-                yield DTOInstruction(type=EventType.REPORT, message=tool_call_description['args'].get('text', '') if tool_call_description['args'] else '', exit=True, message_id=output['id'])
+                yield DTOInstruction(
+                    type=EventType.REPORT,
+                    message=tool_call_description['args'].get('text', '') if tool_call_description['args'] else '',
+                    exit=True,
+                    message_id=output['id'],
+                    metadata=self.artifacts
+                )
                 break
             else:
                 yield DTOInstruction(type=EventType.NOPE)
@@ -256,6 +275,31 @@ class BaseAgent(LoggerMixin):
 
                 if not tool_call_description['args']:
                     tool_call_description['args'] = {}
+
+                if is_success:
+                    fn = tool_call_description['function']
+                    tool_args = tool_call_description.get('args', {}) if isinstance(tool_call_description.get('args'), dict) else {}
+                    if fn == 'read_file':
+                        file_path = tool_args.get('path', '')
+                        if file_path:
+                            self.artifacts['files_read'].append(file_path)
+                    elif fn == 'write_file':
+                        file_path = tool_args.get('path', '')
+                        if file_path:
+                            if result.get('file_create'):
+                                self.artifacts['files_created'].append(file_path)
+                            elif result.get('file_edit'):
+                                self.artifacts['files_modified'].append(file_path)
+                    elif fn == 'replace_code_in_file':
+                        file_path = tool_args.get('path', '')
+                        if file_path:
+                            self.artifacts['files_modified'].append(file_path)
+                    elif fn == 'shell_command':
+                        cmd_name = tool_args.get('command_name', '')
+                        self.artifacts['commands_run'].append({
+                            'command': cmd_name,
+                            'status': result.get('status', 'unknown') if isinstance(result, dict) else 'unknown'
+                        })
 
                 if not is_pre_output:
                     yield DTOInstruction(

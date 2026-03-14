@@ -224,6 +224,7 @@ class Copilot(LoggerMixin):
             self.log(tool_call_description, True)
 
             agent_complete_report = None
+            last_agent_metadata = None
             if tool_call_description['function'] == 'exit':
                 yield DTOInstruction(type=EventType.EXIT, message_id=output['id'])
                 break
@@ -232,6 +233,7 @@ class Copilot(LoggerMixin):
 
                 agent_complete_report = 'message print to user'
             elif tool_call_description['function'] == 'call_agent':
+                last_agent_metadata = None
                 agent_name, agent_instruction = tool_call_description['args']
                 if agent_name not in Agent.PROMPTS:
                     yield DTOInstruction(type=EventType.ERROR, message=f"Agent call error (name), name=`{agent_name}`", message_id=output['id'])
@@ -257,6 +259,7 @@ class Copilot(LoggerMixin):
                     if agent_step.type == EventType.REPORT:
                         is_agent_completes_work = True
                         agent_complete_report = agent_step.message
+                        last_agent_metadata = agent_step.metadata
                         agent_step.type = EventType.MARKDOWN
                     elif agent_step.type == EventType.ERROR:
                         agent_complete_report = 'Agent cant complete a work, try another approach: add more details, rewrite instruction for agent! Agent returns error: ' + agent_step.message
@@ -280,13 +283,27 @@ class Copilot(LoggerMixin):
                 })
 
                 if agent_complete_report:
-                    self.log(f"Agent report: \n{pretty_format(agent_complete_report)}", True)
+                    enriched_report = agent_complete_report
+                    if last_agent_metadata:
+                        summary_parts = []
+                        if last_agent_metadata.get('files_created'):
+                            summary_parts.append("Files created:\n" + "\n".join(f"- {f}" for f in last_agent_metadata['files_created']))
+                        if last_agent_metadata.get('files_modified'):
+                            summary_parts.append("Files modified:\n" + "\n".join(f"- {f}" for f in last_agent_metadata['files_modified']))
+                        if last_agent_metadata.get('commands_run'):
+                            summary_parts.append("Commands executed:\n" + "\n".join(
+                                f"- {c['command']} ({c['status']})" for c in last_agent_metadata['commands_run']
+                            ))
+                        if summary_parts:
+                            enriched_report += "\n\n---\n## Structured Artifacts\n" + "\n".join(summary_parts)
+
+                    self.log(f"Agent report: \n{pretty_format(enriched_report)}", True)
 
                     conversation_log.append({
                         'role': 'tool',
                         'tool_call_id': current_tool_call['id'],
                         'name': current_tool_call['function']['name'],
-                        'content': agent_complete_report
+                        'content': enriched_report
                     })
 
             agent_step_counter += 1

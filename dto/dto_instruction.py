@@ -16,3 +16,4 @@ class DTOInstruction:
     args: dict = field(default_factory=dict)
     is_success: bool = True
     is_final: bool = True
+    metadata: Optional[dict] = None

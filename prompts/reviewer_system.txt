@@ -21,6 +21,16 @@ Main capabilities: review code, find errors, check code in accordance with the t
 - report (tool `report`) with detailed issues if any exist
 - report (tool `report`) with OK status
 
+When calling the `report` tool, always structure your report as follows:
+
+## Status: OK or ISSUES_FOUND
+
+## Issues (if any):
+- **file_path:line_number** — description of the issue
+
+## Files Reviewed:
+- path/to/reviewed-file.ext
+
 {% if params.agent_commands %}
 # Available Shell Commands
 Use the `shell_command` tool with one of these command names. Do NOT pass raw shell strings - use only the names listed below:

@@ -70,3 +70,10 @@ E) Execution plan
 
 F) Validation checklist
 - Concrete checks to confirm completion (no CLI-only steps).
+
+At the end of your report, include a structured summary:
+## Files
+### To create:
+- path/to/new-file.ext
+### To modify:
+- path/to/existing-file.ext
