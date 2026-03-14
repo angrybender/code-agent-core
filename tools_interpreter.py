@@ -82,6 +82,26 @@ class ToolsInterpreter:
 
         return response
 
+    def _command_read_multiply(self, root_path: str, file_name: list) -> dict:
+        results = []
+        for name in file_name:
+            file_path = os.path.join(root_path, name)
+
+            if root_path:
+                real_file = os.path.realpath(os.path.join(self.project_root, file_path))
+                real_root = os.path.realpath(os.path.join(self.project_root, root_path))
+                if not (real_file.startswith(real_root + os.sep) or real_file == real_root):
+                    results.append(f"Error: invalid path of /{name}")
+                    continue
+
+            single_result = self._command_read(path=file_path)
+            header = f"--- file: {file_path} ---"
+            results.append(f"{header}\n{single_result['result']}")
+        return {
+            'result': "\n\n".join(results),
+            'tool_name': 'read_multiply_files',
+        }
+
     def _command_list(self, path) -> dict:
         if not self._validate_path(path):
             return {'result': 'ERROR: Invalid path', 'error': True}
@@ -251,6 +271,7 @@ class ToolsInterpreter:
     def _get_handlers(self) -> dict:
         return {
             'read_file': self._command_read,
+            'read_multiply_files': self._command_read_multiply,
             'list_in_directory': self._command_list,
             'write_file': self._command_write,
             'replace_code_in_file': self._command_write_diff,

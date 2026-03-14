@@ -44,7 +44,7 @@ BaseAgent(LoggerMixin)         # Abstract base — main run() loop, LLM query, t
   └── CoderAgent(BaseAgent)    # Handles the CODER role
 Agent                          # Static factory: Agent.create(role), Agent.setUp()
 ```
-Note: The REVIEWER role is implemented by `AnalyticAgent` (not a separate class). `AnalyticAgent.get_tools()` returns `ANALYTIC_TOOLS` or `REVIEWER_TOOLS` depending on `self.role`.
+Note: The REVIEWER role is implemented by `AnalyticAgent` (not a separate class). `AnalyticAgent.get_tools()` returns `ANALYTIC_TOOLS` for ANALYTIC role, or `get_reviewer_tools(has_shell_commands)` for REVIEWER role. `CoderAgent.get_tools()` returns `get_coder_tools(has_shell_commands)`. These factory functions in `tools/tools.py` conditionally include the `shell_command` tool based on whether shell commands are configured for the project.
 
 1. **SUPERVISOR** (implemented in `algorythm.py`)
    - Orchestrates the entire workflow
@@ -140,6 +140,14 @@ Stops a running agent session:
 - Per-agent model selection via `MODEL:<ROLE>` env variables
 - Environment-based configuration
 - Error logging: `llm_query()` logs to `conversations_log/llm.error`, `llm_query_stream()` logs to `conversations_log/llm.error.log` — both after 5 failed retry attempts
+
+**`context_helper.py`** — Conversation context optimization
+- Provides `compact_conversation_remove_redundant()` function
+- Three optimization phases:
+  1. Removes reads invalidated by subsequent writes (`write_file` / `replace_code_in_file`)
+  2. Deduplicates multiple `read_file` calls for the same path (keeps only the last full read)
+  3. Deduplicates identical `shell_command` calls with identical output
+- Used by `BaseAgent.conversation_filter()` in `agents.py`
 
 ### Logging Mixin
 
@@ -265,8 +273,9 @@ Browser SSE connection → GET /events → Incremental messages streamed
 - The SUPERVISOR enriches agent reports with structured artifact summaries
 
 ### Conversation Context Filtering
-- `AnalyticAgent` merges consecutive assistant messages to reduce context size
-- `CoderAgent` additionally performs "convolution" — removes duplicate read/write tool calls for the same file
+- `BaseAgent.conversation_filter()` applies two-stage context reduction for ALL agents:
+  1. Merges consecutive assistant messages (`_merge_assistant_messages()` in `agents.py`)
+  2. Removes redundant tool call/response pairs via `compact_conversation_remove_redundant()` from `context_helper.py` — removes reads invalidated by subsequent writes, deduplicates full reads of the same file, and deduplicates identical shell commands with identical output
 
 ## Project Configuration
 
@@ -297,8 +306,15 @@ project_root/
 ├── agents.py                    # Agent implementations (ANALYTIC, CODER, REVIEWER) — class hierarchy: BaseAgent → AnalyticAgent / CoderAgent; Agent factory
 ├── algorythm.py                 # SUPERVISOR orchestrator (Copilot class)
 ├── commands_helper.py           # .agent-commands/ parser and shell executor (supports $N positional args)
+├── context_helper.py            # Conversation context optimization — removes redundant tool calls to reduce token usage
 ├── conversation.py              # UI message formatting (DTOInstruction → HTML/text)
+├── conversations_log/           # Session and LLM debug logs (not in git)
 ├── diff_helper.py               # Code patching utilities (apply_patch, PatchError)
+├── dto/
+│   ├── dto_instruction.py       # DTOInstruction dataclass (universal message object)
+│   └── enums.py                 # AgentRole and EventType enumerations
+├── env.example                  # Example environment configuration
+├── LICENSE                      # Project license
 ├── llm.py                       # OpenAI-compatible LLM client; errors logged to conversations_log/llm.error and llm.error.log
 ├── llm_api_server.py            # Flask HTTP server (Web UI + REST API)
 ├── llm_parser.py                # XML tag parsing from LLM responses
@@ -306,20 +322,16 @@ project_root/
 ├── log_helper.py                # Formatting all objects for pretty-print
 ├── mcp_helper.py                # File operations abstraction (reads always pure; writes: mcp or pure mode)
 ├── path_helper.py               # Path normalization utilities
-├── search_code.py               # In-project code search engine (SearchCode)
-├── tools_interpreter.py         # Agent tool executor (ToolsInterpreter)
-├── run_tests.sh                 # Test runner: sets AGENT_FILE_TOOLS=pure, runs unittest discover on tests/
-├── dto/
-│   ├── dto_instruction.py       # DTOInstruction dataclass (universal message object)
-│   └── enums.py                 # AgentRole and EventType enumerations
 ├── prompts/                     # Prompts for agent and sub-agents
 │   ├── analytic_system.txt      # System prompt for ANALYTIC agent
 │   ├── coder_system.txt         # System prompt for CODER agent (Jinja2 templated)
 │   ├── reviewer_system.txt      # System prompt for REVIEWER agent (Jinja2 templated)
 │   ├── supervisor_system.txt    # System prompt for SUPERVISOR agent
 │   └── step.txt                 # Shared project-context sub-prompt (injected into all agents)
-├── tools/
-│   └── tools.py                 # All agent tool schema definitions (ANALYTIC/CODER/REVIEWER/SUPERVISOR_TOOLS)
+├── requirements.txt             # Python dependencies
+├── run_tests.sh                 # Test runner: sets AGENT_FILE_TOOLS=pure, runs unittest discover on tests/
+├── search_code.py               # In-project code search engine (SearchCode)
+├── storage/                     # Temp file cache (not in git)
 ├── templates/                   # Web UI (SSE client, markdown rendering)
 │   ├── app.html                 # Main Jinja2 template for web UI
 │   ├── error.html               # Version mismatch error page
@@ -327,12 +339,12 @@ project_root/
 │       ├── app.js               # SSE client, message rendering, UI interaction logic
 │       ├── main.css             # Chat interface styles
 │       └── markdown.js          # Markdown rendering library
-├── tests/                       # Unit tests (testCommandsHelper, testDiffHelper, testLLMParser, testMCPHelperPure, testParseJson, testSearchCode, testToolsInterpreter)
-├── conversations_log/           # Session and LLM debug logs (not in git)
-├── storage/                     # Temp file cache (not in git)
+├── tests/                       # Unit tests
+├── tools/
+│   └── tools.py                 # Agent tool schema definitions and factory functions get_coder_tools() / get_reviewer_tools() for conditional shell command inclusion
+├── tools_interpreter.py         # Agent tool executor (ToolsInterpreter)
+├── utils/                       # Utility modules
 ├── AGENTS.md                    # This file — project reference for AI agents
-├── env.example                  # Example environment configuration
-└── requirements.txt             # Python dependencies
 ```
 
 ## Logging and Observability

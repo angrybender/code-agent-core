@@ -326,6 +326,14 @@ class BaseAgent(LoggerMixin):
                         file_path = tool_args.get('path', '')
                         if file_path:
                             self.artifacts['files_read'].append(file_path)
+                    elif fn == 'read_multiply_files':
+                        root_path = tool_args.get('root_path', '')
+                        file_names = tool_args.get('file_name', [])
+                        if isinstance(file_names, list):
+                            for name in file_names:
+                                if name:
+                                    file_path = os.path.join(root_path, name) if root_path else name
+                                    self.artifacts['files_read'].append(file_path)
                     elif fn == 'write_file':
                         file_path = tool_args.get('path', '')
                         if file_path:

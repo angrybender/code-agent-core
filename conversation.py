@@ -1,3 +1,5 @@
+import logging
+import os
 import time
 import uuid
 
@@ -13,6 +15,7 @@ _FUNCTION_NAME_TITLES = {
     'replace_code_in_file': 'patch ',
     'shell_command': 'shell ',
     'read_file': 'read  ',
+    'read_multiply_files': 'read  ',
     'search_file': 'search',
 }
 
@@ -22,6 +25,7 @@ _FUNCTION_ARG_PRINT = {
     'replace_code_in_file': 'path',
     'shell_command': 'command_name',
     'read_file': 'path',
+    'read_multiply_files': 'root_path',
 }
 
 def get_message(message: str, role: str, message_type: str=None) -> dict:
@@ -56,6 +60,7 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
         message.type = EventType.HTML
         result_message = message.message + "&nbsp;"
 
+
     if function_name == 'read_file' and message.is_final:
         path = message.args['path']
         offset = message.args.get('offset')
@@ -70,6 +75,15 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
             suffix = ''
 
         result_message = f'<cite>{function_alias}</cite> <dfn>{path}{suffix}</dfn>'
+
+    elif function_name == 'read_multiply_files' and message.is_final:
+        root_path = message.args.get('root_path')
+        paths = ""
+        if root_path:
+            paths = f"<dfn>{root_path.strip('/\\')}/*</dfn> "
+
+        paths += " ".join([f"<dfn>{_}</dfn>" for _ in message.args.get('file_name', [])])
+        result_message = f'<cite>{function_alias}</cite> {paths}'
 
     elif function_name == 'search_file' and message.is_final:
         needle = str(escape(message.args['needle']))
@@ -98,7 +112,9 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
     elif message.type == EventType.TOOL:
         _arg_name = _FUNCTION_ARG_PRINT.get(str(function_name))
         if _arg_name and _arg_name in message.args:
-            suffix = f"<dfn>{message.args[_arg_name]}</dfn>"
+            _arg = message.args[_arg_name]
+            if isinstance(_arg, str): _arg = [_arg]
+            suffix = " ".join([f"<dfn>{_}</dfn>" for _ in _arg])
         else:
             suffix = ''
 

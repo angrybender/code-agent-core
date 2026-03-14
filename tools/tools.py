@@ -24,6 +24,29 @@ TOOL_READ_FILE = {
     }
 }
 
+TOOL_READ_MULTIPLY_FILES = {
+    "type": "function",
+    "function": {
+        "name": "read_multiply_files",
+        "description": "Read the contents of multiple files from the same directory in a single operation. Returns each file's content with clear separation. Use this tool when you need to examine 2 or more files at once — it is more efficient than multiple individual read_file calls. All files must be in the same directory specified by root_path.",
+        "parameters": {
+            "type": "object",
+            "required": ["root_path", "file_name"],
+            "properties": {
+                "root_path": {
+                    "type": "string",
+                    "description": "Parent directory of the files"
+                },
+                "file_name": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of file names to read"
+                }
+            }
+        }
+    }
+}
+
 TOOL_LIST_IN_DIRECTORY = {
     "type": "function",
     "function": {
@@ -236,18 +259,18 @@ TOOL_EXIT = {
 def get_coder_tools(has_shell_commands: bool) -> list:
     """Return CODER_TOOLS with or without shell command support."""
     if has_shell_commands:
-        return [TOOL_READ_FILE, TOOL_LIST_IN_DIRECTORY, TOOL_WRITE_FILE, TOOL_REPLACE_CODE_IN_FILE, TOOL_SHELL_COMMAND, TOOL_REPORT]
-    return [TOOL_READ_FILE, TOOL_LIST_IN_DIRECTORY, TOOL_WRITE_FILE, TOOL_REPLACE_CODE_IN_FILE, TOOL_REPORT]
+        return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_WRITE_FILE, TOOL_REPLACE_CODE_IN_FILE, TOOL_SHELL_COMMAND, TOOL_REPORT]
+    return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_WRITE_FILE, TOOL_REPLACE_CODE_IN_FILE, TOOL_REPORT]
 
 
 def get_reviewer_tools(has_shell_commands: bool) -> list:
     """Return REVIEWER_TOOLS with or without shell command support."""
     if has_shell_commands:
-        return [TOOL_READ_FILE, TOOL_SEARCH_FILE, TOOL_SHELL_COMMAND, TOOL_REPORT]
-    return [TOOL_READ_FILE, TOOL_SEARCH_FILE, TOOL_REPORT]
+        return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_SEARCH_FILE, TOOL_SHELL_COMMAND, TOOL_REPORT]
+    return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_SEARCH_FILE, TOOL_REPORT]
 
 
-ANALYTIC_TOOLS = [TOOL_READ_FILE, TOOL_LIST_IN_DIRECTORY, TOOL_SEARCH_FILE, TOOL_REPORT]
+ANALYTIC_TOOLS = [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_SEARCH_FILE, TOOL_REPORT]
 CODER_TOOLS = get_coder_tools(True)
 REVIEWER_TOOLS = get_reviewer_tools(True)
 SUPERVISOR_TOOLS = [TOOL_CALL_AGENT, TOOL_MESSAGE, TOOL_EXIT]

@@ -121,6 +121,8 @@ button.default:disabled {
     border: 1px solid rgb(171, 41, 106);
     border-radius: 0.3em;
     padding: 0.3em 0.5em;
+    display: inline-block;
+    margin-bottom: 0.3em;
 }
 .tool-message cite::before {
     content: "🔨 ";

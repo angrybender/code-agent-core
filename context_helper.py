@@ -5,9 +5,11 @@ to reduce context window usage without losing semantically important information
 """
 
 import json
+import os
 
 _WRITE_TOOLS = frozenset({'write_file', 'replace_code_in_file'})
 _TOOL_READ_FILE = 'read_file'
+_TOOL_READ_MULTIPLY_FILES = 'read_multiply_files'
 _TOOL_SHELL_COMMAND = 'shell_command'
 _TOOL_REPORT = 'report'
 
@@ -79,6 +81,19 @@ def _find_reads_invalidated_by_writes(conversation: list[dict]) -> set[str]:
                         if path and tool_call_id and path in last_write_position:
                             if tool_call_id_to_position.get(tool_call_id, 0) < last_write_position[path]:
                                 ids_to_remove.add(tool_call_id)
+                elif tool_name == _TOOL_READ_MULTIPLY_FILES:
+                    args = _parse_tool_args(tool_call)
+                    if args:
+                        root_path = args.get('root_path', '')
+                        file_names = args.get('file_name', [])
+                        tool_call_id = tool_call.get('id')
+                        if tool_call_id and isinstance(file_names, list):
+                            for name in file_names:
+                                file_path = os.path.join(root_path, name) if root_path else name
+                                if file_path and file_path in last_write_position:
+                                    if tool_call_id_to_position.get(tool_call_id, 0) < last_write_position[file_path]:
+                                        ids_to_remove.add(tool_call_id)
+                                        break
 
     return ids_to_remove
 
