@@ -2,7 +2,7 @@ TOOL_READ_FILE = {
     "type": "function",
     "function": {
         "name": "read_file",
-        "description": "Read file by path and return its content",
+        "description": "Read file by path and return its content. Use `offset` and `limit` parameters for large files to avoid loading the entire file into context. Prefer `search_file` when you don't know the exact file location or need to find specific code patterns. For discovering what files exist in a directory, use `list_in_directory` instead.",
         "parameters": {
             "type": "object",
             "required": ["path"],
@@ -28,7 +28,7 @@ TOOL_LIST_IN_DIRECTORY = {
     "type": "function",
     "function": {
         "name": "list_in_directory",
-        "description": "List files and directories from a path.\nResult contains a list of files and directories (only first level); directory names end with the symbol `/`",
+        "description": "List files and directories from a path.\nResult contains a list of files and directories (only first level); directory names end with the symbol `/`.\nUse to discover project structure and find relevant files or directories. For searching code content across files, use `search_file` instead. For reading a known file, use `read_file` directly.",
         "parameters": {
             "type": "object",
             "required": ["path"],
@@ -50,7 +50,10 @@ TOOL_SEARCH_FILE = {
             "Searches for `needle` across all project files using fuzzy token matching. "
             "Supports languages: PHP, JS, Java, Scala, C#, Go, Ruby, HTML, CSS, YML, bash. "
             "Returns the file path and lines that contain the most relevant match. "
-            "Returns the first 10 results."
+            "Returns the first 10 results. "
+            "Use when searching for code patterns, function names, class definitions, or usages across the project. "
+            "For known file locations, use `read_file` directly. "
+            "For broad file/directory discovery, use `list_in_directory` first."
         ),
         "parameters": {
             "type": "object",
@@ -204,7 +207,7 @@ TOOL_MESSAGE = {
     "type": "function",
     "function": {
         "name": "message",
-        "description": "Print message for user, show intermediate result or some comment",
+        "description": "Print message for user, show intermediate result or some comment. Use for progress updates, clarifications, or intermediate findings during long-running tasks. Do NOT use as a substitute for `report` — use `report` when work is fully complete. Do NOT use as a substitute for `exit` — use `exit` when the conversation should end.",
         "parameters": {
             "type": "object",
             "required": ["text"],
@@ -222,7 +225,7 @@ TOOL_EXIT = {
     "type": "function",
     "function": {
         "name": "exit",
-        "description": "Stop the conversation, only if you have fully completed the work and achieved the goal",
+        "description": "Stop the conversation and signal completion. Use ONLY when you have fully completed the work and achieved the goal. Do NOT use if there are remaining tasks, unresolved issues, or pending agent reports. Do NOT use if the task was only partially completed — instead, continue delegating to agents.",
         "parameters": {
             "type": "object",
             "properties": {}
