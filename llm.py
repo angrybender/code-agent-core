@@ -331,11 +331,12 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
 
                 if chunk.usage:
                     _tokens_usage = {"prompt": chunk.usage.prompt_tokens, "completion": chunk.usage.completion_tokens}
-                else:
-                    _tokens_usage = {
-                        "prompt": _calculate_tokens_usage_workaround(messages, options['model']),
-                        "completion": _calculate_tokens_usage_workaround([{"content": _output}], options['model']),
-                    }
+
+            if not _tokens_usage:
+                _tokens_usage = {
+                    "prompt": _calculate_tokens_usage_workaround(messages, options['model']),
+                    "completion": _calculate_tokens_usage_workaround([{"content": _output, "tool_calls": _tool_calls}], options['model']),
+                }
 
             final = {
                 "id": message_id,
