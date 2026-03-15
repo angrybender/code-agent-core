@@ -160,17 +160,17 @@ class Copilot(LoggerMixin):
                 else:
                     yield DTOInstruction(type=EventType.AGENT, is_final=False, message_id=chunk['id'], function="SUPERVISOR")
 
-            if not output:
-                logger.info("Empty response. Stop working")
-                yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id)
-                return True
-
             _prompt_tokens = output.get('tokens_usage', {}).get('prompt', 0)
             if _prompt_tokens > 0:
                 yield DTOInstruction(
                     type=EventType.CONTEXT,
                     context_window={"used": _prompt_tokens + output['tokens_usage']['completion'], "limit": MAX_CONTEXT_WINDOW_SIZE}
                 )
+
+            if not output:
+                logger.info("Empty response. Stop working")
+                yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id)
+                return True
 
             tool_call_description = None
             current_tool_call = None
@@ -207,7 +207,7 @@ class Copilot(LoggerMixin):
                 continue
 
             if not tool_call_description and not output['output']:
-                yield DTOInstruction(type=EventType.ERROR, message="Agent call error (empty)")
+                # cycle stop correct (modern LLM just stop generation if it has decided to finish)
                 break
 
             self.log(tool_call_description, True)

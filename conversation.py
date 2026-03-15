@@ -48,17 +48,23 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
     function_name = message.function
     result_message = message.message
     function_alias = _FUNCTION_NAME_TITLES.get(function_name, function_name)
+    message_if_final = message.is_final
 
     if message.type == EventType.AGENT:
         return _agent_call_tpl(message)
     elif message.type == EventType.EXIT:
         output = asdict(message)
         output['hidden'] = True
+        output['message_if_final'] = message_if_final
         return output
     elif message.type == EventType.PENDING:
         message.is_final = False
         message.type = EventType.HTML
-        result_message = message.message + "&nbsp;"
+        result_message = message.message if message.message else ''
+        if result_message and '<' not in result_message:
+            result_message = f"<span class='pending-title'>{result_message}</span>"
+
+        result_message += "&nbsp;"
 
 
     if function_name == 'read_file' and message.is_final:
@@ -109,6 +115,8 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
         else:
             result_message = f'<cite>{function_alias}</cite>'
 
+        message_if_final = True
+
     elif message.type == EventType.TOOL:
         _arg_name = _FUNCTION_ARG_PRINT.get(str(function_name))
         if _arg_name and _arg_name in message.args:
@@ -123,6 +131,7 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
     output = asdict(message)
     output['timestamp'] = time.time()
     output['message'] = result_message
+    output['is_final'] = message_if_final
 
     if not output['message_id']:
         output['message_id'] = str(uuid.uuid4())

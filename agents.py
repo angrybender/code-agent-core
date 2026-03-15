@@ -197,7 +197,16 @@ class BaseAgent(LoggerMixin):
                         message_id=chunk['id']
                     )
                 else:
-                    yield DTOInstruction(type=EventType.PENDING, message_id=chunk['id'], is_final=False)
+                    yield DTOInstruction(type=EventType.PENDING, message_id=chunk['id'], message=chunk.get('content'), is_final=False)
+
+            _prompt_tokens = output.get('tokens_usage', {}).get('prompt', 0)
+            total_context_size = 0
+            if _prompt_tokens > 0:
+                total_context_size = _prompt_tokens + output['tokens_usage']['completion']
+                yield DTOInstruction(
+                    type=EventType.CONTEXT,
+                    context_window={"used": total_context_size, "limit": MAX_CONTEXT_WINDOW_SIZE}
+                )
 
             if not output:
                 yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id, metadata={})
@@ -211,15 +220,6 @@ class BaseAgent(LoggerMixin):
 
                 yield DTOInstruction(type=EventType.REPORT, message=_report, exit=True, hidden=True, message_id=message_id, metadata=self.artifacts)
                 return
-
-            _prompt_tokens = output.get('tokens_usage', {}).get('prompt', 0)
-            total_context_size = 0
-            if _prompt_tokens > 0:
-                total_context_size = _prompt_tokens + output['tokens_usage']['completion']
-                yield DTOInstruction(
-                    type=EventType.CONTEXT,
-                    context_window={"used": total_context_size, "limit": MAX_CONTEXT_WINDOW_SIZE}
-                )
 
             self.log('LLM OUTPUT:\n' + output.get('output', ''), True)
 

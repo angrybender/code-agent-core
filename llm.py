@@ -258,6 +258,7 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
     yield {
         "id": message_id,
         "type": "pending",
+        "content": "prompt eval..."
     }
 
     pre_parsed_tools = {}
@@ -276,6 +277,7 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
                     yield {
                         "id": message_id,
                         "type": "pending",
+                        "content": "thinking..."
                     }
                     continue
 
@@ -283,6 +285,12 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
 
                 if choice.delta.content is not None:
                     _output += choice.delta.content
+
+                    yield {
+                        "id": message_id,
+                        "type": "pending",
+                        "content": "generating..."
+                    }
 
                 if choice.delta.tool_calls:
                     for tool_call_delta in choice.delta.tool_calls:
@@ -297,7 +305,6 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
                         if tool_call_delta.function and tool_call_delta.function.arguments:
                             tc["function"]["arguments"] += tool_call_delta.function.arguments
 
-
                 if _tool_calls:
                     for _id, tool in _tool_calls.items():
                         if _id not in pre_parsed_tools:
@@ -307,17 +314,19 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
                         if _args:
                             pre_parsed_tools[_id]['function']['arguments_parsed'] = _args
 
-                    yield {
-                        "id": message_id,
-                        "type": "tool",
-                        "output": _output,
-                        "tool_calls": list(pre_parsed_tools.values())
-                    }
-                else:
-                    yield {
-                        "id": message_id,
-                        "type": "pending",
-                    }
+                    if pre_parsed_tools:
+                        yield {
+                            "id": message_id,
+                            "type": "tool",
+                            "output": _output,
+                            "tool_calls": list(pre_parsed_tools.values())
+                        }
+                    else:
+                        yield {
+                            "id": message_id,
+                            "type": "pending",
+                            "content": "tool..."
+                        }
 
 
                 if chunk.usage:
