@@ -812,3 +812,93 @@ class TestContextHelper(unittest.TestCase):
         shell return different output: dont compact
         """
         self.assertEqual(conversation, new_conversation)
+
+    def test_compact_conversation_remove_redundant_12(self):
+        conversation = [
+            {
+                'role': 'system',
+                'content': 'system1'
+            },
+            {
+                'role': 'user',
+                'content': 'user1'
+            },
+            # read file 1 full
+            {
+                'role': 'assistant',
+                'content': '',
+                'tool_calls': [{
+                    'id': 'tool_id_1',
+                    'type': 'function',
+                    'function': {'name': 'read_file', 'arguments': '{"path":"path/file/1.txt"}'}
+                }]
+            },
+            {
+                'role': 'tool',
+                'tool_call_id': 'tool_id_1',
+                'name': 'read_file',
+                'content': 'content of path/file/1.txt 1',
+            },
+            # read file 1 partial
+            {
+                'role': 'assistant',
+                'content': '',
+                'tool_calls': [{
+                    'id': 'tool_id_11',
+                    'type': 'function',
+                    'function': {'name': 'read_file', 'arguments': '{"path":"path/file/1.txt","offset":14,"limit":1}'}
+                }]
+            },
+            {
+                'role': 'tool',
+                'tool_call_id': 'tool_id_11',
+                'name': 'read_file',
+                'content': 'content of path/file/1.txt 2',
+            },
+            # read file 2
+            {
+                'role': 'assistant',
+                'content': '',
+                'tool_calls': [{
+                    'id': 'tool_id_2',
+                    'type': 'function',
+                    'function': {'name': 'read_file', 'arguments': '{"path":"path/file/2.txt"}'}
+                }]
+            },
+            {
+                'role': 'tool',
+                'tool_call_id': 'tool_id_2',
+                'name': 'read_file',
+                'content': 'content of path/file/2.txt',
+            },
+            # read file 1 partial
+            {
+                'role': 'assistant',
+                'content': '',
+                'tool_calls': [{
+                    'id': 'tool_id_3',
+                    'type': 'function',
+                    'function': {'name': 'read_file', 'arguments': '{"path":"path/file/1.txt","offset":25,"limit":10}'}
+                }]
+            },
+            {
+                'role': 'tool',
+                'tool_call_id': 'tool_id_3',
+                'name': 'read_file',
+                'content': 'content of path/file/1.txt 2',
+            },
+        ]
+
+        new_conversation = compact_conversation_remove_redundant(conversation)
+
+        """
+        before: system - user - read file 1 full - read 1 file partial - read file2 - read 1 file partial yet
+        after: system - user - read 1 file partial - read file2 - read 1 file partial yet
+        
+        if partial read more once after full was read - compact
+        """
+        self.assertEqual(conversation[:2], new_conversation[:2])
+        self.assertEqual(conversation[4], new_conversation[2])
+        self.assertEqual(conversation[5], new_conversation[3])
+        self.assertEqual(conversation[6], new_conversation[4])
+        self.assertEqual(conversation[7], new_conversation[5])

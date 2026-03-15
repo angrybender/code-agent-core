@@ -256,6 +256,24 @@ TOOL_EXIT = {
     }
 }
 
+TOOL_SUMMARIZE = {
+    "type": "function",
+    "function": {
+        "name": "summarize",
+        "description": "IMPORTANT: Put into text argument result of summarization your work",
+        "parameters": {
+            "type": "object",
+            "required": ["text"],
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "Summarization in the Markdown format"
+                }
+            }
+        }
+    }
+}
+
 def get_coder_tools(has_shell_commands: bool) -> list:
     """Return CODER_TOOLS with or without shell command support."""
     if has_shell_commands:

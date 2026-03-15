@@ -296,7 +296,6 @@ Browser SSE connection → GET /events → Incremental messages streamed
 | `SHELL_COMMAND_DIRECTORY` | .agent-commands | Directory with predefined shell commands |
 | `DEBUG` | 0 | Enable verbose LLM logging to `full_log.log` |
 | `DEEPTHINKING_AGENTS` | — | Comma-separated agent names for deep thinking mode (does **not** affect CODER — CODER always runs with `thinking=False`) |
-| `AVOID_EMPTY_RESPONSE` | 0 | Force non-empty LLM responses |
 | `MAX_CONTEXT_WINDOW_SIZE` | 100000 | Maximum context window size in tokens for prompt usage tracking |
 
 ## Directory Structure

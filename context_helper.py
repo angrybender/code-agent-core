@@ -130,8 +130,23 @@ def _find_duplicate_full_reads(conversation: list[dict]) -> set[str]:
     for path, tool_call_ids in read_calls_by_path.items():
         if len(tool_call_ids) > 1 and has_full_read.get(path, False):
             if tool_call_ids[-1] in full_read_ids:
+                # Last read is a full read → remove everything before it (original behavior)
                 for tool_call_id in tool_call_ids[:-1]:
                     ids_to_remove.add(tool_call_id)
+            else:
+                # Full read is NOT the last read — find the last full read index
+                last_full_read_index = None
+                for i, tool_call_id in enumerate(tool_call_ids):
+                    if tool_call_id in full_read_ids:
+                        last_full_read_index = i
+                if last_full_read_index is not None:
+                    reads_after_full = len(tool_call_ids) - 1 - last_full_read_index
+                    if reads_after_full >= 2:
+                        # Multiple reads after the full read: full read is superseded,
+                        # remove the full read and everything before it
+                        for tool_call_id in tool_call_ids[:last_full_read_index + 1]:
+                            ids_to_remove.add(tool_call_id)
+                    # else: single partial after full read → don't compact (UB guard, test 6)
 
     return ids_to_remove
 
