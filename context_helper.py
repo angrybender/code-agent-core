@@ -14,6 +14,12 @@ _TOOL_SHELL_COMMAND = 'shell_command'
 _TOOL_REPORT = 'report'
 
 
+def _normalize_path(path: str) -> str:
+    """Normalize a file path string for consistent comparison.
+    Handles './' prefix, backslashes, and redundant separators."""
+    return os.path.normpath(path).replace("\\", "/")
+
+
 def _get_tool_name(tool_call: dict) -> str:
     """Extract the function name from a tool call dict."""
     return tool_call.get('function', {}).get('name', '')
@@ -63,7 +69,7 @@ def _find_reads_invalidated_by_writes(conversation: list[dict]) -> set[str]:
                     if args:
                         path = args.get('path')
                         if path:
-                            last_write_position[path] = position
+                            last_write_position[_normalize_path(path)] = position
                 position += 1
             continue
         position += 1
@@ -78,8 +84,9 @@ def _find_reads_invalidated_by_writes(conversation: list[dict]) -> set[str]:
                     if args:
                         path = args.get('path')
                         tool_call_id = tool_call.get('id')
-                        if path and tool_call_id and path in last_write_position:
-                            if tool_call_id_to_position.get(tool_call_id, 0) < last_write_position[path]:
+                        norm_path = _normalize_path(path) if path else path
+                        if path and tool_call_id and norm_path in last_write_position:
+                            if tool_call_id_to_position.get(tool_call_id, 0) < last_write_position[norm_path]:
                                 ids_to_remove.add(tool_call_id)
                 elif tool_name == _TOOL_READ_MULTIPLY_FILES:
                     args = _parse_tool_args(tool_call)
@@ -90,8 +97,9 @@ def _find_reads_invalidated_by_writes(conversation: list[dict]) -> set[str]:
                         if tool_call_id and isinstance(file_names, list):
                             for name in file_names:
                                 file_path = os.path.join(root_path, name) if root_path else name
-                                if file_path and file_path in last_write_position:
-                                    if tool_call_id_to_position.get(tool_call_id, 0) < last_write_position[file_path]:
+                                norm_file_path = _normalize_path(file_path)
+                                if file_path and norm_file_path in last_write_position:
+                                    if tool_call_id_to_position.get(tool_call_id, 0) < last_write_position[norm_file_path]:
                                         ids_to_remove.add(tool_call_id)
                                         break
 
@@ -120,10 +128,11 @@ def _find_duplicate_full_reads(conversation: list[dict]) -> set[str]:
                     if args:
                         path = args.get('path')
                         tool_call_id = tool_call.get('id')
+                        norm_path = _normalize_path(path) if path else path
                         if path and tool_call_id:
-                            read_calls_by_path.setdefault(path, []).append(tool_call_id)
+                            read_calls_by_path.setdefault(norm_path, []).append(tool_call_id)
                             if 'offset' not in args and 'limit' not in args:
-                                has_full_read[path] = True
+                                has_full_read[norm_path] = True
                                 full_read_ids.add(tool_call_id)
 
     ids_to_remove: set[str] = set()

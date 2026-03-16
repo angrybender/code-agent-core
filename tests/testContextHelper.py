@@ -894,7 +894,7 @@ class TestContextHelper(unittest.TestCase):
         """
         before: system - user - read file 1 full - read 1 file partial - read file2 - read 1 file partial yet
         after: system - user - read 1 file partial - read file2 - read 1 file partial yet
-        
+
         if partial read more once after full was read - compact
         """
         self.assertEqual(conversation[:2], new_conversation[:2])
@@ -902,3 +902,162 @@ class TestContextHelper(unittest.TestCase):
         self.assertEqual(conversation[5], new_conversation[3])
         self.assertEqual(conversation[6], new_conversation[4])
         self.assertEqual(conversation[7], new_conversation[5])
+
+    def test_path_normalization_phase1_read_with_dot_prefix(self):
+        conversation = [
+            {
+                'role': 'system',
+                'content': 'system1'
+            },
+            {
+                'role': 'user',
+                'content': 'user1'
+            },
+            {
+                'role': 'assistant',
+                'content': '',
+                'tool_calls': [{
+                    'id': 'tool_id_1',
+                    'type': 'function',
+                    'function': {'name': 'read_file', 'arguments': '{"path":"./path/file/1.txt"}'}
+                }]
+            },
+            {
+                'role': 'tool',
+                'tool_call_id': 'tool_id_1',
+                'name': 'read_file',
+                'content': 'content of path/file/1.txt',
+            },
+            {
+                'role': 'assistant',
+                'content': '',
+                'tool_calls': [{
+                    'id': 'tool_id_2',
+                    'type': 'function',
+                    'function': {'name': 'write_file', 'arguments': '{"path":"path/file/1.txt","content":"update 1.txt"}'}
+                }]
+            },
+            {
+                'role': 'tool',
+                'tool_call_id': 'tool_id_2',
+                'name': 'write_file',
+                'content': 'ok',
+            },
+        ]
+
+        new_conversation = compact_conversation_remove_redundant(conversation)
+
+        """
+        read uses ./path/file/1.txt, write uses path/file/1.txt - same file, read should be removed
+        before: system - user - read file1 (./prefix) - write file1
+        after: system - user - write file1
+        """
+        self.assertEqual(conversation[:2], new_conversation[:2])
+        self.assertEqual(conversation[4], new_conversation[2])
+        self.assertEqual(conversation[5], new_conversation[3])
+
+    def test_path_normalization_phase1_write_with_dot_prefix(self):
+        conversation = [
+            {
+                'role': 'system',
+                'content': 'system1'
+            },
+            {
+                'role': 'user',
+                'content': 'user1'
+            },
+            {
+                'role': 'assistant',
+                'content': '',
+                'tool_calls': [{
+                    'id': 'tool_id_1',
+                    'type': 'function',
+                    'function': {'name': 'read_file', 'arguments': '{"path":"path/file/1.txt"}'}
+                }]
+            },
+            {
+                'role': 'tool',
+                'tool_call_id': 'tool_id_1',
+                'name': 'read_file',
+                'content': 'content of path/file/1.txt',
+            },
+            {
+                'role': 'assistant',
+                'content': '',
+                'tool_calls': [{
+                    'id': 'tool_id_2',
+                    'type': 'function',
+                    'function': {'name': 'write_file', 'arguments': '{"path":"./path/file/1.txt","content":"update 1.txt"}'}
+                }]
+            },
+            {
+                'role': 'tool',
+                'tool_call_id': 'tool_id_2',
+                'name': 'write_file',
+                'content': 'ok',
+            },
+        ]
+
+        new_conversation = compact_conversation_remove_redundant(conversation)
+
+        """
+        read uses path/file/1.txt, write uses ./path/file/1.txt - same file, read should be removed
+        before: system - user - read file1 - write file1 (./prefix)
+        after: system - user - write file1
+        """
+        self.assertEqual(conversation[:2], new_conversation[:2])
+        self.assertEqual(conversation[4], new_conversation[2])
+        self.assertEqual(conversation[5], new_conversation[3])
+
+    def test_path_normalization_phase2_duplicate_reads_with_dot_prefix(self):
+        conversation = [
+            {
+                'role': 'system',
+                'content': 'system1'
+            },
+            {
+                'role': 'user',
+                'content': 'user1'
+            },
+            {
+                'role': 'assistant',
+                'content': '',
+                'tool_calls': [{
+                    'id': 'tool_id_1',
+                    'type': 'function',
+                    'function': {'name': 'read_file', 'arguments': '{"path":"./path/file/1.txt"}'}
+                }]
+            },
+            {
+                'role': 'tool',
+                'tool_call_id': 'tool_id_1',
+                'name': 'read_file',
+                'content': 'content of path/file/1.txt',
+            },
+            {
+                'role': 'assistant',
+                'content': '',
+                'tool_calls': [{
+                    'id': 'tool_id_2',
+                    'type': 'function',
+                    'function': {'name': 'read_file', 'arguments': '{"path":"path/file/1.txt"}'}
+                }]
+            },
+            {
+                'role': 'tool',
+                'tool_call_id': 'tool_id_2',
+                'name': 'read_file',
+                'content': 'content of path/file/1.txt',
+            },
+        ]
+
+        new_conversation = compact_conversation_remove_redundant(conversation)
+
+        """
+        two full reads of the same file with different path prefixes - first should be removed
+        before: system - user - read file1 (./prefix) - read file1
+        after: system - user - read file1
+        """
+        self.assertEqual(conversation[:2], new_conversation[:2])
+        self.assertEqual(conversation[4], new_conversation[2])
+        self.assertEqual(conversation[5], new_conversation[3])
