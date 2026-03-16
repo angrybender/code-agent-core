@@ -140,6 +140,24 @@ class BaseAgent(LoggerMixin):
             'commands_run': [],
         }
 
+    def _build_artifact_summary(self) -> str:
+        """Build a deterministic summary of tracked artifacts"""
+        lines = ["## Verified Actions:"]
+        files_read = list(dict.fromkeys(self.artifacts['files_read']))  # deduplicate, preserve order
+        if files_read:
+            lines.append(f"- Files read: {', '.join(files_read)}")
+        if self.artifacts['files_created']:
+            lines.append(f"- Files created: {', '.join(self.artifacts['files_created'])}")
+        if self.artifacts['files_modified']:
+            lines.append(f"- Files modified: {', '.join(self.artifacts['files_modified'])}")
+        if self.artifacts['commands_run']:
+            for cmd in self.artifacts['commands_run']:
+                status = cmd.get('status', 'unknown')
+                lines.append(f"- Command `{cmd['command']}`: {status}")
+        if len(lines) == 1:
+            lines.append("- No tool actions recorded yet.")
+        return "\n".join(lines)
+
     def run(self):
         assert self.instruction, 'Init() s required'
         specific_model = os.environ.get(f'MODEL:{self.role}', None)
@@ -164,6 +182,7 @@ class BaseAgent(LoggerMixin):
         ]
 
         agent_step = 0
+        _summarize_count = 0  # counts how many times summarize has been triggered
         _context_overflow_summarize = False
         while True:
             agent_step += 1
@@ -278,27 +297,40 @@ class BaseAgent(LoggerMixin):
                 )
                 break
             elif tool_call_description['function'] == 'summarize':
-                _context_overflow_summarize = False
-                conversation = conversation[:2]
+                    _context_overflow_summarize = False
+                    _summarize_count += 1
 
-                conversation.append({
-                    'role': 'assistant',
-                    'content': f"I have summarized below work:\n{tool_call_description['args'].get('text', '')}\nFollow this report I am going to continue work.",
-                })
-                conversation.append({
-                    'role': 'system',
-                    'content': f"Continue the work of create report!",
-                })
+                    llm_summary = tool_call_description['args'].get('text', '') if tool_call_description['args'] else ''
+                    artifact_summary = self._build_artifact_summary()
 
-                self.log(f"SUMMARIZE RESULT:\n{tool_call_description['args'].get('text', '')}", True)
+                    combined_summary = f"{artifact_summary}\n\n## Agent Findings and Progress:\n{llm_summary}"
 
-                yield DTOInstruction(
-                    type=EventType.MARKDOWN,
-                    message=tool_call_description['args'].get('text', '') if tool_call_description['args'] else '',
-                    message_id=output['id']
-                )
+                    conversation = conversation[:2]
 
-                continue
+                    # todo `report` tool ?
+                    conversation.append({
+                        'role': 'assistant',
+                        'content': (
+                            f"I have summarized my work below (summarization cycle #{_summarize_count}):\n"
+                            f"{combined_summary}\n"
+                            f"Based on this summary I will continue working."
+                        ),
+                    })
+
+                    conversation.append({
+                        'role': 'system',
+                        'content': f"Continue the work of create report!",
+                    })
+
+                    self.log(f"SUMMARIZE RESULT:\n{combined_summary}", True)
+
+                    yield DTOInstruction(
+                        type=EventType.MARKDOWN,
+                        message=tool_call_description['args'].get('text', '') if tool_call_description['args'] else '',
+                        message_id=output['id']
+                    )
+
+                    continue
             else:
                 yield DTOInstruction(type=EventType.NOPE)
 
@@ -391,14 +423,21 @@ class BaseAgent(LoggerMixin):
                 conversation.append(result_msg)
 
             if total_context_size > MAX_CONTEXT_WINDOW_SIZE and not _context_overflow_summarize:
-                if output.get('output'):
-                    conversation.append({
-                        'role': 'assistant',
-                        'content': output['output'],
-                    })
+                # TODO: summarization inf loop
                 conversation.append({
                     'role': 'user',
-                    'content': 'IMPORTANT: The context window is almost full. Please provide a detailed summary of all the work done so far, including: files read, files created/modified, key findings, current progress, and what remains to be done. Provide a comprehensive summary so we can continue working with a fresh context. Limit answer about 1000 chars !! Use `summarize` tool !!'
+                    'content': (
+                        'IMPORTANT: The context window is almost full. '
+                        'Use the `summarize` tool to provide a comprehensive structured summary of all work done so far. '
+                        'Your summary MUST include these sections:\n'
+                        '## Files Read: (each file path and key findings)\n'
+                        '## Files Created/Modified: (each path and what was done)\n'
+                        '## Commands Run: (command name and result)\n'
+                        '## Key Findings: (important values, patterns, decisions)\n'
+                        '## Current Status: (what is completed)\n'
+                        '## What Remains: (what still needs to be done)\n'
+                        'Be thorough — target ~3000-4000 characters. Use `summarize` tool now!'
+                    )
                 })
                 _context_overflow_summarize = True
 
