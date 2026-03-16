@@ -440,6 +440,17 @@ class BaseAgent(LoggerMixin):
                     )
                 })
                 _context_overflow_summarize = True
+                continue
+
+            if agent_step == MAX_ITERATION - 1:
+                # force report
+                self.log("MAX_ITERATION exceed rick. Force report", True)
+                conversation.append({
+                    'role': 'user',
+                    'content': "MAX_ITERATION exceed rick. Create report of the your work"
+                })
+
+
 
     def cache_file(self, file_name: str, source_file_content: str) -> str:
         source_file_content_path = os.path.join(self.storage_path, hashlib.sha256(file_name.encode()).hexdigest() + '.txt')
