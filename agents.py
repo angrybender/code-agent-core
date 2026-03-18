@@ -3,6 +3,7 @@ import json
 import hashlib
 import shutil
 import glob
+import uuid
 
 from jinja2 import Environment, BaseLoader
 
@@ -15,7 +16,7 @@ logger = logging.getLogger('APP')
 from dotenv import load_dotenv
 load_dotenv()
 
-from llm import llm_query, llm_query_stream, MAX_CONTEXT_WINDOW_SIZE
+from llm import llm_query, llm_query_stream, MAX_CONTEXT_WINDOW_SIZE, LLMRequestFormat
 from tools_interpreter import ToolsInterpreter
 from tools.tools import ANALYTIC_TOOLS, get_coder_tools, get_reviewer_tools, TOOL_SUMMARIZE, TOOL_REPORT
 from search_code import SearchCode
@@ -185,6 +186,7 @@ class BaseAgent(LoggerMixin):
         _summarize_count = 0  # counts how many times summarize has been triggered
         _context_overflow_summarize = False
         _max_step_workaround = False
+        _llm_format_error_workaround = 0
         while True:
             agent_step += 1
             if agent_step > MAX_ITERATION:
@@ -202,26 +204,50 @@ class BaseAgent(LoggerMixin):
             if _context_overflow_summarize or _max_step_workaround:
                 tools_for_model = [TOOL_SUMMARIZE]
 
-            if _max_step_workaround:
+            if _max_step_workaround or _llm_format_error_workaround > 0:
                 tools_for_model = [TOOL_REPORT]
 
-            for chunk in llm_query_stream(conversation, tools=tools_for_model, model_name=specific_model):
-                message_id = chunk['id']
-                if chunk['type'] == 'final':
-                    output = chunk
-                    break
-                elif chunk['type'] == 'tool':
-                    _tool_call = chunk['tool_calls'][0]
-                    yield DTOInstruction(
-                        type=EventType.TOOL,
-                        is_final=False,
-                        function=_tool_call['function']['name'],
-                        args=_tool_call['function'].get('arguments_parsed', {}),
-                        message_id=chunk['id']
-                    )
-                else:
-                    yield DTOInstruction(type=EventType.PENDING, message_id=chunk['id'], message=chunk.get('content'), is_final=False)
+            try:
+                for chunk in llm_query_stream(conversation, tools=tools_for_model, model_name=specific_model):
+                    message_id = chunk['id']
+                    if chunk['type'] == 'final':
+                        output = chunk
+                        break
+                    elif chunk['type'] == 'tool':
+                        _tool_call = chunk['tool_calls'][0]
+                        yield DTOInstruction(
+                            type=EventType.TOOL,
+                            is_final=False,
+                            function=_tool_call['function']['name'],
+                            args=_tool_call['function'].get('arguments_parsed', {}),
+                            message_id=chunk['id']
+                        )
+                    else:
+                        yield DTOInstruction(type=EventType.PENDING, message_id=chunk['id'], message=chunk.get('content'), is_final=False)
+            except LLMRequestFormat as e:
+                if _llm_format_error_workaround <= 3:
+                    _llm_format_error_workaround +=1
+                    conversation.pop()
+                    if _llm_format_error_workaround > 1:
+                        conversation.pop() # remove instruction below
+                    else:
+                        yield DTOInstruction(type=EventType.WARNING, message_id=str(uuid.uuid4()), message=f"LLM error: {e}. Workaround...", is_final=True)
 
+                    conversation.append({
+                        'role': 'user',
+                        'content': (
+                            'IMPORTANT: Create report of the your work. '
+                            'Use the `report` tool to provide a comprehensive structured summary of all work done so far. '
+                            'Dont continue your work!'
+                        )
+                    })
+                    self.log(f"LLMRequestFormat workaround: {e}")
+                    continue
+                else:
+                    yield DTOInstruction(type=EventType.ERROR, message=str(e), exit=True)
+                    return
+
+            _llm_format_error_workaround = 0
             _prompt_tokens = output.get('tokens_usage', {}).get('prompt', 0)
             total_context_size = 0
             if _prompt_tokens > 0:
@@ -433,7 +459,7 @@ class BaseAgent(LoggerMixin):
                     'content': (
                         'IMPORTANT: MAX_ITERATION exceed. Create report of the your work'
                         'Use the `report` tool to provide a comprehensive structured summary of all work done so far. '
-                        'Dont continue you work - you lead to maximum interation step'
+                        'Dont continue your work - you lead to maximum interation step'
                     )
                 })
                 _max_step_workaround = True

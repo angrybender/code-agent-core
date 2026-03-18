@@ -5,7 +5,7 @@ import time
 import logging
 import json
 
-from openai import OpenAI, BadRequestError
+from openai import OpenAI, BadRequestError, APIError
 from dotenv import load_dotenv
 
 from llm_parser import parse_tags
@@ -45,6 +45,10 @@ MAX_CONTEXT_WINDOW_SIZE = int(os.getenv('MAX_CONTEXT_WINDOW_SIZE', 100000))
 
 
 class ContextOverflow(Exception):
+    pass
+
+class LLMRequestFormat(Exception):
+    # errors about wrong tooling calls, wrong messages format etc
     pass
 
 
@@ -183,6 +187,9 @@ def llm_query(messages, tags=None, tools=None, model_name=None, max_tokens=None)
                     output['_tool_calls'] = []
 
             return output
+        except APIError as e:
+            raise LLMRequestFormat(str(e)) from e
+
         except Exception as e:
             error = e
             logger.warning(f"Attempt {attempt + 1}: Unexpected error: {e}")
@@ -368,7 +375,10 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
                 logger.error("Fix: Model doesnt support several system messages")
                 messages[-1]['role'] = 'user'
             else:
-                raise
+                raise LLMRequestFormat(message) from e
+
+        except APIError as e:
+            raise LLMRequestFormat(str(e)) from e
 
         except Exception as e:
             error = e
