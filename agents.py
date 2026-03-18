@@ -17,7 +17,7 @@ load_dotenv()
 
 from llm import llm_query, llm_query_stream, MAX_CONTEXT_WINDOW_SIZE
 from tools_interpreter import ToolsInterpreter
-from tools.tools import ANALYTIC_TOOLS, get_coder_tools, get_reviewer_tools, TOOL_SUMMARIZE
+from tools.tools import ANALYTIC_TOOLS, get_coder_tools, get_reviewer_tools, TOOL_SUMMARIZE, TOOL_REPORT
 from search_code import SearchCode
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
@@ -184,6 +184,7 @@ class BaseAgent(LoggerMixin):
         agent_step = 0
         _summarize_count = 0  # counts how many times summarize has been triggered
         _context_overflow_summarize = False
+        _max_step_workaround = False
         while True:
             agent_step += 1
             if agent_step > MAX_ITERATION:
@@ -198,8 +199,11 @@ class BaseAgent(LoggerMixin):
             output = None
             message_id = None
             tools_for_model = self.get_tools()
-            if _context_overflow_summarize:
+            if _context_overflow_summarize or _max_step_workaround:
                 tools_for_model = [TOOL_SUMMARIZE]
+
+            if _max_step_workaround:
+                tools_for_model = [TOOL_REPORT]
 
             for chunk in llm_query_stream(conversation, tools=tools_for_model, model_name=specific_model):
                 message_id = chunk['id']
@@ -422,6 +426,19 @@ class BaseAgent(LoggerMixin):
 
                 conversation.append(result_msg)
 
+            if agent_step == MAX_ITERATION - 1:
+                self.log("MAX_ITERATION exceed workaround")
+                conversation.append({
+                    'role': 'user',
+                    'content': (
+                        'IMPORTANT: MAX_ITERATION exceed. Create report of the your work'
+                        'Use the `report` tool to provide a comprehensive structured summary of all work done so far. '
+                        'Dont continue you work - you lead to maximum interation step'
+                    )
+                })
+                _max_step_workaround = True
+                continue
+
             if total_context_size > MAX_CONTEXT_WINDOW_SIZE and not _context_overflow_summarize:
                 # TODO: summarization inf loop
                 conversation.append({
@@ -441,14 +458,6 @@ class BaseAgent(LoggerMixin):
                 })
                 _context_overflow_summarize = True
                 continue
-
-            if agent_step == MAX_ITERATION - 1:
-                # force report
-                self.log("MAX_ITERATION exceed rick. Force report", True)
-                conversation.append({
-                    'role': 'user',
-                    'content': "MAX_ITERATION exceed rick. Create report of the your work"
-                })
 
 
 
