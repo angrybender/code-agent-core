@@ -204,9 +204,9 @@ def llm_query(messages, tags=None, tools=None, model_name=None, max_tokens=None)
         raise error
 
 def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str) -> int:
-    model_name = re.sub(r'[^a-z\d\-]+', '_', model_name, flags=re.IGNORECASE)
+    cache_model_name = re.sub(r'[^a-z\d\-]+', '_', model_name, flags=re.IGNORECASE)
     assert messages, 'Empty messages'
-    stat_cache = f'./storage/calculate_tokens_usage_workaround_{model_name}.json'
+    stat_cache = f'./storage/calculate_tokens_usage_workaround_{cache_model_name}.json'
 
     tokens_per_char = None
     if os.path.exists(stat_cache):
@@ -220,7 +220,7 @@ def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str) ->
         _messages = messages[:1]
         _messages[0]['role'] = 'user' # models required at least once users' message
         char_size = len(json.dumps(_messages))
-        test_response = llm_query(_messages, model_name, max_tokens=1)
+        test_response = llm_query(_messages, model_name=model_name, max_tokens=1)
         assert '_usage' in test_response, 'Wrong response or empty response'
         tokens_usage = test_response['_usage'].prompt_tokens
         tokens_per_char = round(tokens_usage/char_size, 3)
