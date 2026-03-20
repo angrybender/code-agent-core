@@ -7,7 +7,7 @@ from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
 from log_helper import pretty_format
 from mcp_helper import tool_call
-from llm import llm_query_stream
+from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE
 from path_helper import get_relative_path
 from tools_interpreter import ToolsInterpreter
 from agents import Agent
@@ -21,8 +21,6 @@ load_dotenv()
 
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=os.getenv('MAX_ITERATION')
-AVOID_EMPTY_RESPONSE = int(os.getenv('AVOID_EMPTY_RESPONSE', 0)) == 1
-MAX_CONTEXT_WINDOW_SIZE = int(os.getenv('MAX_CONTEXT_WINDOW_SIZE', 100000))
 
 import logging
 logger = logging.getLogger('APP')
@@ -146,50 +144,33 @@ class Copilot(LoggerMixin):
                 yield DTOInstruction(type=EventType.ERROR, message="MAX_STEP exceed!")
                 break
 
-            is_empty_workaround = False
-            while True:
-                output = None
-                message_id = None
-                for chunk in llm_query_stream(conversation_log, tools=SUPERVISOR_TOOLS, model_name=specific_model):
-                    message_id = chunk['id']
-                    if chunk['type'] == 'final':
-                        output = chunk
-                        break
-                    elif chunk['type'] == 'tool':
-                        _tool_call = chunk['tool_calls'][0]
-                        tools_arguments_parsing = _tool_call['function']['arguments_parsed'] if _tool_call['function'].get('arguments_parsed') else {}
-                        agent_name = tools_arguments_parsing.get('agent_name', '')
-                        if agent_name:
-                            yield DTOInstruction(type=EventType.AGENT, is_final=False, message_id=chunk['id'], function=agent_name)
-                    else:
-                        yield DTOInstruction(type=EventType.AGENT, is_final=False, message_id=chunk['id'], function="SUPERVISOR")
-
-                if output:
+            output = None
+            message_id = None
+            for chunk in llm_query_stream(conversation_log, tools=SUPERVISOR_TOOLS, model_name=specific_model):
+                message_id = chunk['id']
+                if chunk['type'] == 'final':
+                    output = chunk
                     break
+                elif chunk['type'] == 'tool':
+                    _tool_call = chunk['tool_calls'][0]
+                    tools_arguments_parsing = _tool_call['function']['arguments_parsed'] if _tool_call['function'].get('arguments_parsed') else {}
+                    agent_name = tools_arguments_parsing.get('agent_name', '')
+                    if agent_name:
+                        yield DTOInstruction(type=EventType.AGENT, is_final=False, message_id=chunk['id'], function=agent_name)
                 else:
-                    yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id)
-
-                if not AVOID_EMPTY_RESPONSE:
-                    # == exit
-                    logger.info("Empty response. Stop working")
-                    yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id)
-                    return True
-
-                logger.info("Empty response. Force to using tool")
-
-                if not is_empty_workaround:
-                    is_empty_workaround = True
-                    conversation_log.append({
-                        'role': 'user',
-                        'content': 'Dont answer with empty message. If you have finished the work - call `exit` tool!'
-                    })
+                    yield DTOInstruction(type=EventType.AGENT, is_final=False, message_id=chunk['id'], function="SUPERVISOR")
 
             _prompt_tokens = output.get('tokens_usage', {}).get('prompt', 0)
             if _prompt_tokens > 0:
                 yield DTOInstruction(
                     type=EventType.CONTEXT,
-                    context_window={"used": _prompt_tokens, "limit": MAX_CONTEXT_WINDOW_SIZE}
+                    context_window={"used": _prompt_tokens + output['tokens_usage']['completion'], "limit": MAX_CONTEXT_WINDOW_SIZE}
                 )
+
+            if not output:
+                logger.info("Empty response. Stop working")
+                yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id)
+                return True
 
             tool_call_description = None
             current_tool_call = None
@@ -226,7 +207,7 @@ class Copilot(LoggerMixin):
                 continue
 
             if not tool_call_description and not output['output']:
-                yield DTOInstruction(type=EventType.ERROR, message="Agent call error (empty)")
+                # cycle stop correct (modern LLM just stop generation if it has decided to finish)
                 break
 
             self.log(tool_call_description, True)

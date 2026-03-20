@@ -3,6 +3,7 @@ import json
 import hashlib
 import shutil
 import glob
+import uuid
 
 from jinja2 import Environment, BaseLoader
 
@@ -15,9 +16,9 @@ logger = logging.getLogger('APP')
 from dotenv import load_dotenv
 load_dotenv()
 
-from llm import llm_query, llm_query_stream
+from llm import llm_query, llm_query_stream, MAX_CONTEXT_WINDOW_SIZE, LLMRequestFormat
 from tools_interpreter import ToolsInterpreter
-from tools.tools import ANALYTIC_TOOLS, get_coder_tools, get_reviewer_tools
+from tools.tools import ANALYTIC_TOOLS, get_coder_tools, get_reviewer_tools, TOOL_SUMMARIZE, TOOL_REPORT
 from search_code import SearchCode
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
@@ -26,8 +27,6 @@ from context_helper import compact_conversation_remove_redundant
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=int(os.getenv('MAX_ITERATION'))
 DEEPTHINKING_AGENTS=os.getenv('DEEPTHINKING_AGENTS', '').split(',')
-AVOID_EMPTY_RESPONSE = int(os.getenv('AVOID_EMPTY_RESPONSE', 0)) == 1
-MAX_CONTEXT_WINDOW_SIZE = int(os.getenv('MAX_CONTEXT_WINDOW_SIZE', 100000))
 
 def _parse_tool_arguments(json_data: str):
     try:
@@ -37,7 +36,10 @@ def _parse_tool_arguments(json_data: str):
         if not json_data:
             raise e
 
-        return json.loads(json_data)
+        try:
+            return json.loads(json_data)
+        except json.decoder.JSONDecodeError as e:
+            return {}
 
 def _merge_assistant_messages(conversation: list[dict]) -> list[dict]:
     # merge multiply assistant messages to once
@@ -142,6 +144,24 @@ class BaseAgent(LoggerMixin):
             'commands_run': [],
         }
 
+    def _build_artifact_summary(self) -> str:
+        """Build a deterministic summary of tracked artifacts"""
+        lines = ["## Verified Actions:"]
+        files_read = list(dict.fromkeys(self.artifacts['files_read']))  # deduplicate, preserve order
+        if files_read:
+            lines.append(f"- Files read: {', '.join(files_read)}")
+        if self.artifacts['files_created']:
+            lines.append(f"- Files created: {', '.join(self.artifacts['files_created'])}")
+        if self.artifacts['files_modified']:
+            lines.append(f"- Files modified: {', '.join(self.artifacts['files_modified'])}")
+        if self.artifacts['commands_run']:
+            for cmd in self.artifacts['commands_run']:
+                status = cmd.get('status', 'unknown')
+                lines.append(f"- Command `{cmd['command']}`: {status}")
+        if len(lines) == 1:
+            lines.append("- No tool actions recorded yet.")
+        return "\n".join(lines)
+
     def run(self):
         assert self.instruction, 'Init() s required'
         specific_model = os.environ.get(f'MODEL:{self.role}', None)
@@ -166,6 +186,10 @@ class BaseAgent(LoggerMixin):
         ]
 
         agent_step = 0
+        _summarize_count = 0  # counts how many times summarize has been triggered
+        _context_overflow_summarize = False
+        _max_step_workaround = False
+        _llm_format_error_workaround = 0
         while True:
             agent_step += 1
             if agent_step > MAX_ITERATION:
@@ -175,13 +199,19 @@ class BaseAgent(LoggerMixin):
 
             conversation = self.conversation_filter(conversation)
 
-            is_empty_workaround = False
-            while True:
-                yield DTOInstruction(type=EventType.NOPE)
+            yield DTOInstruction(type=EventType.NOPE)
 
-                output = None
-                message_id = None
-                for chunk in llm_query_stream(conversation, tools=self.get_tools(), model_name=specific_model):
+            output = None
+            message_id = None
+            tools_for_model = self.get_tools()
+            if _context_overflow_summarize or _max_step_workaround:
+                tools_for_model = [TOOL_SUMMARIZE]
+
+            if _max_step_workaround or _llm_format_error_workaround > 0:
+                tools_for_model = [TOOL_REPORT]
+
+            try:
+                for chunk in llm_query_stream(conversation, tools=tools_for_model, model_name=specific_model):
                     message_id = chunk['id']
                     if chunk['type'] == 'final':
                         output = chunk
@@ -196,40 +226,52 @@ class BaseAgent(LoggerMixin):
                             message_id=chunk['id']
                         )
                     else:
-                        yield DTOInstruction(type=EventType.PENDING, message_id=chunk['id'], is_final=False)
-
-                if output:
-                    break
-                else:
-                    yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id, metadata=self.artifacts)
-
-                if not AVOID_EMPTY_RESPONSE:
-                    _report = _create_report(conversation)
-                    if _report:
-                        _report = conversation[-1]['content']
-                        logger.info("Empty response. Create report from previous message")
+                        yield DTOInstruction(type=EventType.PENDING, message_id=chunk['id'], message=chunk.get('content'), is_final=False)
+            except LLMRequestFormat as e:
+                if _llm_format_error_workaround <= 3:
+                    _llm_format_error_workaround +=1
+                    conversation.pop()
+                    if _llm_format_error_workaround > 1:
+                        conversation.pop() # remove instruction below
                     else:
-                        _report = "I've completed task"
-                        logger.info("Empty response [agents]")
+                        yield DTOInstruction(type=EventType.WARNING, message_id=str(uuid.uuid4()), message=f"LLM error: {e}. Workaround...", is_final=True)
 
-                    yield DTOInstruction(type=EventType.REPORT, message=_report, exit=True, hidden=True, message_id=message_id, metadata=self.artifacts)
-                    return
-
-                logger.info("Empty response. Force to using tool")
-
-                if not is_empty_workaround:
-                    is_empty_workaround = True
                     conversation.append({
                         'role': 'user',
-                        'content': 'Dont answer with empty message. If you have finished the work - call `report` tool!'
+                        'content': (
+                            'IMPORTANT: Create report of the your work. '
+                            'Use the `report` tool to provide a comprehensive structured summary of all work done so far. '
+                            'Dont continue your work!'
+                        )
                     })
+                    self.log(f"LLMRequestFormat workaround: {e}")
+                    continue
+                else:
+                    yield DTOInstruction(type=EventType.ERROR, message=str(e), exit=True)
+                    return
 
+            _llm_format_error_workaround = 0
             _prompt_tokens = output.get('tokens_usage', {}).get('prompt', 0)
+            total_context_size = 0
             if _prompt_tokens > 0:
+                total_context_size = _prompt_tokens + output['tokens_usage']['completion']
                 yield DTOInstruction(
                     type=EventType.CONTEXT,
-                    context_window={"used": _prompt_tokens, "limit": MAX_CONTEXT_WINDOW_SIZE}
+                    context_window={"used": total_context_size, "limit": MAX_CONTEXT_WINDOW_SIZE}
                 )
+
+            if not output:
+                yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id, metadata={})
+                _report = _create_report(conversation)
+                if _report:
+                    _report = conversation[-1]['content']
+                    logger.info("Empty response. Create report from previous message")
+                else:
+                    _report = "I've completed task"
+                    logger.info("Empty response [agents]")
+
+                yield DTOInstruction(type=EventType.REPORT, message=_report, exit=True, hidden=True, message_id=message_id, metadata=self.artifacts)
+                return
 
             self.log('LLM OUTPUT:\n' + output.get('output', ''), True)
 
@@ -271,6 +313,7 @@ class BaseAgent(LoggerMixin):
                 continue
 
             self.log(tool_call_description, True)
+
             conversation.append({
                 'role': 'assistant',
                 'content': output['output'],
@@ -286,6 +329,41 @@ class BaseAgent(LoggerMixin):
                     metadata=self.artifacts
                 )
                 break
+            elif tool_call_description['function'] == 'summarize':
+                    _context_overflow_summarize = False
+                    _summarize_count += 1
+
+                    llm_summary = tool_call_description['args'].get('text', '') if tool_call_description['args'] else ''
+                    artifact_summary = self._build_artifact_summary()
+
+                    combined_summary = f"{artifact_summary}\n\n## Agent Findings and Progress:\n{llm_summary}"
+
+                    conversation = conversation[:2]
+
+                    # todo `report` tool ?
+                    conversation.append({
+                        'role': 'assistant',
+                        'content': (
+                            f"I have summarized my work below (summarization cycle #{_summarize_count}):\n"
+                            f"{combined_summary}\n"
+                            f"Based on this summary I will continue working."
+                        ),
+                    })
+
+                    conversation.append({
+                        'role': 'system',
+                        'content': f"Continue the work of create report!",
+                    })
+
+                    self.log(f"SUMMARIZE RESULT:\n{combined_summary}", True)
+
+                    yield DTOInstruction(
+                        type=EventType.MARKDOWN,
+                        message=tool_call_description['args'].get('text', '') if tool_call_description['args'] else '',
+                        message_id=output['id']
+                    )
+
+                    continue
             else:
                 yield DTOInstruction(type=EventType.NOPE)
 
@@ -377,6 +455,41 @@ class BaseAgent(LoggerMixin):
 
                 conversation.append(result_msg)
 
+            if agent_step == MAX_ITERATION - 1:
+                self.log("MAX_ITERATION exceed workaround")
+                conversation.append({
+                    'role': 'user',
+                    'content': (
+                        'IMPORTANT: MAX_ITERATION exceed. Create report of the your work'
+                        'Use the `report` tool to provide a comprehensive structured summary of all work done so far. '
+                        'Dont continue your work - you lead to maximum interation step'
+                    )
+                })
+                _max_step_workaround = True
+                continue
+
+            if total_context_size > MAX_CONTEXT_WINDOW_SIZE and not _context_overflow_summarize:
+                # TODO: summarization inf loop
+                conversation.append({
+                    'role': 'user',
+                    'content': (
+                        'IMPORTANT: The context window is almost full. '
+                        'Use the `summarize` tool to provide a comprehensive structured summary of all work done so far. '
+                        'Your summary MUST include these sections:\n'
+                        '## Files Read: (each file path and key findings)\n'
+                        '## Files Created/Modified: (each path and what was done)\n'
+                        '## Commands Run: (command name and result)\n'
+                        '## Key Findings: (important values, patterns, decisions)\n'
+                        '## Current Status: (what is completed)\n'
+                        '## What Remains: (what still needs to be done)\n'
+                        'Be thorough — target ~3000-4000 characters. Use `summarize` tool now!'
+                    )
+                })
+                _context_overflow_summarize = True
+                continue
+
+
+
     def cache_file(self, file_name: str, source_file_content: str) -> str:
         source_file_content_path = os.path.join(self.storage_path, hashlib.sha256(file_name.encode()).hexdigest() + '.txt')
         if not os.path.exists(source_file_content_path):
@@ -410,7 +523,8 @@ class Agent:
     @staticmethod
     def setUp():
         for cache_path in glob.glob(os.path.join(BaseAgent.STORAGE_PATH, '*')):
-            shutil.rmtree(cache_path)
+            if os.path.isdir(cache_path):
+                shutil.rmtree(cache_path)
 
     @staticmethod
     def create(role, agent_commands: list = None) -> BaseAgent:

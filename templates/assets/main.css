@@ -51,7 +51,7 @@ button.default:disabled {
   border: 0.25em solid currentColor;
   border-right-color: transparent;
   border-radius: 50%;
-  animation: spinner-component-animation 0.75s linear infinite;
+  animation: spinner-component-animation 1s linear infinite;
 }
 @keyframes spinner-component-animation {
   to {
@@ -359,6 +359,15 @@ button.default:disabled {
     border-left: 3px solid #2e86c1;
 }
 .message.loading .timestamp {
+    opacity: 0;
+}
+
+.message.loading .pending-title {
+    color: rgba(111, 66, 193, 0.7);
+}
+.message.loading .pending-title::before {
+    /* add virtual "margin" */
+    content: "🔨 ";
     opacity: 0;
 }
 

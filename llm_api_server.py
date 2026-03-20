@@ -112,14 +112,6 @@ def process_task(user_request: str, session_id: str):
             SESSION_MANAGER_INSTANCE.commit_command(session_id)
             break
 
-        if not message.is_final and time.time() - last_pending_sent < STREAM_PENDING_PERIOD:
-            continue
-
-        if not message.is_final:
-            last_pending_sent = time.time()
-        else:
-            last_pending_sent = 0
-
         try:
             message = agent_tool_tpl(message)
         except Exception as e:
@@ -132,7 +124,15 @@ def process_task(user_request: str, session_id: str):
             active_responses.append({'type': 'files', 'message': message.copy()})
 
         if message.get('hidden', False):
-            message = {'type': 'nope'}
+            message = {'type': 'nope', 'is_final': True}
+
+        if not message['is_final'] and time.time() - last_pending_sent < STREAM_PENDING_PERIOD:
+            continue
+
+        if not message['is_final']:
+            last_pending_sent = time.time()
+        else:
+            last_pending_sent = 0
 
         yield f"data: {json.dumps(message)}\n\n"
 
