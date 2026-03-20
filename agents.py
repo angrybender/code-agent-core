@@ -36,7 +36,10 @@ def _parse_tool_arguments(json_data: str):
         if not json_data:
             raise e
 
-        return json.loads(json_data)
+        try:
+            return json.loads(json_data)
+        except json.decoder.JSONDecodeError as e:
+            return {}
 
 def _merge_assistant_messages(conversation: list[dict]) -> list[dict]:
     # merge multiply assistant messages to once
