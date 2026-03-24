@@ -204,14 +204,17 @@ class BaseAgent(LoggerMixin):
             output = None
             message_id = None
             tools_for_model = self.get_tools()
+            force_tool = False
             if _context_overflow_summarize or _max_step_workaround:
                 tools_for_model = [TOOL_SUMMARIZE]
+                force_tool = True
 
             if _max_step_workaround or _llm_format_error_workaround > 0:
                 tools_for_model = [TOOL_REPORT]
+                force_tool = True
 
             try:
-                for chunk in llm_query_stream(conversation, tools=tools_for_model, model_name=specific_model):
+                for chunk in llm_query_stream(conversation, tools=tools_for_model, model_name=specific_model, force_tool=force_tool):
                     message_id = chunk['id']
                     if chunk['type'] == 'final':
                         output = chunk

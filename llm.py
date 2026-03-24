@@ -233,7 +233,7 @@ def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str) ->
 
     return int(round(char_size*tokens_per_char))
 
-def llm_query_stream(messages, tags=None, tools=None, model_name=None):
+def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_tool=False):
     client = OpenAI(
         api_key=API_KEY,
         base_url=API_URL,
@@ -247,11 +247,21 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None):
     for m in messages:
         logger.debug(m)
 
+    if tools and len(tools) > 1 and force_tool:
+        tool_choice = 'required'
+    elif tools and len(tools) == 1 and force_tool:
+        tool_choice = {"type": "function", "name": tools[0]['function']['name']}
+    else:
+        tool_choice = 'auto'
+
+    tool_choice = 'auto'
+
     options = {
         'messages': messages,
         'model': model_name if model_name else MODEL,
         'tools': tools,
         'stream': True,
+        'tool_choice': tool_choice
     }
 
     if REASONING_EFFORT:

@@ -7,7 +7,7 @@ to reduce context window usage without losing semantically important information
 import json
 import os
 
-_WRITE_TOOLS = frozenset({'write_file', 'replace_code_in_file'})
+_WRITE_TOOLS = frozenset({'write_file'})
 _TOOL_READ_FILE = 'read_file'
 _TOOL_READ_MULTIPLY_FILES = 'read_multiply_files'
 _TOOL_SHELL_COMMAND = 'shell_command'
@@ -45,9 +45,12 @@ def _last_call_is_report(conversation: list[dict]) -> bool:
 def _find_reads_invalidated_by_writes(conversation: list[dict]) -> set[str]:
     """Phase 1: find read_file calls that precede a later write to the same path.
 
-    For each file path, tracks the last write position (write_file or
-    replace_code_in_file). Any read_file call that appears before the last
-    write to the same path is marked for removal because its content is stale.
+    For each file path, tracks the last write position (write_file only).
+    Any read_file call that appears before the last write_file to the same path
+    is marked for removal because its content is stale.
+
+    Note: replace_code_in_file (patch) does NOT invalidate prior reads — a patch
+    preserves the surrounding content, so the previous read remains valid.
 
     Returns:
         Set of tool_call IDs to remove.
@@ -231,8 +234,9 @@ def compact_conversation_remove_redundant(conversation: list[dict]) -> list[dict
     """Remove redundant tool calls from a conversation to shrink context size.
 
     Applies three optimizations:
-    1. Removes read_file calls for paths that were subsequently written
-       (write_file / replace_code_in_file), since the read content is stale.
+    1. Removes read_file calls for paths that were subsequently overwritten by
+       write_file, since the read content is stale. Note: replace_code_in_file
+       (patch) does NOT invalidate prior reads.
     2. Deduplicates multiple read_file calls for the same path when the last
        call is a full read (no offset/limit) — keeps only the last full read.
     3. Deduplicates identical shell_command calls that produced the same output,

@@ -146,7 +146,7 @@ class Copilot(LoggerMixin):
 
             output = None
             message_id = None
-            for chunk in llm_query_stream(conversation_log, tools=SUPERVISOR_TOOLS, model_name=specific_model):
+            for chunk in llm_query_stream(conversation_log, tools=SUPERVISOR_TOOLS, model_name=specific_model, force_tool=True):
                 message_id = chunk['id']
                 if chunk['type'] == 'final':
                     output = chunk
