@@ -10,6 +10,7 @@ import os
 _WRITE_TOOLS = frozenset({'write_file'})
 _TOOL_READ_FILE = 'read_file'
 _TOOL_READ_MULTIPLY_FILES = 'read_multiply_files'
+_TOOL_PATCH_FILE = 'replace_code_in_file'
 _TOOL_SHELL_COMMAND = 'shell_command'
 _TOOL_REPORT = 'report'
 
@@ -43,14 +44,17 @@ def _last_call_is_report(conversation: list[dict]) -> bool:
 
 
 def _find_reads_invalidated_by_writes(conversation: list[dict]) -> set[str]:
-    """Phase 1: find read_file calls that precede a later write to the same path.
+    """Phase 1: find read_file / replace_code_in_file calls that precede a later
+    write_file to the same path.
 
     For each file path, tracks the last write position (write_file only).
-    Any read_file call that appears before the last write_file to the same path
-    is marked for removal because its content is stale.
+    Any read_file or replace_code_in_file call that appears before the last
+    write_file to the same path is marked for removal because its content is
+    stale — write_file replaces the entire file, making prior reads and patches
+    irrelevant.
 
-    Note: replace_code_in_file (patch) does NOT invalidate prior reads — a patch
-    preserves the surrounding content, so the previous read remains valid.
+    Note: replace_code_in_file (patch) does NOT itself invalidate prior reads —
+    only a subsequent write_file makes the patch stale.
 
     Returns:
         Set of tool_call IDs to remove.
@@ -105,6 +109,15 @@ def _find_reads_invalidated_by_writes(conversation: list[dict]) -> set[str]:
                                     if tool_call_id_to_position.get(tool_call_id, 0) < last_write_position[norm_file_path]:
                                         ids_to_remove.add(tool_call_id)
                                         break
+                elif tool_name == _TOOL_PATCH_FILE:
+                    args = _parse_tool_args(tool_call)
+                    if args:
+                        path = args.get('path')
+                        tool_call_id = tool_call.get('id')
+                        norm_path = _normalize_path(path) if path else path
+                        if path and tool_call_id and norm_path in last_write_position:
+                            if tool_call_id_to_position.get(tool_call_id, 0) < last_write_position[norm_path]:
+                                ids_to_remove.add(tool_call_id)
 
     return ids_to_remove
 
@@ -234,9 +247,10 @@ def compact_conversation_remove_redundant(conversation: list[dict]) -> list[dict
     """Remove redundant tool calls from a conversation to shrink context size.
 
     Applies three optimizations:
-    1. Removes read_file calls for paths that were subsequently overwritten by
-       write_file, since the read content is stale. Note: replace_code_in_file
-       (patch) does NOT invalidate prior reads.
+    1. Removes read_file and replace_code_in_file calls for paths that were
+       subsequently overwritten by write_file, since their content is stale.
+       Note: replace_code_in_file (patch) alone does NOT invalidate prior reads —
+       only a subsequent write_file makes prior reads and patches irrelevant.
     2. Deduplicates multiple read_file calls for the same path when the last
        call is a full read (no offset/limit) — keeps only the last full read.
     3. Deduplicates identical shell_command calls that produced the same output,

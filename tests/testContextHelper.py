@@ -1056,7 +1056,7 @@ class TestContextHelper(unittest.TestCase):
         self.assertEqual(conversation[5], new_conversation[3])
 
     def test_compact_conversation_remove_redundant_13(self):
-        """read -> patch -> write_file: read is removed (write_file still invalidates)"""
+        """read -> patch -> write_file: both read AND patch are removed when write_file supersedes them"""
         conversation = [
             {'role': 'system', 'content': 'system1'},
             {'role': 'user', 'content': 'user1'},
@@ -1069,7 +1069,7 @@ class TestContextHelper(unittest.TestCase):
             },
             {'role': 'tool', 'tool_call_id': 'tool_id_1',
              'name': 'read_file', 'content': 'content of path/file/1.txt'},
-            # patch file 1 (should NOT invalidate the read above)
+            # patch file 1
             {
                 'role': 'assistant', 'content': '',
                 'tool_calls': [{'id': 'tool_id_2', 'type': 'function',
@@ -1078,7 +1078,7 @@ class TestContextHelper(unittest.TestCase):
             },
             {'role': 'tool', 'tool_call_id': 'tool_id_2',
              'name': 'replace_code_in_file', 'content': 'ok'},
-            # write file 1 (DOES invalidate the read above)
+            # write file 1 (invalidates both the read and the patch above)
             {
                 'role': 'assistant', 'content': '',
                 'tool_calls': [{'id': 'tool_id_3', 'type': 'function',
@@ -1092,14 +1092,11 @@ class TestContextHelper(unittest.TestCase):
         new_conversation = compact_conversation_remove_redundant(conversation)
 
         # before: system - user - read file1 - patch file1 - write file1
-        # after:  system - user - patch file1 - write file1
-        # write_file still invalidates prior read; patch in between is kept.
+        # after:  system - user - write file1
         self.assertEqual(conversation[:2], new_conversation[:2])
-        self.assertEqual(conversation[4], new_conversation[2])
-        self.assertEqual(conversation[5], new_conversation[3])
-        self.assertEqual(conversation[6], new_conversation[4])
-        self.assertEqual(conversation[7], new_conversation[5])
-        self.assertEqual(6, len(new_conversation))
+        self.assertEqual(conversation[6], new_conversation[2])
+        self.assertEqual(conversation[7], new_conversation[3])
+        self.assertEqual(4, len(new_conversation))
 
     def test_compact_conversation_remove_redundant_14(self):
         """partial read -> full read -> patch: Phase 1 keeps both reads; Phase 2 removes partial"""
