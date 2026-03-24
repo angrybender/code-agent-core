@@ -103,6 +103,11 @@ class BaseAgent(LoggerMixin):
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
         conversation = _merge_assistant_messages(conversation)
+
+        tools_cnt = len([_ for _ in conversation if 'tool_calls' in _])
+        if tools_cnt <= MAX_ITERATION // 2:
+            return conversation
+
         before_len = len(conversation)
         new_conversation = compact_conversation_remove_redundant(conversation)
 
