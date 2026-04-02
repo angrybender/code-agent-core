@@ -39,8 +39,6 @@ function JIDETransport(request, onSuccessCb, onFailureCb) {
     });
 }
 
-const ON_USER_SCROLL_SEMAPHORE_TTL = 30; // seconds
-
 class SimpleChat {
     constructor() {
         this.messagesContainer = document.getElementById('chat-messages');
@@ -49,7 +47,6 @@ class SimpleChat {
         this.eventSource = null;
 
         this.ON_USER_SCROLL_SEMAPHORE = false;
-        this.ON_USER_SCROLL_SEMAPHORE_TIMER = null;
 
         this.IS_LAST_MESSAGE_SUCCESS = false;
         this.IS_ON_END_CONVERSATION = false; // mutex for debounce
@@ -90,7 +87,9 @@ class SimpleChat {
         this.controlFlowStopBtn.classList.remove('loading');
         this.messageInput.style.display = 'block';
         document.getElementById('main-wrapper').classList.remove('conversation-active');
-        window.scrollTo(0, document.body.scrollHeight);
+        if (!this.ON_USER_SCROLL_SEMAPHORE) {
+            window.scrollTo(0, document.body.scrollHeight);
+        }
 
         const ctxBar = document.getElementById('context-window-bar');
         if (ctxBar) ctxBar.style.display = 'none';
@@ -168,28 +167,19 @@ class SimpleChat {
             }
         });
 
-        // Handle user's scroll by mouse and turn off/on autoscroll
-        document.body.addEventListener('wheel', (event) => {
-            if (this.ON_USER_SCROLL_SEMAPHORE_TIMER) {
-                clearTimeout(this.ON_USER_SCROLL_SEMAPHORE_TIMER);
-            }
-
-            // if User scroll to bottom - turn on autoscroll
+        // Detect user scroll position and control autoscroll semaphore.
+        // Uses the 'scroll' event on window so ALL input methods are covered
+        // (mouse wheel, keyboard, touch, scrollbar drag, etc.).
+        window.addEventListener('scroll', () => {
             const scrollTop = window.scrollY;
             const windowHeight = window.innerHeight;
             const documentHeight = document.documentElement.scrollHeight;
             const maxScrollTop = documentHeight - windowHeight;
             const scrollPercentage = maxScrollTop > 0 ? scrollTop / maxScrollTop : 1;
-            if (scrollPercentage > 0.95) {
-                this.ON_USER_SCROLL_SEMAPHORE = false;
-                return true;
-            }
 
-            this.ON_USER_SCROLL_SEMAPHORE = true;
-            this.ON_USER_SCROLL_SEMAPHORE_TIMER = setTimeout(() => {
-                this.ON_USER_SCROLL_SEMAPHORE = false;
-                this.ON_USER_SCROLL_SEMAPHORE_TIMER = null;
-            }, ON_USER_SCROLL_SEMAPHORE_TTL*1000);
+            // If user is at (or very near) the bottom, re-enable autoscroll.
+            // Otherwise suppress it until they scroll back down.
+            this.ON_USER_SCROLL_SEMAPHORE = scrollPercentage <= 0.99;
         });
     }
 
