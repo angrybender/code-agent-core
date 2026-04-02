@@ -44,9 +44,11 @@ class SimpleChat {
         this.messagesContainer = document.getElementById('chat-messages');
         this.controlFlowStopBtn = document.getElementById('control-flow-stop');
         this.messageInput = document.getElementById('message-input');
+        this.uploadImageBtn = document.getElementById('upload-image-btn');
         this.eventSource = null;
 
         this.ON_USER_SCROLL_SEMAPHORE = false;
+        this.pendingImageDataUrl = null;
 
         this.IS_LAST_MESSAGE_SUCCESS = false;
         this.IS_ON_END_CONVERSATION = false; // mutex for debounce
@@ -63,6 +65,7 @@ class SimpleChat {
         document.getElementById('main-wrapper').classList.add('conversation-active');
         this.controlFlowStopBtn.style.display = 'block';
         this.messageInput.style.display = 'none';
+        if (this.uploadImageBtn) this.uploadImageBtn.style.display = 'none';
         this.IS_ON_END_CONVERSATION = false;
 
         const ctxBar = document.getElementById('context-window-bar');
@@ -86,6 +89,7 @@ class SimpleChat {
         this.controlFlowStopBtn.style.display = 'none';
         this.controlFlowStopBtn.classList.remove('loading');
         this.messageInput.style.display = 'block';
+        if (this.uploadImageBtn) this.uploadImageBtn.style.display = 'block';
         document.getElementById('main-wrapper').classList.remove('conversation-active');
         if (!this.ON_USER_SCROLL_SEMAPHORE) {
             window.scrollTo(0, document.body.scrollHeight);
@@ -181,6 +185,12 @@ class SimpleChat {
             // Otherwise suppress it until they scroll back down.
             this.ON_USER_SCROLL_SEMAPHORE = scrollPercentage <= 0.99;
         });
+
+        const uploadBtn = document.getElementById('upload-image-btn');
+        const fileInput = document.getElementById('image-upload-input');
+
+        if (uploadBtn) uploadBtn.addEventListener('click', () => fileInput.click());
+        if (fileInput) fileInput.addEventListener('change', (e) => this.handleImageSelected(e));
     }
 
     connectSSE() {
@@ -290,7 +300,7 @@ class SimpleChat {
         this.messagesContainer.innerHTML = '';
 
         // Add user message to chat
-        this.addMessage({ message: message }, 'user');
+        this.addMessage({ message: message, image: this.pendingImageDataUrl }, 'user');
 
         try {
             const response = await fetch(APP_HOST + '/send_message', {
@@ -298,7 +308,7 @@ class SimpleChat {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ message: message, session_id: SESSION_ID })
+                body: JSON.stringify({ message: message, session_id: SESSION_ID, image: this.pendingImageDataUrl })
             });
 
             const result = await response.json();
@@ -307,6 +317,7 @@ class SimpleChat {
                 this.addMessage({ message: `Error: ${result.message}` }, 'error');
             }
             else {
+                this.clearPendingImage();
                 this.onStartConversation();
             }
         } catch (error) {
@@ -328,7 +339,10 @@ class SimpleChat {
 
         if (type === 'user') {
             type = 'html';
-            message = { ...message, message: `<pre>${escapeHtml(message.message)}</pre>` };
+            const imageHtml = message.image
+                ? `<img src="${message.image}" class="user-image-preview" alt="attached image">`
+                : '';
+            message = { ...message, message: `${imageHtml}<pre>${escapeHtml(message.message)}</pre>` };
             messageDivClassName = "message html-message user-message";
         }
         else if (type === 'tool') {
@@ -439,6 +453,56 @@ class SimpleChat {
         }
 
         bar.style.display = 'block';
+    }
+
+    handleImageSelected(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            alert('Please select an image file.');
+            event.target.value = '';
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            alert('Image size must be 5 MB or less.');
+            event.target.value = '';
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            this.pendingImageDataUrl = e.target.result;
+            this._showPreview(e.target.result);
+        };
+        reader.readAsDataURL(file);
+        event.target.value = '';
+    }
+
+    _showPreview(dataUrl) {
+        const container = document.getElementById('image-preview-container');
+        if (!container) return;
+        container.innerHTML = '';
+        const img = document.createElement('img');
+        img.id = 'image-preview';
+        img.src = dataUrl;
+        img.alt = 'preview';
+        const btn = document.createElement('button');
+        btn.id = 'clear-image-btn';
+        btn.type = 'button';
+        btn.className = 'clear-image-btn';
+        btn.textContent = '✕';
+        btn.addEventListener('click', () => this.clearPendingImage());
+        container.appendChild(img);
+        container.appendChild(btn);
+        container.style.display = 'flex';
+    }
+
+    clearPendingImage() {
+        this.pendingImageDataUrl = null;
+        const container = document.getElementById('image-preview-container');
+        if (container) {
+            container.innerHTML = '';
+            container.style.display = 'none';
+        }
     }
 
     updateStatus(message, className) {

@@ -126,6 +126,16 @@ class Copilot(LoggerMixin):
             project_structure="\n".join([f"- {path}" for path in self.manifest['files_structure']]),
         )
 
+        pending_image = self.session.get('pending_image') if self.session else None
+
+        if pending_image:
+            user_content = [
+                {"type": "text", "text": self.instruction},
+                {"type": "image_url", "image_url": {"url": pending_image}}
+            ]
+        else:
+            user_content = self.instruction
+
         conversation_log = [
             {
                 'role': 'system',
@@ -133,7 +143,7 @@ class Copilot(LoggerMixin):
             },
             {
                 'role': 'user',
-                'content': self.instruction
+                'content': user_content
             }
         ]
 
