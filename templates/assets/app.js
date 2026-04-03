@@ -48,7 +48,7 @@ class SimpleChat {
         this.eventSource = null;
 
         this.ON_USER_SCROLL_SEMAPHORE = false;
-        this.pendingImageDataUrl = null;
+        this.pendingImages = [];
 
         this.IS_LAST_MESSAGE_SUCCESS = false;
         this.IS_ON_END_CONVERSATION = false; // mutex for debounce
@@ -300,7 +300,7 @@ class SimpleChat {
         this.messagesContainer.innerHTML = '';
 
         // Add user message to chat
-        this.addMessage({ message: message, image: this.pendingImageDataUrl }, 'user');
+        this.addMessage({ message: message, images: this.pendingImages.slice() }, 'user');
 
         try {
             const response = await fetch(APP_HOST + '/send_message', {
@@ -308,7 +308,7 @@ class SimpleChat {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ message: message, session_id: SESSION_ID, image: this.pendingImageDataUrl })
+                body: JSON.stringify({ message: message, session_id: SESSION_ID, images: this.pendingImages.slice() })
             });
 
             const result = await response.json();
@@ -317,7 +317,7 @@ class SimpleChat {
                 this.addMessage({ message: `Error: ${result.message}` }, 'error');
             }
             else {
-                this.clearPendingImage();
+                this.clearAllPendingImages();
                 this.onStartConversation();
             }
         } catch (error) {
@@ -339,8 +339,8 @@ class SimpleChat {
 
         if (type === 'user') {
             type = 'html';
-            const imageHtml = message.image
-                ? `<img src="${message.image}" class="user-image-preview" alt="attached image">`
+            const imageHtml = (message.images && message.images.length)
+                ? message.images.map(src => `<img src="${src}" class="user-image-preview" alt="attached image">`).join('')
                 : '';
             message = { ...message, message: `${imageHtml}<pre>${escapeHtml(message.message)}</pre>` };
             messageDivClassName = "message html-message user-message";
@@ -456,53 +456,70 @@ class SimpleChat {
     }
 
     handleImageSelected(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-        if (!file.type.startsWith('image/')) {
-            alert('Please select an image file.');
-            event.target.value = '';
-            return;
-        }
-        if (file.size > 5 * 1024 * 1024) {
-            alert('Image size must be 5 MB or less.');
-            event.target.value = '';
-            return;
-        }
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            this.pendingImageDataUrl = e.target.result;
-            this._showPreview(e.target.result);
-        };
-        reader.readAsDataURL(file);
+        const files = Array.from(event.target.files);
+        if (!files.length) return;
+
+        let processed = 0;
+        files.forEach(file => {
+            if (!file.type.startsWith('image/')) {
+                alert(`"${file.name}" is not an image file.`);
+                processed++;
+                if (processed === files.length) this._renderPreviews();
+                return;
+            }
+            if (file.size > 5 * 1024 * 1024) {
+                alert(`"${file.name}" exceeds the 5 MB limit.`);
+                processed++;
+                if (processed === files.length) this._renderPreviews();
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                this.pendingImages.push(e.target.result);
+                processed++;
+                if (processed === files.length) this._renderPreviews();
+            };
+            reader.readAsDataURL(file);
+        });
         event.target.value = '';
     }
 
-    _showPreview(dataUrl) {
+    _renderPreviews() {
         const container = document.getElementById('image-preview-container');
-        if (!container) return;
         container.innerHTML = '';
-        const img = document.createElement('img');
-        img.id = 'image-preview';
-        img.src = dataUrl;
-        img.alt = 'preview';
-        const btn = document.createElement('button');
-        btn.id = 'clear-image-btn';
-        btn.type = 'button';
-        btn.className = 'clear-image-btn';
-        btn.textContent = '✕';
-        btn.addEventListener('click', () => this.clearPendingImage());
-        container.appendChild(img);
-        container.appendChild(btn);
+        if (this.pendingImages.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
         container.style.display = 'flex';
+        this.pendingImages.forEach((url, index) => {
+            const wrapper = document.createElement('div');
+            wrapper.style.position = 'relative';
+            wrapper.style.display = 'inline-block';
+
+            const img = document.createElement('img');
+            img.src = url;
+            img.className = 'image-preview-thumb';
+            img.alt = 'attached image';
+
+            const btn = document.createElement('button');
+            btn.className = 'clear-image-btn';
+            btn.textContent = '✕';
+            btn.title = 'Remove image';
+            btn.addEventListener('click', () => {
+                this.pendingImages.splice(index, 1);
+                this._renderPreviews();
+            });
+
+            wrapper.appendChild(img);
+            wrapper.appendChild(btn);
+            container.appendChild(wrapper);
+        });
     }
 
-    clearPendingImage() {
-        this.pendingImageDataUrl = null;
-        const container = document.getElementById('image-preview-container');
-        if (container) {
-            container.innerHTML = '';
-            container.style.display = 'none';
-        }
+    clearAllPendingImages() {
+        this.pendingImages = [];
+        this._renderPreviews();
     }
 
     updateStatus(message, className) {

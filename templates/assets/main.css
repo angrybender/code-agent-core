@@ -433,6 +433,7 @@ button.default:disabled {
 #image-preview-container {
     display: none;
     align-items: flex-start;
+    flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 8px;
     padding: 6px 8px;
@@ -442,7 +443,7 @@ button.default:disabled {
     position: relative;
 }
 
-#image-preview {
+.image-preview-thumb {
     max-height: 120px;
     max-width: 220px;
     border-radius: 4px;
@@ -469,7 +470,7 @@ button.default:disabled {
 .user-image-preview {
     display: block;
     max-height: 200px;
-    max-width: 300px;
+    max-width: 220px;
     border-radius: 6px;
     margin-bottom: 6px;
     margin-right: 6px;

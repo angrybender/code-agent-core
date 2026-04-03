@@ -271,17 +271,19 @@ def message_action():
         if not user_message:
             return json.dumps({'status': 'error', 'message': 'Empty message'}), 400
 
-        image = data.get('image')
-        if image is not None:
-            if not (isinstance(image, str) and image.startswith('data:image/')):
+        images = data.get('images')
+        if images is not None:
+            if not isinstance(images, list) or not all(
+                isinstance(img, str) and img.startswith('data:image/') for img in images
+            ):
                 return json.dumps({"status": "error", "message": "Invalid image format"}), 400
 
         if SESSION_MANAGER_INSTANCE.get_message(user_session_id):
             return json.dumps({'status': 'error', 'message': 'Session is locked'}), 400
 
         SESSION_MANAGER_INSTANCE.send_message(user_session_id, user_message)
-        if image:
-            SESSION_MANAGER_INSTANCE.add_session_parameter(user_session_id, 'pending_image', image)
+        if images:
+            SESSION_MANAGER_INSTANCE.add_session_parameter(user_session_id, 'pending_images', images)
 
         return json.dumps({'status': 'success'})
 
@@ -315,7 +317,7 @@ def event_stream(session: dict):
 
                 # finished work:
                 SESSION_MANAGER_INSTANCE.commit_message(session_id)
-                SESSION_MANAGER_INSTANCE.add_session_parameter(session_id, 'pending_image', None)
+                SESSION_MANAGER_INSTANCE.add_session_parameter(session_id, 'pending_images', [])
             else:
                 # Send heartbeat to keep connection alive
                 now = time.time()
@@ -328,7 +330,7 @@ def event_stream(session: dict):
 
         except Exception as e:
             SESSION_MANAGER_INSTANCE.commit_message(session_id)
-            SESSION_MANAGER_INSTANCE.add_session_parameter(session_id, 'pending_image', None)
+            SESSION_MANAGER_INSTANCE.add_session_parameter(session_id, 'pending_images', [])
 
             yield f"data: {json.dumps({'role': 'system', 'type': 'error', 'message': str(e)})}\n\n"
             logging.exception("message")

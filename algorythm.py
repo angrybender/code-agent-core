@@ -126,13 +126,12 @@ class Copilot(LoggerMixin):
             project_structure="\n".join([f"- {path}" for path in self.manifest['files_structure']]),
         )
 
-        pending_image = self.session.get('pending_image') if self.session else None
+        pending_images = self.session.get('pending_images', []) if self.session else []
 
-        if pending_image:
-            user_content = [
-                {"type": "text", "text": self.instruction},
-                {"type": "image_url", "image_url": {"url": pending_image}}
-            ]
+        if pending_images:
+            user_content = [{"type": "text", "text": self.instruction}]
+            for img_url in pending_images:
+                user_content.append({"type": "image_url", "image_url": {"url": img_url}})
         else:
             user_content = self.instruction
 
