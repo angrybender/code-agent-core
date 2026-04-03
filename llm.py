@@ -203,12 +203,20 @@ def llm_query(messages, tags=None, tools=None, model_name=None, max_tokens=None)
 
         raise error
 
+def _filter_messages(messages: list[dict]) -> list[dict]:
+    for m in messages:
+        if isinstance(m['content'], list):
+            m['content'] = [content for content in m['content'] if content['type'] == 'text'][0]
+
+    return messages
+
 def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str) -> int:
     cache_model_name = re.sub(r'[^a-z\d\-]+', '_', model_name, flags=re.IGNORECASE)
     assert messages, 'Empty messages'
     stat_cache = f'./storage/calculate_tokens_usage_workaround_{cache_model_name}.json'
 
     tokens_per_char = None
+    messages = _filter_messages(messages)
     if os.path.exists(stat_cache):
         with open(stat_cache, 'r', encoding='utf8') as f:
             stat = json.load(f)
@@ -218,6 +226,7 @@ def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str) ->
     if not tokens_per_char:
         # calculate statistic for token usage
         _messages = messages[:1]
+
         _messages[0]['role'] = 'user' # models required at least once users' message
         char_size = len(json.dumps(_messages))
         test_response = llm_query(_messages, model_name=model_name, max_tokens=1)
