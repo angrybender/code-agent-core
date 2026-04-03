@@ -467,12 +467,18 @@ button.default:disabled {
 }
 .clear-image-btn:hover { background: #b02a37; }
 
+.user-images-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
 .user-image-preview {
     display: block;
     max-height: 200px;
     max-width: 220px;
     border-radius: 6px;
-    margin-bottom: 6px;
-    margin-right: 6px;
     object-fit: contain;
 }

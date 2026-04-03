@@ -340,7 +340,7 @@ class SimpleChat {
         if (type === 'user') {
             type = 'html';
             const imageHtml = (message.images && message.images.length)
-                ? message.images.map(src => `<img src="${src}" class="user-image-preview" alt="attached image">`).join('')
+                ? `<div class="user-images-row">${message.images.map(src => `<img src="${src}" class="user-image-preview" alt="attached image">`).join('')}</div>`
                 : '';
             message = { ...message, message: `${imageHtml}<pre>${escapeHtml(message.message)}</pre>` };
             messageDivClassName = "message html-message user-message";
