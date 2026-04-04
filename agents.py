@@ -48,8 +48,12 @@ def _merge_assistant_messages(conversation: list[dict]) -> list[dict]:
     while merged:
         merged = False
         if len(conversation) >= 2:
-            if conversation[-1]['role'] == 'assistant' and conversation[-2]['role'] == 'assistant':
-                conversation[-2]['content'] += "\n" + conversation[-1]['content']
+            prev = conversation[-2]
+            last = conversation[-1]
+            if (prev['role'] == 'assistant' and last['role'] == 'assistant'
+                    and isinstance(prev.get('content'), str)
+                    and isinstance(last.get('content'), str)):
+                prev['content'] += "\n" + last['content']
                 conversation = conversation[:-1]
                 merged = True
 
@@ -60,7 +64,7 @@ def _create_report(conversation: list[dict]):
     last_message = ""
     for message in conversation:
         if message['role'] == 'assistant':
-            _content = message['content'].strip()
+            _content = message['content'].strip() if message['content'] else ""
             if _content:
                 last_message = _content
 
@@ -84,6 +88,7 @@ class BaseAgent(LoggerMixin):
         self.step_prompt = step_prompt
 
         self.instruction = None
+        self.images = []
         self.project_description = None
         self.project_structure = None
         self.current_open_file = None
@@ -131,8 +136,9 @@ class BaseAgent(LoggerMixin):
     def get_tools(self) -> list[dict]:
         return []
 
-    def init(self, instruction: str, manifest: dict, log_file: str):
+    def init(self, instruction: str, manifest: dict, log_file: str, images: list = None):
         self.instruction = instruction
+        self.images = images if isinstance(images, list) else []
         self.project_description = manifest['description']
         self.project_structure = manifest['files_structure']
         self.interpreter = ToolsInterpreter(IDE_MCP_HOST, manifest['base_path'], self.search_service, commands=manifest.get('agent_commands', []))
@@ -177,7 +183,14 @@ class BaseAgent(LoggerMixin):
             project_structure="\n".join([f"- {path}" for path in self.project_structure]),
         )
 
-        self.log("============= INSTRUCTION =============\n" + self.instruction, True)
+        user_content = self.instruction
+        if self.images:
+            user_content = [{"type": "text", "text": self.instruction}]
+            for img in self.images:
+                user_content.append({"type": "image_url", "image_url": {"url": img}})
+
+        self.log("============= INSTRUCTION =============", True)
+        self.log(user_content, True)
 
         conversation = [
             {
@@ -186,7 +199,7 @@ class BaseAgent(LoggerMixin):
             },
             {
                 'role': 'user',
-                'content': self.instruction
+                'content': user_content
             }
         ]
 
@@ -203,6 +216,10 @@ class BaseAgent(LoggerMixin):
                 break
 
             conversation = self.conversation_filter(conversation)
+            self.log(f'DEBUG conversation [{agent_step}]', True)
+            self.log(conversation, True)
+
+            assert conversation, 'Empty conversation'
 
             yield DTOInstruction(type=EventType.NOPE)
 
@@ -324,7 +341,7 @@ class BaseAgent(LoggerMixin):
 
             conversation.append({
                 'role': 'assistant',
-                'content': output['output'],
+                'content': output['output'] if output['output'] else None,
                 'tool_calls': [current_tool_call]
             })
 

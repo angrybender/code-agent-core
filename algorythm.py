@@ -196,7 +196,19 @@ class Copilot(LoggerMixin):
                 if function_name == 'call_agent':
                     instruction = arguments.get('instruction', None)
                     agent_name = arguments.get('agent_name', None)
-                    tool_call_description['args'] = [agent_name, instruction]
+                    agent_images = arguments.get('images', [])
+                    if not isinstance(agent_images, list):
+                        agent_images = []
+                    # Resolve integer image indices to real base64 Data URLs from pending_images
+                    resolved_images = []
+                    if agent_images and pending_images:
+                        for idx in agent_images:
+                            if isinstance(idx, int):
+                                real_idx = idx - 1  # convert 1-based to 0-based
+                                if 0 <= real_idx < len(pending_images):
+                                    resolved_images.append(pending_images[real_idx])
+                            # invalid or out-of-range indices are silently skipped
+                    tool_call_description['args'] = [agent_name, instruction, resolved_images]
                 elif function_name == 'message':
                     tool_call_description['args'] = [arguments.get('text', None)]
 
@@ -232,7 +244,7 @@ class Copilot(LoggerMixin):
                 agent_complete_report = 'message print to user'
             elif tool_call_description['function'] == 'call_agent':
                 last_agent_metadata = None
-                agent_name, agent_instruction = tool_call_description['args']
+                agent_name, agent_instruction, agent_images = tool_call_description['args']
                 if agent_name not in Agent.PROMPTS:
                     yield DTOInstruction(type=EventType.ERROR, message=f"Agent call error (name), name=`{agent_name}`", message_id=output['id'])
                     break
@@ -250,7 +262,7 @@ class Copilot(LoggerMixin):
                 )
 
                 agent = Agent.create(agent_name, self.agent_commands)
-                agent.init(agent_instruction, self.manifest, self.LOG_FILE)
+                agent.init(agent_instruction, self.manifest, self.LOG_FILE, images=agent_images)
 
                 is_agent_completes_work = False
                 for agent_step in agent.run():
@@ -276,7 +288,7 @@ class Copilot(LoggerMixin):
             if current_tool_call:
                 conversation_log.append({
                     'role': 'assistant',
-                    'content': output['output'],
+                    'content': output['output'] if output['output'] else None,
                     'tool_calls': [current_tool_call]
                 })
 
@@ -301,7 +313,7 @@ class Copilot(LoggerMixin):
                         'role': 'tool',
                         'tool_call_id': current_tool_call['id'],
                         'name': current_tool_call['function']['name'],
-                        'content': enriched_report
+                        'content': enriched_report or 'Agent did not return a report.'
                     })
 
             agent_step_counter += 1
