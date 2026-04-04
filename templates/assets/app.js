@@ -10,6 +10,11 @@ function escapeHtml(unsafe) {
         .replace(/'/g, "&#039;");
 }
 
+function windowRepaint() {
+    setTimeout(() => document.body.style.height = "99%", 100);
+    setTimeout(() => document.body.removeAttribute('style'), 101);
+}
+
 function onPluginShow() {
     IS_APP_ACTIVE = true;
 }
@@ -20,6 +25,34 @@ function onPluginHide() {
 function onFilesDrag(message) {
     const ta = document.getElementById('message-input');
     ta.value = ta.value + message;
+}
+
+function onFileChosen(path) {
+    windowRepaint(); // dont remove!
+
+    if (!path) return;
+    if (!window._chatInstance) return;
+
+    const chat = window._chatInstance;
+
+    if (chat.pendingImages.length >= 10) {
+        chat.addMessage({ message: 'Maximum 10 images allowed' }, 'error');
+        return;
+    }
+
+    fetch(APP_HOST + '/file_content?path=' + encodeURIComponent(path))
+        .then(response => response.json().then(data => ({ ok: response.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok || data.error) {
+                chat.addMessage({ message: 'Error loading file: ' + (data.error || 'Server error') }, 'error');
+                return;
+            }
+            chat.pendingImages.push(data.data_url);
+            chat._renderPreviews();
+        })
+        .catch(err => {
+            chat.addMessage({ message: 'Error loading file: ' + err.message }, 'error');
+        });
 }
 
 function JIDETransport(request, onSuccessCb, onFailureCb) {
@@ -189,8 +222,17 @@ class SimpleChat {
         const uploadBtn = document.getElementById('upload-image-btn');
         const fileInput = document.getElementById('image-upload-input');
 
-        if (uploadBtn) uploadBtn.addEventListener('click', () => fileInput.click());
-        if (fileInput) fileInput.addEventListener('change', (e) => this.handleImageSelected(e));
+        if (uploadBtn) {
+            uploadBtn.addEventListener('click', () => {
+                JIDETransport(
+                    "jide_choose_file",
+                    null,
+                    (errorCode, errorMessage) => {
+                        this.addMessage({ message: "Java error:" + errorMessage }, 'error');
+                    }
+                );
+            });
+        }
     }
 
     connectSSE() {
@@ -539,5 +581,5 @@ class SimpleChat {
 
 // Initialize chat when page loads
 document.addEventListener('DOMContentLoaded', () => {
-    new SimpleChat();
+    window._chatInstance = new SimpleChat();
 });
