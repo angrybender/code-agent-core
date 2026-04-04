@@ -216,9 +216,6 @@ class BaseAgent(LoggerMixin):
                 break
 
             conversation = self.conversation_filter(conversation)
-            self.log(f'DEBUG conversation [{agent_step}]', True)
-            self.log(conversation, True)
-
             assert conversation, 'Empty conversation'
 
             yield DTOInstruction(type=EventType.NOPE)

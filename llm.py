@@ -382,10 +382,6 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_too
             yield final
             break
         except BadRequestError as e:
-            with open('./conversations_log/llm.error.log', 'w', encoding='utf8') as f:
-                f.write("INPUT: \n" + pretty_format(messages, truncate=0) + "\n\nERROR:\n" + pretty_format(error))
-            raise e
-
             message = str(e)
 
             if "Assistant response prefill is incompatible with enable_thinking" in message:
