@@ -168,6 +168,42 @@ class SimpleChat {
             localStorage.setItem('promptInputValue_' + SESSION_ID, this.messageInput.value);
         });
 
+        // Handle image paste from clipboard
+        this.messageInput.addEventListener('paste', (e) => {
+            const items = e.clipboardData && e.clipboardData.items;
+            if (!items) return;
+
+            let hasImage = false;
+            for (const item of items) {
+                if (item.kind !== 'file' || !item.type.startsWith('image/')) continue;
+                hasImage = true;
+
+                if (this.pendingImages.length >= 10) {
+                    this.addMessage({ message: 'Maximum 10 images allowed' }, 'error');
+                    break;
+                }
+
+                const file = item.getAsFile();
+                if (!file) continue;
+
+                if (file.size > 5 * 1024 * 1024) {
+                    alert(`Pasted image exceeds the 5 MB limit.`);
+                    continue;
+                }
+
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    this.pendingImages.push(ev.target.result);
+                    this._renderPreviews();
+                };
+                reader.readAsDataURL(file);
+            }
+
+            if (hasImage) {
+                e.preventDefault();
+            }
+        });
+
         // Handle clicks on A tags in chat messages
         this.messagesContainer.addEventListener('click', (e) => {
             const dom_element = e.target;
