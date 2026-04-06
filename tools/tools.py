@@ -220,6 +220,11 @@ TOOL_CALL_AGENT = {
                 "instruction": {
                     "type": "string",
                     "description": "A complete, self-contained instruction for the agent. Must include all file paths, context, and requirements — the agent cannot see your conversation."
+                },
+                "images": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Optional list of image index numbers (1-based) to forward to the sub-agent. For example, [1, 2] means forward the 1st and 2nd images attached by the user. Do NOT generate, copy, or reconstruct base64 data — only specify the index numbers of the images that are relevant to this sub-task."
                 }
             }
         }

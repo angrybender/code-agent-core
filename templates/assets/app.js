@@ -10,6 +10,11 @@ function escapeHtml(unsafe) {
         .replace(/'/g, "&#039;");
 }
 
+function windowRepaint() {
+    setTimeout(() => document.body.style.height = "99%", 100);
+    setTimeout(() => document.body.removeAttribute('style'), 101);
+}
+
 function onPluginShow() {
     IS_APP_ACTIVE = true;
 }
@@ -20,6 +25,34 @@ function onPluginHide() {
 function onFilesDrag(message) {
     const ta = document.getElementById('message-input');
     ta.value = ta.value + message;
+}
+
+function onFileChosen(path) {
+    windowRepaint(); // dont remove!
+
+    if (!path) return;
+    if (!window._chatInstance) return;
+
+    const chat = window._chatInstance;
+
+    if (chat.pendingImages.length >= 10) {
+        chat.addMessage({ message: 'Maximum 10 images allowed' }, 'error');
+        return;
+    }
+
+    fetch(APP_HOST + '/file_content?path=' + encodeURIComponent(path))
+        .then(response => response.json().then(data => ({ ok: response.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok || data.error) {
+                chat.addMessage({ message: 'Error loading file: ' + (data.error || 'Server error') }, 'error');
+                return;
+            }
+            chat.pendingImages.push(data.data_url);
+            chat._renderPreviews();
+        })
+        .catch(err => {
+            chat.addMessage({ message: 'Error loading file: ' + err.message }, 'error');
+        });
 }
 
 function JIDETransport(request, onSuccessCb, onFailureCb) {
@@ -44,9 +77,11 @@ class SimpleChat {
         this.messagesContainer = document.getElementById('chat-messages');
         this.controlFlowStopBtn = document.getElementById('control-flow-stop');
         this.messageInput = document.getElementById('message-input');
+        this.uploadImageBtn = document.getElementById('upload-image-btn');
         this.eventSource = null;
 
         this.ON_USER_SCROLL_SEMAPHORE = false;
+        this.pendingImages = [];
 
         this.IS_LAST_MESSAGE_SUCCESS = false;
         this.IS_ON_END_CONVERSATION = false; // mutex for debounce
@@ -63,6 +98,7 @@ class SimpleChat {
         document.getElementById('main-wrapper').classList.add('conversation-active');
         this.controlFlowStopBtn.style.display = 'block';
         this.messageInput.style.display = 'none';
+        if (this.uploadImageBtn) this.uploadImageBtn.style.display = 'none';
         this.IS_ON_END_CONVERSATION = false;
 
         const ctxBar = document.getElementById('context-window-bar');
@@ -86,6 +122,7 @@ class SimpleChat {
         this.controlFlowStopBtn.style.display = 'none';
         this.controlFlowStopBtn.classList.remove('loading');
         this.messageInput.style.display = 'block';
+        if (this.uploadImageBtn) this.uploadImageBtn.style.display = 'block';
         document.getElementById('main-wrapper').classList.remove('conversation-active');
         if (!this.ON_USER_SCROLL_SEMAPHORE) {
             window.scrollTo(0, document.body.scrollHeight);
@@ -129,6 +166,42 @@ class SimpleChat {
             this.messageInput.style.height = 'auto';
             this.messageInput.style.height = (this.messageInput.scrollHeight + 5) + 'px';
             localStorage.setItem('promptInputValue_' + SESSION_ID, this.messageInput.value);
+        });
+
+        // Handle image paste from clipboard
+        this.messageInput.addEventListener('paste', (e) => {
+            const items = e.clipboardData && e.clipboardData.items;
+            if (!items) return;
+
+            let hasImage = false;
+            for (const item of items) {
+                if (item.kind !== 'file' || !item.type.startsWith('image/')) continue;
+                hasImage = true;
+
+                if (this.pendingImages.length >= 10) {
+                    this.addMessage({ message: 'Maximum 10 images allowed' }, 'error');
+                    break;
+                }
+
+                const file = item.getAsFile();
+                if (!file) continue;
+
+                if (file.size > 5 * 1024 * 1024) {
+                    alert(`Pasted image exceeds the 5 MB limit.`);
+                    continue;
+                }
+
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    this.pendingImages.push(ev.target.result);
+                    this._renderPreviews();
+                };
+                reader.readAsDataURL(file);
+            }
+
+            if (hasImage) {
+                e.preventDefault();
+            }
         });
 
         // Handle clicks on A tags in chat messages
@@ -181,6 +254,21 @@ class SimpleChat {
             // Otherwise suppress it until they scroll back down.
             this.ON_USER_SCROLL_SEMAPHORE = scrollPercentage <= 0.99;
         });
+
+        const uploadBtn = document.getElementById('upload-image-btn');
+        const fileInput = document.getElementById('image-upload-input');
+
+        if (uploadBtn) {
+            uploadBtn.addEventListener('click', () => {
+                JIDETransport(
+                    "jide_choose_file",
+                    null,
+                    (errorCode, errorMessage) => {
+                        this.addMessage({ message: "Java error:" + errorMessage }, 'error');
+                    }
+                );
+            });
+        }
     }
 
     connectSSE() {
@@ -290,7 +378,7 @@ class SimpleChat {
         this.messagesContainer.innerHTML = '';
 
         // Add user message to chat
-        this.addMessage({ message: message }, 'user');
+        this.addMessage({ message: message, images: this.pendingImages.slice() }, 'user');
 
         try {
             const response = await fetch(APP_HOST + '/send_message', {
@@ -298,7 +386,7 @@ class SimpleChat {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ message: message, session_id: SESSION_ID })
+                body: JSON.stringify({ message: message, session_id: SESSION_ID, images: this.pendingImages.slice() })
             });
 
             const result = await response.json();
@@ -307,6 +395,7 @@ class SimpleChat {
                 this.addMessage({ message: `Error: ${result.message}` }, 'error');
             }
             else {
+                this.clearAllPendingImages();
                 this.onStartConversation();
             }
         } catch (error) {
@@ -328,7 +417,10 @@ class SimpleChat {
 
         if (type === 'user') {
             type = 'html';
-            message = { ...message, message: `<pre>${escapeHtml(message.message)}</pre>` };
+            const imageHtml = (message.images && message.images.length)
+                ? `<div class="user-images-row">${message.images.map(src => `<img src="${src}" class="user-image-preview" alt="attached image">`).join('')}</div>`
+                : '';
+            message = { ...message, message: `${imageHtml}<pre>${escapeHtml(message.message)}</pre>` };
             messageDivClassName = "message html-message user-message";
         }
         else if (type === 'tool') {
@@ -441,6 +533,73 @@ class SimpleChat {
         bar.style.display = 'block';
     }
 
+    handleImageSelected(event) {
+        const files = Array.from(event.target.files);
+        if (!files.length) return;
+
+        let processed = 0;
+        files.forEach(file => {
+            if (!file.type.startsWith('image/')) {
+                alert(`"${file.name}" is not an image file.`);
+                processed++;
+                if (processed === files.length) this._renderPreviews();
+                return;
+            }
+            if (file.size > 5 * 1024 * 1024) {
+                alert(`"${file.name}" exceeds the 5 MB limit.`);
+                processed++;
+                if (processed === files.length) this._renderPreviews();
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                this.pendingImages.push(e.target.result);
+                processed++;
+                if (processed === files.length) this._renderPreviews();
+            };
+            reader.readAsDataURL(file);
+        });
+        event.target.value = '';
+    }
+
+    _renderPreviews() {
+        const container = document.getElementById('image-preview-container');
+        container.innerHTML = '';
+        if (this.pendingImages.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+        container.style.display = 'flex';
+        this.pendingImages.forEach((url, index) => {
+            const wrapper = document.createElement('div');
+            wrapper.style.position = 'relative';
+            wrapper.style.display = 'inline-block';
+
+            const img = document.createElement('img');
+            img.src = url;
+            img.className = 'image-preview-thumb';
+            img.alt = 'attached image';
+
+            const btn = document.createElement('button');
+            btn.className = 'clear-image-btn';
+            btn.textContent = '✕';
+            btn.title = 'Remove image';
+            btn.addEventListener('click', () => {
+                this.pendingImages.splice(index, 1);
+                this._renderPreviews();
+            });
+
+            wrapper.appendChild(img);
+            wrapper.appendChild(btn);
+            container.appendChild(wrapper);
+        });
+    }
+
+    clearAllPendingImages() {
+        this.pendingImages = [];
+        this._renderPreviews();
+    }
+
     updateStatus(message, className) {
         try {
             JIDETransport(
@@ -458,5 +617,5 @@ class SimpleChat {
 
 // Initialize chat when page loads
 document.addEventListener('DOMContentLoaded', () => {
-    new SimpleChat();
+    window._chatInstance = new SimpleChat();
 });

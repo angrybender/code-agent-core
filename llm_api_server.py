@@ -4,6 +4,8 @@ from flask import Flask, render_template, request, Response
 import json
 import time
 import os
+import base64
+import mimetypes
 import threading
 from dotenv import load_dotenv
 import hashlib
@@ -206,6 +208,41 @@ def control_action():
     return json.dumps({'status': 'success'})
 
 
+@app.route('/file_content', methods=['GET'])
+def file_content():
+    file_path = request.args.get('path', '').strip()
+
+    if not file_path:
+        return json.dumps({'error': 'path parameter is required'}), 400
+
+    if not os.path.isabs(file_path):
+        return json.dumps({'error': 'path must be absolute'}), 400
+
+    file_path = os.path.realpath(file_path)
+
+    if not os.path.isfile(file_path):
+        return json.dumps({'error': 'file not found'}), 404
+
+    mime_type, _ = mimetypes.guess_type(file_path)
+    if not mime_type or not mime_type.startswith('image/'):
+        return json.dumps({'error': 'file is not an image'}), 400
+
+    max_size = 5 * 1024 * 1024
+    if os.path.getsize(file_path) > max_size:
+        return json.dumps({'error': 'file exceeds 5 MB limit'}), 400
+
+    with open(file_path, 'rb') as f:
+        encoded = base64.b64encode(f.read()).decode('ascii')
+
+    data_url = f'data:{mime_type};base64,{encoded}'
+
+    return json.dumps({
+        'data_url': data_url,
+        'mime_type': mime_type,
+        'error': None
+    })
+
+
 @app.route('/api/agent', methods=['POST'])
 def agent_api():
     try:
@@ -271,10 +308,19 @@ def message_action():
         if not user_message:
             return json.dumps({'status': 'error', 'message': 'Empty message'}), 400
 
+        images = data.get('images')
+        if images is not None:
+            if not isinstance(images, list) or not all(
+                isinstance(img, str) and img.startswith('data:image/') for img in images
+            ):
+                return json.dumps({"status": "error", "message": "Invalid image format"}), 400
+
         if SESSION_MANAGER_INSTANCE.get_message(user_session_id):
             return json.dumps({'status': 'error', 'message': 'Session is locked'}), 400
 
         SESSION_MANAGER_INSTANCE.send_message(user_session_id, user_message)
+        if images:
+            SESSION_MANAGER_INSTANCE.add_session_parameter(user_session_id, 'pending_images', images)
 
         return json.dumps({'status': 'success'})
 
@@ -308,6 +354,7 @@ def event_stream(session: dict):
 
                 # finished work:
                 SESSION_MANAGER_INSTANCE.commit_message(session_id)
+                SESSION_MANAGER_INSTANCE.add_session_parameter(session_id, 'pending_images', [])
             else:
                 # Send heartbeat to keep connection alive
                 now = time.time()
@@ -320,6 +367,7 @@ def event_stream(session: dict):
 
         except Exception as e:
             SESSION_MANAGER_INSTANCE.commit_message(session_id)
+            SESSION_MANAGER_INSTANCE.add_session_parameter(session_id, 'pending_images', [])
 
             yield f"data: {json.dumps({'role': 'system', 'type': 'error', 'message': str(e)})}\n\n"
             logging.exception("message")

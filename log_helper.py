@@ -1,4 +1,10 @@
-def pretty_format(obj, base_indent=2, truncate=10) -> str:
+def _process_long_str_lines(text: str, max_len=100) -> str:
+    if 0 < max_len < len(text):
+        return text[:max_len] + '...'
+    else:
+        return text
+
+def pretty_format(obj, base_indent=2, truncate=10, max_line_len=100) -> str:
     def to_dict(o, indent) -> str:
         if hasattr(o, '__dict__'):
             output = [str(type(o)) + "("]
@@ -28,6 +34,7 @@ def pretty_format(obj, base_indent=2, truncate=10) -> str:
             return "\n".join(output)
         elif isinstance(o, str):
             o = o.split("\n")
+            o = [_process_long_str_lines(_, max_line_len) for _ in o]
             if 0 < truncate < len(o):
                 o = o[:truncate]
                 o = "\n".join(o) + '...'

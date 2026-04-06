@@ -4,6 +4,7 @@ import uuid
 import time
 import logging
 import json
+import copy
 
 from openai import OpenAI, BadRequestError, APIError
 from dotenv import load_dotenv
@@ -203,12 +204,23 @@ def llm_query(messages, tags=None, tools=None, model_name=None, max_tokens=None)
 
         raise error
 
+def _filter_messages(messages: list[dict]) -> list[dict]:
+    result = []
+    for m in copy.deepcopy(messages):
+        if isinstance(m.get('content'), list):
+            text_parts = [block['text'] for block in m['content']
+                          if isinstance(block, dict) and block.get('type') == 'text']
+            m['content'] = ' '.join(text_parts)
+        result.append(m)
+    return result
+
 def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str) -> int:
     cache_model_name = re.sub(r'[^a-z\d\-]+', '_', model_name, flags=re.IGNORECASE)
     assert messages, 'Empty messages'
     stat_cache = f'./storage/calculate_tokens_usage_workaround_{cache_model_name}.json'
 
     tokens_per_char = None
+    filtered_messages = _filter_messages(messages)
     if os.path.exists(stat_cache):
         with open(stat_cache, 'r', encoding='utf8') as f:
             stat = json.load(f)
@@ -217,7 +229,8 @@ def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str) ->
 
     if not tokens_per_char:
         # calculate statistic for token usage
-        _messages = messages[:1]
+        _messages = filtered_messages[:1]
+
         _messages[0]['role'] = 'user' # models required at least once users' message
         char_size = len(json.dumps(_messages))
         test_response = llm_query(_messages, model_name=model_name, max_tokens=1)
@@ -229,7 +242,7 @@ def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str) ->
             json.dump({"tokens_per_char": tokens_per_char}, f)
 
     # approximate tokens by full conversation:
-    char_size = len(json.dumps(messages))
+    char_size = len(json.dumps(filtered_messages))
 
     return int(round(char_size*tokens_per_char))
 
@@ -374,7 +387,7 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_too
             if "Assistant response prefill is incompatible with enable_thinking" in message:
                 logger.error("Fix: Request ends with assistant prefill while enable_thinking=True, return empty")
 
-                ## api caller must deside workaround own logic depends
+                # api caller must deside workaround own logic depends
                 yield {
                     "id": message_id,
                     "type": "final",
@@ -389,7 +402,18 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_too
                 raise LLMRequestFormat(message) from e
 
         except APIError as e:
-            raise LLMRequestFormat(str(e)) from e
+            message = str(e)
+            if message.find('Failed to parse input at pos ') > -1:
+                # gpt oss, there are no plans to support gpt-oss, byt why not...
+                yield {
+                    "id": message_id,
+                    "type": "final",
+                    "output": "",
+                    "tool_calls": [],
+                    "tokens_usage": {},
+                }
+            else:
+                raise LLMRequestFormat(str(e)) from e
 
         except Exception as e:
             error = e
