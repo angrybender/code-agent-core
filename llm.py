@@ -387,7 +387,7 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_too
             if "Assistant response prefill is incompatible with enable_thinking" in message:
                 logger.error("Fix: Request ends with assistant prefill while enable_thinking=True, return empty")
 
-                ## api caller must deside workaround own logic depends
+                # api caller must deside workaround own logic depends
                 yield {
                     "id": message_id,
                     "type": "final",
@@ -402,7 +402,18 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_too
                 raise LLMRequestFormat(message) from e
 
         except APIError as e:
-            raise LLMRequestFormat(str(e)) from e
+            message = str(e)
+            if message.find('Failed to parse input at pos ') > -1:
+                # gpt oss, there are no plans to support gpt-oss, byt why not...
+                yield {
+                    "id": message_id,
+                    "type": "final",
+                    "output": "",
+                    "tool_calls": [],
+                    "tokens_usage": {},
+                }
+            else:
+                raise LLMRequestFormat(str(e)) from e
 
         except Exception as e:
             error = e
