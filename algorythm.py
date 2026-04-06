@@ -121,9 +121,11 @@ class Copilot(LoggerMixin):
 
         self.log(f"RUN. Messages: `{self.instruction}`", False)
 
+        current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         sub_prompt = self.prompt.format(
             project_description=self.manifest['description'],
             project_structure="\n".join([f"- {path}" for path in self.manifest['files_structure']]),
+            current_datetime=current_datetime,
         )
 
         pending_images = self.session.get('pending_images', []) if self.session else []

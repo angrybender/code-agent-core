@@ -4,6 +4,7 @@ import hashlib
 import shutil
 import glob
 import uuid
+import datetime
 
 from jinja2 import Environment, BaseLoader
 
@@ -178,9 +179,11 @@ class BaseAgent(LoggerMixin):
         specific_model = os.environ.get(f'MODEL:{self.role}', None)
         self.search_service.reset()
 
+        current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         sub_prompt = self.step_prompt.format(
             project_description=self.project_description,
             project_structure="\n".join([f"- {path}" for path in self.project_structure]),
+            current_datetime=current_datetime,
         )
 
         user_content = self.instruction
