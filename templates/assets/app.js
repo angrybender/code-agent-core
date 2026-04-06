@@ -24,7 +24,14 @@ function onPluginHide() {
 
 function onFilesDrag(message) {
     const ta = document.getElementById('message-input');
-    ta.value = ta.value + message;
+    if (document.activeElement === ta) {
+        const start = ta.selectionStart;
+        const end = ta.selectionEnd;
+        ta.value = ta.value.slice(0, start) + message + ta.value.slice(end);
+        ta.selectionStart = ta.selectionEnd = start + message.length;
+    } else {
+        ta.value = ta.value + message;
+    }
 }
 
 function onFileChosen(path) {
