@@ -52,6 +52,7 @@ Note: The REVIEWER role is implemented by `AnalyticAgent` (not a separate class)
    - Makes decisions based on agent reports
    - Manages conversation logs and state
    - Iterative execution loop with safety limits (`MAX_ITERATION`)
+   - Supports forwarding user-attached images to sub-agents via integer image indices in the `call_agent` tool `images` parameter
 
 2. **ANALYTIC Agent** (implemented in `agents.py`)
    - Analyzes project structure and files (read-only access)
@@ -77,8 +78,9 @@ Note: The REVIEWER role is implemented by `AnalyticAgent` (not a separate class)
 - Implements Server-Sent Events (SSE) for real-time streaming
 - Endpoints:
   - `GET /` — Web UI (`?project=<path>&versionTag=<int>`)
-  - `POST /send_message` — Task submission via web interface
+  - `POST /send_message` — Task submission via web interface; accepts optional `images` list (base64 Data URL strings for vision-capable models)
   - `GET /events` — SSE event stream for the web interface
+  - `GET /file_content` — Serves a local image file as a base64 Data URL (used by the web UI to forward local images to the LLM); requires `?path=<absolute_path>`; only image files ≤ 5 MB are served
   - `POST /control` — Session control (e.g., `{"command": "stop"}` to interrupt agent)
   - `POST /api/agent` — REST API for programmatic synchronous access
 
@@ -183,6 +185,7 @@ Stops a running agent session:
 User enters task → Flask server receives → Creates Copilot instance
 → Reads project manifest (AGENTS.md) directly from disk
 → Loads shell commands from .agent-commands/
+→ Optionally attaches user-submitted images (base64 Data URLs) for multimodal LLM input
 → Initializes conversation
 ```
 
@@ -252,6 +255,7 @@ Browser SSE connection → GET /events → Incremental messages streamed
 ### Error Handling
 - Retry logic with exponential backoff in LLM calls (5 attempts)
 - `MAX_ITERATION` safeguard prevents infinite loops
+- `LLMRequestFormat` exception signals malformed tool calls or API format errors; agents retry up to 3 times — each retry strips the last message(s) and injects a prompt asking for a `report` tool call; after 3 failed attempts the agent emits `EventType.ERROR` and exits
 
 ### Configuration-Driven
 - `.env` for API keys, model selection, timeouts, modes
@@ -276,6 +280,12 @@ Browser SSE connection → GET /events → Incremental messages streamed
 - `BaseAgent.conversation_filter()` applies two-stage context reduction for ALL agents:
   1. Merges consecutive assistant messages (`_merge_assistant_messages()` in `agents.py`)
   2. Removes redundant tool call/response pairs via `compact_conversation_remove_redundant()` from `context_helper.py` — removes reads invalidated by subsequent writes, deduplicates full reads of the same file, and deduplicates identical shell commands with identical output
+
+### Context Overflow Handling
+- When total context size exceeds `MAX_CONTEXT_WINDOW_SIZE`, agents inject a user message prompting the use of the `summarize` tool
+- The `summarize` tool collapses the conversation to 2 base messages plus a structured summary covering files read/written, commands run, key findings, current status, and remaining work
+- Summarization is tracked by `_summarize_count` and can be triggered multiple times per agent run
+- `TOOL_SUMMARIZE` is defined in `tools/tools.py` and is injected only when context overflow is detected
 
 ## Project Configuration
 
