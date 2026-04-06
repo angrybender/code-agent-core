@@ -2,9 +2,11 @@ import unittest
 import os
 import shutil
 import tempfile
+from unittest.mock import patch
 
 from commands_helper import parse_agent_commands, execute_terminal_command
 from tools_interpreter import ToolsInterpreter
+from agents import Agent
 
 
 class TestParseAgentCommands(unittest.TestCase):
@@ -100,7 +102,34 @@ class TestParseAgentCommands(unittest.TestCase):
         self._write('check.md', "Some desc.\n\n```\nsome cmd\n```")
         result = parse_agent_commands(self.test_dir)
         self.assertEqual(1, len(result))
-        self.assertEqual({'command', 'description', 'cmd', 'args'}, set(result[0].keys()))
+        self.assertEqual({'command', 'description', 'cmd', 'args', 'side_effects'}, set(result[0].keys()))
+
+    def test_side_effects_defaults_to_false_without_frontmatter(self):
+        self._write('build.md', "Run build.\n\n```bash\nmake build\n```")
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual(False, result[0]['side_effects'])
+
+    def test_side_effects_true_parsed_from_frontmatter(self):
+        self._write('deploy.md', "---\nside_effects: true\n---\nDeploy app.\n\n```bash\n./deploy.sh\n```")
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual(True, result[0]['side_effects'])
+
+    def test_frontmatter_excluded_from_description(self):
+        self._write('deploy.md', "---\nside_effects: true\n---\nDeploy app.\n\n```bash\n./deploy.sh\n```")
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual('Deploy app.', result[0]['description'])
+        self.assertNotIn('side_effects', result[0]['description'])
+        self.assertNotIn('---', result[0]['description'])
+
+    def test_frontmatter_preserves_last_code_block_and_arg_parsing(self):
+        self._write(
+            'deploy.md',
+            "---\nside_effects: true\n---\nDeploy app.\n\n$1 - environment name\n\n```bash\necho preview\n```\n\n```bash\n./deploy.sh $1\n```"
+        )
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual('./deploy.sh $1', result[0]['cmd'])
+        self.assertEqual([{'placeholder': '$1', 'description': 'environment name'}], result[0]['args'])
+        self.assertIn('Deploy app.', result[0]['description'])
 
     def test_description_is_empty_string_when_only_code_block(self):
         """Edge case: file contains only a fenced code block, description becomes empty"""
@@ -173,6 +202,32 @@ class TestShellCommandUnknown(unittest.TestCase):
         self.assertIn("Unknown command 'deploy'", result['result'])
         self.assertIn('build', result['result'])
         self.assertIn('lint', result['result'])
+
+
+class TestAgentCommandFiltering(unittest.TestCase):
+
+    def test_reviewer_filters_side_effect_commands(self):
+        commands = [
+            {'command': 'build', 'cmd': 'make build', 'description': 'Build', 'args': [], 'side_effects': False},
+            {'command': 'deploy', 'cmd': './deploy.sh', 'description': 'Deploy', 'args': [], 'side_effects': True},
+        ]
+        self.assertEqual(['build', 'deploy'], [cmd['command'] for cmd in Agent._get_role_agent_commands('CODER', commands)])
+        self.assertEqual(['build'], [cmd['command'] for cmd in Agent._get_role_agent_commands('REVIEWER', commands)])
+        self.assertEqual(['build'], [cmd['command'] for cmd in Agent._get_role_agent_commands('ANALYTIC', commands)])
+
+    def test_create_uses_filtered_command_list_for_reviewer(self):
+        commands = [
+            {'command': 'safe', 'cmd': 'echo ok', 'description': 'Safe', 'args': [], 'side_effects': False},
+            {'command': 'unsafe', 'cmd': 'echo no', 'description': 'Unsafe', 'args': [], 'side_effects': True},
+        ]
+        with patch('agents.AnalyticAgent') as analytic_agent_cls:
+            analytic_agent_cls.return_value = object()
+            agent = Agent.create('REVIEWER', commands)
+            self.assertIsNotNone(agent)
+            args = analytic_agent_cls.call_args[0]
+            self.assertTrue(args[4])
+            self.assertIn('safe', args[1])
+            self.assertNotIn('unsafe', args[1])
 
 
 class TestExecuteTerminalCommand(unittest.TestCase):

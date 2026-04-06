@@ -113,7 +113,10 @@ class Copilot(LoggerMixin):
         Agent.setUp()
 
         if self.agent_commands:
-            names = "\n".join(f"- **{c['command']}** `{c['cmd']}`" for c in self.agent_commands)
+            def _cmd_line(c):
+                available = "CODER" if c.get('side_effects', False) else "CODER, REVIEWER, ANALYTIC"
+                return f"- **{c['command']}** `{c['cmd']}` *(available to: {available})*"
+            names = "\n".join(_cmd_line(c) for c in self.agent_commands)
             yield DTOInstruction(type=EventType.MARKDOWN, message=f"Available shell commands:\n{names}")
 
         with open(self.LOG_FILE, "w", encoding='utf8') as f:

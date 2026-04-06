@@ -141,12 +141,12 @@ Stops a running agent session:
 - Supports function calling (tool use)
 - Per-agent model selection via `MODEL:<ROLE>` env variables
 - Environment-based configuration
-- Error logging: `llm_query()` logs to `conversations_log/llm.error`, `llm_query_stream()` logs to `conversations_log/llm.error.log` — both after 5 failed retry attempts
+- Error logging: `llm_query()` logs to `conversations_log/llm.error`, `llm_query_stream()` logs to `conversations_log/llm.error.log` — both after 5 failed retry attempts for transient/unexpected exceptions. `APIError` (including `BadRequestError`) is raised immediately as `LLMRequestFormat` without retrying or writing to the log file
 
 **`context_helper.py`** — Conversation context optimization
 - Provides `compact_conversation_remove_redundant()` function
 - Three optimization phases:
-  1. Removes reads invalidated by subsequent writes (`write_file` / `replace_code_in_file`)
+  1. Removes `read_file`, `read_multiply_files`, and `replace_code_in_file` calls that precede a later `write_file` to the same path (only `write_file` is treated as a full-file write that invalidates prior reads and patches; `replace_code_in_file` alone does not invalidate earlier reads)
   2. Deduplicates multiple `read_file` calls for the same path (keeps only the last full read)
   3. Deduplicates identical `shell_command` calls with identical output
 - Used by `BaseAgent.conversation_filter()` in `agents.py`
@@ -167,6 +167,7 @@ Stops a running agent session:
 - **OpenAI SDK 1.99** — LLM API client (OpenAI-compatible)
 - **python-dotenv 1.1.1** — Environment configuration
 - **requests 2.32.2** — HTTP client
+- **python-frontmatter 1.1.0** — YAML frontmatter parsing for `.agent-commands/` files
 - **mcp 1.15** — Model Context Protocol for IDE integration
 
 ### Frontend
@@ -183,7 +184,7 @@ Stops a running agent session:
 ### 1. Task Submission
 ```
 User enters task → Flask server receives → Creates Copilot instance
-→ Reads project manifest (AGENTS.md) directly from disk
+→ Reads project manifest (AGENTS.md) via MCP call to the IDE (`get_file_text_by_path`); returns empty if MCP is unavailable
 → Loads shell commands from .agent-commands/
 → Optionally attaches user-submitted images (base64 Data URLs) for multimodal LLM input
 → Initializes conversation
@@ -238,9 +239,11 @@ Browser SSE connection → GET /events → Incremental messages streamed
 - Agents cannot execute arbitrary shell commands — only whitelisted commands
 - Commands defined as Markdown files in `.agent-commands/` (or custom dir via `SHELL_COMMAND_DIRECTORY`)
 - Each command file: human-readable description + last fenced code block = shell command
+- Command files optionally support YAML frontmatter; the `side_effects: true` flag marks commands that may alter project state — these are excluded from the REVIEWER's tool set
 - Timeout enforced per command (`SHELL_COMMAND_TIMEOUT`, default 30 sec)
-- CODER uses shell commands for builds/tests during implementation
-- REVIEWER uses shell commands to run test suites for verification
+- CODER receives the full command list
+- REVIEWER receives only commands where `side_effects: false`; commands with `side_effects: true` are filtered out via `Agent._get_role_agent_commands()` in `agents.py`
+- ANALYTIC never receives shell commands regardless of project configuration
 - Shell commands support **positional arguments** via `$1`, `$2`, ... placeholders in the command Markdown file. Argument descriptions are parsed from lines matching `$N - description` format. The `shell_command` tool accepts an optional `args` list; `$1` maps to `args[0]`, `$2` to `args[1]`, etc. `commands_helper.py` validates that the correct number of arguments is provided before execution.
 
 ### Search System
@@ -253,9 +256,9 @@ Browser SSE connection → GET /events → Incremental messages streamed
 - Logs stored in `conversations_log/`
 
 ### Error Handling
-- Retry logic with exponential backoff in LLM calls (5 attempts)
+- Retry logic in LLM calls (5 attempts): `llm_query()` uses a flat 1-second sleep between retries; `llm_query_stream()` uses exponential backoff
 - `MAX_ITERATION` safeguard prevents infinite loops
-- `LLMRequestFormat` exception signals malformed tool calls or API format errors; agents retry up to 3 times — each retry strips the last message(s) and injects a prompt asking for a `report` tool call; after 3 failed attempts the agent emits `EventType.ERROR` and exits
+- `LLMRequestFormat` exception signals malformed tool calls or API format errors; agents retry up to 4 times — each retry strips the last message(s) and injects a prompt asking for a `report` tool call; after 4 failed attempts the agent emits `EventType.ERROR` and exits
 
 ### Configuration-Driven
 - `.env` for API keys, model selection, timeouts, modes
@@ -277,13 +280,13 @@ Browser SSE connection → GET /events → Incremental messages streamed
 - The SUPERVISOR enriches agent reports with structured artifact summaries
 
 ### Conversation Context Filtering
-- `BaseAgent.conversation_filter()` applies two-stage context reduction for ALL agents:
-  1. Merges consecutive assistant messages (`_merge_assistant_messages()` in `agents.py`)
-  2. Removes redundant tool call/response pairs via `compact_conversation_remove_redundant()` from `context_helper.py` — removes reads invalidated by subsequent writes, deduplicates full reads of the same file, and deduplicates identical shell commands with identical output
+- `BaseAgent.conversation_filter()` applies two-stage context reduction:
+  1. Merges consecutive assistant messages (`_merge_assistant_messages()` in `agents.py`) — always applied
+  2. Removes redundant tool call/response pairs via `compact_conversation_remove_redundant()` from `context_helper.py` — only triggered when the number of tool-call messages exceeds `MAX_ITERATION // 2`; removes reads invalidated by subsequent writes, deduplicates full reads of the same file, and deduplicates identical shell commands with identical output
 
 ### Context Overflow Handling
 - When total context size exceeds `MAX_CONTEXT_WINDOW_SIZE`, agents inject a user message prompting the use of the `summarize` tool
-- The `summarize` tool collapses the conversation to 2 base messages plus a structured summary covering files read/written, commands run, key findings, current status, and remaining work
+- The `summarize` tool collapses the conversation to 4 messages: the original system prompt and first user message, plus a new assistant summary message (covering files read/written, commands run, key findings, current status, and remaining work) and a new system continuation prompt
 - Summarization is tracked by `_summarize_count` and can be triggered multiple times per agent run
 - `TOOL_SUMMARIZE` is defined in `tools/tools.py` and is injected only when context overflow is detected
 
@@ -295,13 +298,13 @@ Browser SSE connection → GET /events → Incremental messages streamed
 |----------|---------|-------------|
 | `OPENAI_API_URL` | — | LLM endpoint URL |
 | `OPENAI_API_KEY` | — | API authentication key |
-| `OPENAI_API_TIMEOUT` | 1200 | LLM request timeout in seconds |
+| `OPENAI_API_TIMEOUT` | 1200 | LLM request timeout in seconds (required — no code-level fallback) |
 | `MODEL` | claude-sonnet-4.5 | Default model identifier |
 | `REASONING_EFFORT` | low | For o1/o3 models: `low` / `medium` / `high` |
 | `IDE_MCP_HOST` | http://127.0.0.1:63342/ | JetBrains IDE MCP server URL |
 | `HTTP_PORT` | 5000 | Flask server port |
 | `AGENT_FILE_TOOLS` | mcp | File operations mode: `mcp` or `pure` |
-| `MAX_ITERATION` | 20 | Max agent iteration safety limit |
+| `MAX_ITERATION` | 20 | Max agent iteration safety limit (required — no code-level fallback) |
 | `SHELL_COMMAND_TIMEOUT` | 30 | Timeout for shell commands in seconds |
 | `SHELL_COMMAND_DIRECTORY` | .agent-commands | Directory with predefined shell commands |
 | `DEBUG` | 0 | Enable verbose LLM logging to `full_log.log` |
@@ -349,10 +352,12 @@ project_root/
 │       ├── main.css             # Chat interface styles
 │       └── markdown.js          # Markdown rendering library
 ├── tests/                       # Unit tests
+├── tasks/                       # Task files directory
 ├── tools/
 │   └── tools.py                 # Agent tool schema definitions and factory functions get_coder_tools() / get_reviewer_tools() for conditional shell command inclusion
 ├── tools_interpreter.py         # Agent tool executor (ToolsInterpreter)
 ├── utils/                       # Utility modules
+├── vision/                      # Vision/image utilities
 ├── AGENTS.md                    # This file — project reference for AI agents
 ```
 

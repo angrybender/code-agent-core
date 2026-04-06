@@ -19,7 +19,7 @@ load_dotenv()
 
 from llm import llm_query, llm_query_stream, MAX_CONTEXT_WINDOW_SIZE, LLMRequestFormat
 from tools_interpreter import ToolsInterpreter
-from tools.tools import ANALYTIC_TOOLS, get_coder_tools, get_reviewer_tools, TOOL_SUMMARIZE, TOOL_REPORT
+from tools.tools import ANALYTIC_TOOLS, get_analytic_tools, get_coder_tools, get_reviewer_tools, TOOL_SUMMARIZE, TOOL_REPORT
 from search_code import SearchCode
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
@@ -527,7 +527,7 @@ class BaseAgent(LoggerMixin):
 class AnalyticAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
         if self.role == 'ANALYTIC':
-            return ANALYTIC_TOOLS
+            return get_analytic_tools(self.has_shell_commands)
         else:
             return get_reviewer_tools(self.has_shell_commands)
 
@@ -546,6 +546,14 @@ class Agent:
     STEP_PROMPT = './prompts/step.txt'
 
     @staticmethod
+    def _get_role_agent_commands(role, agent_commands: list = None) -> list:
+        if role == 'CODER':
+            return agent_commands or []
+        if role in ('REVIEWER', 'ANALYTIC'):
+            return [cmd for cmd in (agent_commands or []) if not cmd.get('side_effects', False)]
+        return []
+
+    @staticmethod
     def setUp():
         for cache_path in glob.glob(os.path.join(BaseAgent.STORAGE_PATH, '*')):
             if os.path.isdir(cache_path):
@@ -556,7 +564,8 @@ class Agent:
         assert role in Agent.PROMPTS, f'invalid role: {role}'
 
         thinking = role in DEEPTHINKING_AGENTS
-        has_shell_commands = bool(agent_commands and len(agent_commands) > 0)
+        role_agent_commands = Agent._get_role_agent_commands(role, agent_commands)
+        has_shell_commands = bool(role_agent_commands and len(role_agent_commands) > 0)
         system_prompt = Agent.PROMPTS[role]
         with open(system_prompt, 'r', encoding='utf8') as f:
             system_prompt = f.read()
@@ -564,7 +573,7 @@ class Agent:
             rtemplate = Environment(loader=BaseLoader).from_string(system_prompt)
             system_prompt = rtemplate.render(params={
                 'thinking': thinking,
-                'agent_commands': agent_commands or []
+                'agent_commands': role_agent_commands
             })
 
         with open(Agent.STEP_PROMPT, 'r', encoding='utf8') as f:

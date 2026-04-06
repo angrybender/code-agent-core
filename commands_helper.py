@@ -5,6 +5,8 @@ import shlex
 import subprocess
 import sys
 
+import frontmatter
+
 def parse_agent_commands(directory: str) -> list[dict]:
     if not os.path.isdir(directory):
         return []
@@ -14,7 +16,9 @@ def parse_agent_commands(directory: str) -> list[dict]:
     for filepath in sorted(glob.glob(pattern)):
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
-        blocks = re.findall(r'```[^\n`]*\n(.*?)```|```([^`\n]+)```', content, re.DOTALL)
+        post = frontmatter.loads(content)
+        body = post.content
+        blocks = re.findall(r'```[^\n`]*\n(.*?)```|```([^`\n]+)```', body, re.DOTALL)
         cmd_parts = [g1 or g2 for g1, g2 in blocks]
         command = os.path.splitext(os.path.basename(filepath))[0]
 
@@ -25,7 +29,8 @@ def parse_agent_commands(directory: str) -> list[dict]:
         if not cmd:
             continue
 
-        description = re.sub(r'```.*?```', '', content, flags=re.DOTALL).strip()
+        description = re.sub(r'```.*?```', '', body, flags=re.DOTALL).strip()
+        side_effects = bool(post.metadata.get('side_effects', False))
 
         placeholder_digits = sorted(set(re.findall(r'\$(\d+)', cmd)), key=lambda x: int(x))
         if placeholder_digits:
@@ -45,7 +50,7 @@ def parse_agent_commands(directory: str) -> list[dict]:
                     break
             args.append({'placeholder': f'${digit}', 'description': arg_desc})
 
-        results.append({'command': command, 'description': description, 'cmd': cmd, 'args': args})
+        results.append({'command': command, 'description': description, 'cmd': cmd, 'args': args, 'side_effects': side_effects})
     return results
 
 def execute_terminal_command(cmd: str, timeout: int, cwd: str = None) -> dict:
