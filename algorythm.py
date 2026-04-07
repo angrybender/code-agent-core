@@ -14,6 +14,7 @@ from agents import Agent
 from tools.tools import SUPERVISOR_TOOLS
 from logger_mixin import LoggerMixin
 
+from jinja2 import Environment, BaseLoader
 from commands_helper import parse_agent_commands
 from dotenv import load_dotenv
 
@@ -113,11 +114,12 @@ class Copilot(LoggerMixin):
         Agent.setUp()
 
         if self.agent_commands:
-            def _cmd_line(c):
-                available = "CODER" if c.get('side_effects', False) else "CODER, REVIEWER, ANALYTIC"
-                return f"- **{c['command']}** `{c['cmd']}` *(available to: {available})*"
-            names = "\n".join(_cmd_line(c) for c in self.agent_commands)
-            yield DTOInstruction(type=EventType.MARKDOWN, message=f"Available shell commands:\n{names}")
+            with open('./prompts/commands_table.html', 'r', encoding='utf8') as f:
+                tpl = f.read()
+            table = Environment(loader=BaseLoader).from_string(tpl).render(
+                agent_commands=self.agent_commands
+            )
+            yield DTOInstruction(type=EventType.HTML, message=table)
 
         with open(self.LOG_FILE, "w", encoding='utf8') as f:
             f.write(str(datetime.datetime.now()) + "\n\n")

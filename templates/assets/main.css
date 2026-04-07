@@ -222,26 +222,32 @@ button.default:disabled {
     margin-top: 0;
 }
 
-.markdown-message table {
+.markdown-message table,
+.html-message table {
     border-collapse: collapse;
     width: 100%;
     margin-bottom: 1em;
     font-size: 0.95em;
 }
 .markdown-message th,
-.markdown-message td {
+.markdown-message td,
+.html-message th,
+.html-message td {
     border: 1px solid #ccc;
     padding: 6px 12px;
     text-align: left;
 }
-.markdown-message thead tr {
+.markdown-message thead tr,
+.html-message thead tr {
     background-color: #e9ecef;
     font-weight: bold;
 }
-.markdown-message tbody tr:nth-child(even) {
+.markdown-message tbody tr:nth-child(even),
+.html-message tbody tr:nth-child(even) {
     background-color: #f8f9fa;
 }
-.markdown-message tbody tr:hover {
+.markdown-message tbody tr:hover,
+.html-message tbody tr:hover {
     background-color: #f0f0f0;
 }
 
