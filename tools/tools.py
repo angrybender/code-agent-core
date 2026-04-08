@@ -305,6 +305,13 @@ def get_reviewer_tools(has_shell_commands: bool) -> list:
     return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_SEARCH_FILE, TOOL_REPORT]
 
 
+def get_analytic_tools(has_shell_commands: bool) -> list:
+    """Return ANALYTIC tools with or without shell command support."""
+    if has_shell_commands:
+        return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_SEARCH_FILE, TOOL_SHELL_COMMAND, TOOL_REPORT]
+    return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_SEARCH_FILE, TOOL_REPORT]
+
+
 ANALYTIC_TOOLS = [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_SEARCH_FILE, TOOL_REPORT]
 CODER_TOOLS = get_coder_tools(True)
 REVIEWER_TOOLS = get_reviewer_tools(True)
