@@ -168,6 +168,23 @@ class TestParseAgentCommands(unittest.TestCase):
         self.assertEqual(1, len(result))
         self.assertEqual('with_block', result[0]['command'])
 
+    def test_enabled_false_skips_command(self):
+        self._write('skip.md', "---\nenabled: false\n---\nDesc.\n\n```\necho skip\n```")
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual([], result)
+
+    def test_enabled_true_includes_command(self):
+        self._write('inc.md', "---\nenabled: true\n---\nDesc.\n\n```\necho include\n```")
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual(1, len(result))
+        self.assertEqual('echo include', result[0]['cmd'])
+
+    def test_enabled_absent_includes_command(self):
+        self._write('default.md', "Desc.\n\n```\necho default\n```")
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual(1, len(result))
+        self.assertEqual('echo default', result[0]['cmd'])
+
 class TestShellCommandUnknown(unittest.TestCase):
     """Tests for ToolsInterpreter._command_shell unknown-command error branch."""
 

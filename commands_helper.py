@@ -33,6 +33,8 @@ def parse_agent_commands(directory: str) -> list[dict]:
         config = post.metadata
         if not config:
             config = {}
+        if config.get('enabled', True) is False:
+            continue
 
         placeholder_digits = sorted(set(re.findall(r'\$(\d+)', cmd)), key=lambda x: int(x))
         if placeholder_digits:
