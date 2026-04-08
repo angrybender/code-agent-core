@@ -3,9 +3,9 @@ import os
 import tempfile
 import shutil
 
-from mcp_helper import tool_call
+from ide_integration import tool_call
 
-class TestMCPHelperPure(unittest.TestCase):
+class TestIdeIntegrationPure(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.test_dir = tempfile.mkdtemp(prefix='test_mcp_pure_')

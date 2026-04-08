@@ -7,7 +7,7 @@
   <tr>
     <td><strong>{{ c.command }}</strong></td>
     <td><code>{{ c.cmd }}</code></td>
-    <td>{{ "CODER" if c.get("side_effects") else "<i>all</i>" }}</td>
+    <td>{{ "CODER" if c.config.get("side_effects") else "<i>all</i>" }}</td>
   </tr>
   {% endfor %}
   </tbody>

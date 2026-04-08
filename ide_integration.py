@@ -61,7 +61,7 @@ def _write_file_pure(project_path: str, path_in_project: str, text: str) -> dict
 
 def tool_call(path: str, name: str, args: dict = None) -> dict:
     if name == 'get_file_text_by_path':
-        # jetbrains'mcp truncate big files
+        # jetbrains' mcp truncate big files
         return _read_file_pure(args['projectPath'], args['pathInProject'])
 
     # Pure mode: use direct Python file operations

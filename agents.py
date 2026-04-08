@@ -550,7 +550,7 @@ class Agent:
         if role == 'CODER':
             return agent_commands or []
         if role in ('REVIEWER', 'ANALYTIC'):
-            return [cmd for cmd in (agent_commands or []) if not cmd.get('side_effects', False)]
+            return [cmd for cmd in (agent_commands or []) if not cmd['config'].get('side_effects', False)]
         return []
 
     @staticmethod

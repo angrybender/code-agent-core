@@ -30,7 +30,9 @@ def parse_agent_commands(directory: str) -> list[dict]:
             continue
 
         description = re.sub(r'```.*?```', '', body, flags=re.DOTALL).strip()
-        side_effects = bool(post.metadata.get('side_effects', False))
+        config = post.metadata
+        if not config:
+            config = {}
 
         placeholder_digits = sorted(set(re.findall(r'\$(\d+)', cmd)), key=lambda x: int(x))
         if placeholder_digits:
@@ -50,7 +52,7 @@ def parse_agent_commands(directory: str) -> list[dict]:
                     break
             args.append({'placeholder': f'${digit}', 'description': arg_desc})
 
-        results.append({'command': command, 'description': description, 'cmd': cmd, 'args': args, 'side_effects': side_effects})
+        results.append({'command': command, 'description': description, 'cmd': cmd, 'args': args, 'config': config})
     return results
 
 def execute_terminal_command(cmd: str, timeout: int, cwd: str = None) -> dict:

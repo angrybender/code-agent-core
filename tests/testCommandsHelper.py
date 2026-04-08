@@ -102,17 +102,12 @@ class TestParseAgentCommands(unittest.TestCase):
         self._write('check.md', "Some desc.\n\n```\nsome cmd\n```")
         result = parse_agent_commands(self.test_dir)
         self.assertEqual(1, len(result))
-        self.assertEqual({'command', 'description', 'cmd', 'args', 'side_effects'}, set(result[0].keys()))
-
-    def test_side_effects_defaults_to_false_without_frontmatter(self):
-        self._write('build.md', "Run build.\n\n```bash\nmake build\n```")
-        result = parse_agent_commands(self.test_dir)
-        self.assertEqual(False, result[0]['side_effects'])
+        self.assertEqual({'command', 'description', 'cmd', 'args', 'config'}, set(result[0].keys()))
 
     def test_side_effects_true_parsed_from_frontmatter(self):
         self._write('deploy.md', "---\nside_effects: true\n---\nDeploy app.\n\n```bash\n./deploy.sh\n```")
         result = parse_agent_commands(self.test_dir)
-        self.assertEqual(True, result[0]['side_effects'])
+        self.assertEqual(True, result[0]['config']['side_effects'])
 
     def test_frontmatter_excluded_from_description(self):
         self._write('deploy.md', "---\nside_effects: true\n---\nDeploy app.\n\n```bash\n./deploy.sh\n```")
@@ -208,8 +203,8 @@ class TestAgentCommandFiltering(unittest.TestCase):
 
     def test_reviewer_filters_side_effect_commands(self):
         commands = [
-            {'command': 'build', 'cmd': 'make build', 'description': 'Build', 'args': [], 'side_effects': False},
-            {'command': 'deploy', 'cmd': './deploy.sh', 'description': 'Deploy', 'args': [], 'side_effects': True},
+            {'command': 'build', 'cmd': 'make build', 'description': 'Build', 'args': [], 'config': {'side_effects': False}},
+            {'command': 'deploy', 'cmd': './deploy.sh', 'description': 'Deploy', 'args': [], 'config': {'side_effects': True}},
         ]
         self.assertEqual(['build', 'deploy'], [cmd['command'] for cmd in Agent._get_role_agent_commands('CODER', commands)])
         self.assertEqual(['build'], [cmd['command'] for cmd in Agent._get_role_agent_commands('REVIEWER', commands)])
@@ -217,8 +212,8 @@ class TestAgentCommandFiltering(unittest.TestCase):
 
     def test_create_uses_filtered_command_list_for_reviewer(self):
         commands = [
-            {'command': 'safe', 'cmd': 'echo ok', 'description': 'Safe', 'args': [], 'side_effects': False},
-            {'command': 'unsafe', 'cmd': 'echo no', 'description': 'Unsafe', 'args': [], 'side_effects': True},
+            {'command': 'safe', 'cmd': 'echo ok', 'description': 'Safe', 'args': [], 'config': {'side_effects': False}},
+            {'command': 'unsafe', 'cmd': 'echo no', 'description': 'Unsafe', 'args': [], 'config': {'side_effects': True}},
         ]
         with patch('agents.AnalyticAgent') as analytic_agent_cls:
             analytic_agent_cls.return_value = object()

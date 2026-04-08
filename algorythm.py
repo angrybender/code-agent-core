@@ -6,7 +6,7 @@ import datetime
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
 from log_helper import pretty_format
-from mcp_helper import tool_call
+from ide_integration import tool_call
 from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE
 from path_helper import get_relative_path
 from tools_interpreter import ToolsInterpreter
