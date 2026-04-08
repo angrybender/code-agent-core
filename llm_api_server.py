@@ -18,6 +18,7 @@ from dto.dto_instruction import DTOInstruction
 logger = logging.getLogger('APP')
 
 from algorythm import Copilot
+from commands_helper import parse_agent_commands
 from conversation import get_terminal, agent_result_of_all_active_tpl, agent_tool_tpl, _agent_call_tpl
 
 app = Flask(__name__)
@@ -167,8 +168,13 @@ def index():
         })
 
     session_id = hashlib.sha256(project_base_path.encode()).hexdigest()
+    shell_cmd_dir = os.getenv('SHELL_COMMAND_DIRECTORY', '.agent-commands')
+    full_cmd_dir = os.path.join(project_base_path, shell_cmd_dir)
+    commands = parse_agent_commands(full_cmd_dir)
+
     template_app_data = {
         'session_id': session_id,
+        'commands': commands,
     }
 
     start_stop = time.time()

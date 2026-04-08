@@ -14,7 +14,6 @@ from agents import Agent
 from tools.tools import SUPERVISOR_TOOLS
 from logger_mixin import LoggerMixin
 
-from jinja2 import Environment, BaseLoader
 from commands_helper import parse_agent_commands
 from dotenv import load_dotenv
 
@@ -112,14 +111,6 @@ class Copilot(LoggerMixin):
 
         self._init()
         Agent.setUp()
-
-        if self.agent_commands:
-            with open('./prompts/commands_table.html', 'r', encoding='utf8') as f:
-                tpl = f.read()
-            table = Environment(loader=BaseLoader).from_string(tpl).render(
-                agent_commands=self.agent_commands
-            )
-            yield DTOInstruction(type=EventType.HTML, message=table)
 
         with open(self.LOG_FILE, "w", encoding='utf8') as f:
             f.write(str(datetime.datetime.now()) + "\n\n")
