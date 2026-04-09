@@ -7,11 +7,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Load mode configuration - 'mcp' or 'pure'
-AGENT_FILE_TOOLS = os.getenv('AGENT_FILE_TOOLS', 'mcp')
+AGENT_FILE_TOOLS = os.getenv('AGENT_FILE_TOOLS', 'mcp_integration')
 
 async def _tool_call_sse(path: str, name: str, args: dict = None):
-    from mcp import ClientSession
-    from mcp.client.sse import sse_client
+    from mcp_integration import ClientSession
+    from mcp_integration.client.sse import sse_client
     async with sse_client(path) as (
             read_stream,
             write_stream,

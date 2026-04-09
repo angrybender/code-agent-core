@@ -1,7 +1,6 @@
 import os
 import glob
 import re
-import shlex
 import subprocess
 import sys
 

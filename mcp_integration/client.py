@@ -94,7 +94,7 @@ class MCP:
                 {
                     "name": tool.name,
                     "description": tool.description or "",
-                    "inputSchema": tool.inputSchema if isinstance(tool.inputSchema, dict) else (tool.inputSchema.model_dump() if hasattr(tool.inputSchema, "model_dump") else {}),
+                    "inputSchema": tool.inputSchema['properties'] if isinstance(tool.inputSchema, dict) else (tool.inputSchema.model_dump()['properties'] if hasattr(tool.inputSchema, "model_dump") else {}),
                 }
                 for tool in result.tools
             ]
