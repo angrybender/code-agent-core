@@ -17,70 +17,22 @@ logger = logging.getLogger('APP')
 from dotenv import load_dotenv
 load_dotenv()
 
-from llm import llm_query, llm_query_stream, MAX_CONTEXT_WINDOW_SIZE, LLMRequestFormat
+from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE, LLMRequestFormat
 from tools_interpreter import ToolsInterpreter
-from tools.tools import ANALYTIC_TOOLS, get_analytic_tools, get_coder_tools, get_reviewer_tools, TOOL_SUMMARIZE, TOOL_REPORT
+from tools.tools import get_analytic_tools, get_coder_tools, get_reviewer_tools, TOOL_SUMMARIZE, TOOL_REPORT
 from search_code import SearchCode
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
 from context_helper import compact_conversation_remove_redundant
+from agents_logic.tools_mixin import ToolsMixin
+from agents_logic.conversation_mixin import ConversationMixin
 
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=int(os.getenv('MAX_ITERATION'))
 DEEPTHINKING_AGENTS=os.getenv('DEEPTHINKING_AGENTS', '').split(',')
 
-def _parse_tool_arguments(json_data: str):
-    try:
-        return json.loads(json_data)
-    except json.decoder.JSONDecodeError as e:
-        json_data = llm_query(f"fix this JSON: ```{json_data}```\nwrap answer into tag <RESULT>", ['RESULT']).get('RESULT', [''])[0]
-        if not json_data:
-            raise e
 
-        try:
-            return json.loads(json_data)
-        except json.decoder.JSONDecodeError as e:
-            return {}
-
-def _merge_assistant_messages(conversation: list[dict]) -> list[dict]:
-    # merge multiply assistant messages to once
-
-    merged = True
-    while merged:
-        merged = False
-        if len(conversation) >= 2:
-            prev = conversation[-2]
-            last = conversation[-1]
-            if (prev['role'] == 'assistant' and last['role'] == 'assistant'
-                    and isinstance(prev.get('content'), str)
-                    and isinstance(last.get('content'), str)):
-                prev['content'] += "\n" + last['content']
-                conversation = conversation[:-1]
-                merged = True
-
-    return conversation
-
-def _create_report(conversation: list[dict]):
-    report = ""
-    last_message = ""
-    for message in conversation:
-        if message['role'] == 'assistant':
-            _content = message['content'].strip() if message['content'] else ""
-            if _content:
-                last_message = _content
-
-            for tool in message.get('tool_calls', []):
-                if tool['function']['name'] == 'report':
-                    report += tool['function']['arguments_parsed'].get('text', '')
-
-    report = report.strip()
-    if report:
-        return report
-    else:
-        return last_message
-
-
-class BaseAgent(LoggerMixin):
+class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
     DEEP_THINK_TAG = 'work_plan'
     STORAGE_PATH = './storage'
 
@@ -108,7 +60,7 @@ class BaseAgent(LoggerMixin):
         }
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
-        conversation = _merge_assistant_messages(conversation)
+        conversation = self.merge_assistant_messages(conversation)
 
         tools_cnt = len([_ for _ in conversation if 'tool_calls' in _])
         if tools_cnt <= MAX_ITERATION // 2:
@@ -122,7 +74,7 @@ class BaseAgent(LoggerMixin):
                 tools_list = [_ for _ in conversation if 'tool_calls' in _]
                 for tool in tools_list:
                     tool_call = tool['tool_calls'][0]
-                    tool['args'] = list(_parse_tool_arguments(tool_call['function']['arguments']).values()) if \
+                    tool['args'] = list(self.parse_tool_arguments(tool_call['function']['arguments']).values()) if \
                     tool_call['function']['arguments'] else []
 
                 return "; ".join([f'{m['tool_calls'][0]['function']['name']}:{m['args'][0]}' for m in tools_list])
@@ -287,7 +239,7 @@ class BaseAgent(LoggerMixin):
 
             if not output:
                 yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id, metadata={})
-                _report = _create_report(conversation)
+                _report = self.create_report(conversation)
                 if _report:
                     _report = conversation[-1]['content']
                     logger.info("Empty response. Create report from previous message")
@@ -307,7 +259,7 @@ class BaseAgent(LoggerMixin):
                 tool_calls = []
 
             for tool_call in tool_calls:
-                _args = _parse_tool_arguments(tool_call['function']['arguments']) if tool_call['function']['arguments'] else {}
+                _args = self.parse_tool_arguments(tool_call['function']['arguments']) if tool_call['function']['arguments'] else {}
                 tool_call_description = {
                     'function': tool_call['function']['name'],
                     'id': tool_call['id'],
@@ -318,7 +270,7 @@ class BaseAgent(LoggerMixin):
                 break
 
             if not current_tool_call and not output['output']:
-                _report = _create_report(conversation)
+                _report = self.create_report(conversation)
                 if _report:
                     logger.info("Empty response. Create report from previous message (2)")
                 else:
@@ -583,3 +535,5 @@ class Agent:
             return AnalyticAgent(role, system_prompt, step_prompt, thinking, has_shell_commands)
         elif role == 'CODER':
             return CoderAgent(role, system_prompt, step_prompt, False, has_shell_commands)
+        else:
+            raise Exception("unknown agent")
