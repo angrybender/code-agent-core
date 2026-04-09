@@ -31,27 +31,54 @@ class MCP:
         self.command = command
         self.args = args or []
 
-    async def _with_session(self, async_fn):
-        """Open transport, initialize MCP session, then call async_fn(session)."""
+    async def _run_with_session(self, async_fn):
         if self.transport == "sse":
-            async with sse_client(self.url) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    return await async_fn(session)
-
+            transport_cm = sse_client(self.url)
+            read, write = await transport_cm.__aenter__()
         elif self.transport == "http":
             raise Exception("not supported yet")
-            async with streamablehttp_client(self.url) as (read, write, _):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    return await async_fn(session)
-
-        else:  # "cli"
+        else:
             server_params = StdioServerParameters(command=self.command, args=self.args)
-            async with stdio_client(server_params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    return await async_fn(session)
+            transport_cm = stdio_client(server_params)
+            read, write = await transport_cm.__aenter__()
+
+        session_cm = ClientSession(read, write)
+        session = await session_cm.__aenter__()
+        try:
+            await session.initialize()
+            return await async_fn(session)
+        finally:
+            session_error = None
+            try:
+                await session_cm.__aexit__(None, None, None)
+            except Exception as exc:
+                session_error = exc
+
+            transport_error = None
+            try:
+                await transport_cm.__aexit__(None, None, None)
+            except Exception as exc:
+                transport_error = exc
+
+            if session_error:
+                raise session_error
+            if transport_error:
+                raise transport_error
+
+    def _run(self, async_fn):
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(self._run_with_session(async_fn))
+        finally:
+            loop.close()
+
+    def init(self):
+        """Retained for API compatibility. Sessions are created per call."""
+        return
+
+    def destroy(self):
+        """Retained for API compatibility. No persistent async resources are kept."""
+        return
 
     def list_tools(self) -> list:
         """
@@ -60,6 +87,7 @@ class MCP:
         Returns:
             list of dicts: [{"name": str, "description": str, "inputSchema": dict}, ...]
         """
+
         async def _list(session):
             result = await session.list_tools()
             return [
@@ -71,7 +99,7 @@ class MCP:
                 for tool in result.tools
             ]
 
-        return asyncio.run(self._with_session(_list))
+        return self._run(_list)
 
     def call_tool(self, name: str, args: dict = None) -> dict:
         """
@@ -81,6 +109,7 @@ class MCP:
             {"status": str} on success
             {"error": str}  on tool-level error (result.isError is True)
         """
+
         async def _call(session):
             result = await session.call_tool(name, args)
             if result.isError:
@@ -89,4 +118,4 @@ class MCP:
             text = result.content[0].text if result.content else ""
             return {"status": text}
 
-        return asyncio.run(self._with_session(_call))
+        return self._run(_call)
