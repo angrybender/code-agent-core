@@ -82,6 +82,7 @@ class MCPAgent(BaseAgent):
         status_msg_id = str(uuid.uuid4())
         server_lines = []
 
+        _servers_descriptions = {}
         for server_name, cmd_config in self._mcp_commands_map.items():
             try:
                 executor = MCPToolExecutor(server_name, cmd_config)
@@ -109,6 +110,8 @@ class MCPAgent(BaseAgent):
                     message_id=status_msg_id,
                     is_final=False,
                 )
+
+                _servers_descriptions[server_name] = cmd_config['description']
             except Exception as e:
                 self.log(f"[MCPAgent] Failed to load tools from '{server_name}': {e}")
 
@@ -141,7 +144,7 @@ class MCPAgent(BaseAgent):
                 for t in srv_tools:
                     tool_descs.append(f"  - `{t['function']['name']}`: {t['function']['description']}")
                 server_summary_parts.append(
-                    f"### {srv_name}\nTools:\n" + "\n".join(tool_descs)
+                    f"### {srv_name}\n**Description**: {_servers_descriptions[srv_name]}\n**Tools**:\n" + "\n".join(tool_descs)
                 )
             server_summary = "\n".join(server_summary_parts)
         else:
