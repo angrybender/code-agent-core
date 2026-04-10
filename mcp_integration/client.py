@@ -1,9 +1,9 @@
 import asyncio
 import threading
 
-from mcp import ClientSession
+from mcp import ClientSession, StdioServerParameters
 from mcp.client.sse import sse_client
-from mcp.client.stdio import stdio_client, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 
 class MCP:
@@ -25,88 +25,83 @@ class MCP:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self._session: ClientSession | None = None
-        self._session_cm = None
-        self._transport_cm = None
+        self._stop_event: asyncio.Event | None = None
+        self._session_ready: threading.Event | None = None
+        self._session_error: Exception | None = None
+        self._session_future = None
+
+    async def _run_session(self):
+        self._stop_event = asyncio.Event()
+        try:
+            if self.transport in ("sse", "http"):
+                async with sse_client(self.url) as (read, write):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        self._session = session
+                        self._session_ready.set()
+                        await self._stop_event.wait()
+            elif self.transport == "cli":
+                params = StdioServerParameters(command=self.command, args=self.args)
+                async with stdio_client(params) as (read, write):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        self._session = session
+                        self._session_ready.set()
+                        await self._stop_event.wait()
+            else:
+                raise ValueError(f"Unsupported transport: {self.transport!r}")
+        except Exception as e:
+            self._session_error = e
+            self._session_ready.set()
+        finally:
+            self._session = None
 
     def init(self):
-        """Establish a persistent connection to the MCP server.
-
-        Starts a background event loop thread and initialises the MCP session.
-        Blocks until the session handshake completes (or raises on timeout/error).
-        """
         if self._session is not None or self._loop is not None:
             return
+
+        self._session_ready = threading.Event()
+        self._session_error = None
 
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, daemon=True, name="mcp-event-loop")
         self._thread.start()
 
-        future = asyncio.run_coroutine_threadsafe(self._connect(), self._loop)
-        future.result(timeout=30)
+        self._session_future = asyncio.run_coroutine_threadsafe(self._run_session(), self._loop)
 
-    async def _connect(self):
-        """Async: open transport and create/initialise ClientSession."""
-        if self.transport in ("sse", "http"):
-            self._transport_cm = sse_client(self.url)
-        elif self.transport == "cli":
-            params = StdioServerParameters(command=self.command, args=self.args)
-            self._transport_cm = stdio_client(params)
-        else:
-            raise ValueError(f"Unsupported transport: {self.transport!r}")
+        if not self._session_ready.wait(timeout=30):
+            raise TimeoutError("MCP session did not initialize in time")
 
-        read, write = await self._transport_cm.__aenter__()
-        self._session_cm = ClientSession(read, write)
-        self._session = await self._session_cm.__aenter__()
-        await self._session.initialize()
+        if self._session_error:
+            raise self._session_error
 
     def destroy(self):
-        """Close the MCP session and stop the background event loop.
+        if self._loop and self._stop_event:
+            self._loop.call_soon_threadsafe(self._stop_event.set)
 
-        Safe to call even if init() was never called.
-        """
-        if self._loop is not None and (self._session is not None or self._transport_cm is not None):
-            future = asyncio.run_coroutine_threadsafe(self._disconnect(), self._loop)
-            try:
-                future.result(timeout=15)
-            except Exception:
-                pass
-
-        if self._loop is not None:
+        if self._loop:
             self._loop.call_soon_threadsafe(self._loop.stop)
 
-        if self._thread is not None:
-            self._thread.join(timeout=10)
+        if self._thread:
+            self._thread.join(timeout=15)
+
+        if self._session_future is not None and self._session_future.done():
+            try:
+                self._session_future.exception()
+            except Exception:
+                pass
 
         self._session = None
-        self._session_cm = None
-        self._transport_cm = None
         self._loop = None
         self._thread = None
-
-    async def _disconnect(self):
-        """Async: gracefully exit session and transport context managers."""
-        if self._session_cm is not None:
-            try:
-                await self._session_cm.__aexit__(None, None, None)
-            except Exception:
-                pass
-        if self._transport_cm is not None:
-            try:
-                await self._transport_cm.__aexit__(None, None, None)
-            except Exception:
-                pass
+        self._stop_event = None
+        self._session_future = None
 
     def _ensure_session(self):
-        """Lazy-init: connect on first use if init() was not called explicitly."""
         if self._session is None:
             self.init()
 
-    # ------------------------------------------------------------------ #
-    #  Public API                                                          #
-    # ------------------------------------------------------------------ #
-
     def list_tools(self) -> list:
-        """Return a list of tools available on the connected MCP server."""
         self._ensure_session()
         future = asyncio.run_coroutine_threadsafe(self._list_tools_async(), self._loop)
         return future.result()
@@ -130,7 +125,6 @@ class MCP:
         return tools
 
     def call_tool(self, name: str, args: dict = None) -> dict:
-        """Call a tool on the MCP server and return the result."""
         self._ensure_session()
         future = asyncio.run_coroutine_threadsafe(self._call_tool_async(name, args), self._loop)
         return future.result()
