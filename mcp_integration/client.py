@@ -55,6 +55,8 @@ class MCP:
             self._session_ready.set()
         finally:
             self._session = None
+            if self._loop and self._loop.is_running():
+                self._loop.call_soon(self._loop.stop)
 
     def init(self):
         if self._session is not None or self._loop is not None:
@@ -78,9 +80,6 @@ class MCP:
     def destroy(self):
         if self._loop and self._stop_event:
             self._loop.call_soon_threadsafe(self._stop_event.set)
-
-        if self._loop:
-            self._loop.call_soon_threadsafe(self._loop.stop)
 
         if self._thread:
             self._thread.join(timeout=15)
