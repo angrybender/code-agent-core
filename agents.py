@@ -493,12 +493,15 @@ class Agent:
         'ANALYTIC': './prompts/analytic_system.txt',
         'CODER': './prompts/coder_system.txt',
         'REVIEWER': './prompts/reviewer_system.txt',
+        'MCP': './prompts/mcp_system.txt',
     }
 
     STEP_PROMPT = './prompts/step.txt'
 
     @staticmethod
     def _get_role_agent_commands(role, agent_commands: list = None) -> list:
+        if role == 'MCP':
+            return []
         if role == 'CODER':
             return agent_commands or []
         if role in ('REVIEWER', 'ANALYTIC'):
@@ -512,7 +515,7 @@ class Agent:
                 shutil.rmtree(cache_path)
 
     @staticmethod
-    def create(role, agent_commands: list = None) -> BaseAgent:
+    def create(role, agent_commands: list = None, mcp_commands: list = None) -> BaseAgent:
         assert role in Agent.PROMPTS, f'invalid role: {role}'
 
         thinking = role in DEEPTHINKING_AGENTS
@@ -535,5 +538,8 @@ class Agent:
             return AnalyticAgent(role, system_prompt, step_prompt, thinking, has_shell_commands)
         elif role == 'CODER':
             return CoderAgent(role, system_prompt, step_prompt, False, has_shell_commands)
+        elif role == 'MCP':
+            from mcp_agent import MCPAgent
+            return MCPAgent(role, system_prompt, step_prompt, False, mcp_commands or [])
         else:
             raise Exception("unknown agent")

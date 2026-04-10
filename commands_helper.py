@@ -6,7 +6,9 @@ import sys
 
 import frontmatter
 
-def parse_agent_commands(directory: str) -> list[dict]:
+def parse_agent_commands(directory: str, type_command: str = 'shell') -> list[dict]:
+    assert type_command in ['shell', 'mcp'], f'Unknown type={type_command}'
+
     if not os.path.isdir(directory):
         return []
 
@@ -33,6 +35,12 @@ def parse_agent_commands(directory: str) -> list[dict]:
         if not config:
             config = {}
         if config.get('enabled', True) is False:
+            continue
+
+        is_mcp = config.get('mcp', False) is True
+        if type_command == 'mcp' and not is_mcp:
+            continue
+        if type_command == 'shell' and is_mcp:
             continue
 
         placeholder_digits = sorted(set(re.findall(r'\$(\d+)', cmd)), key=lambda x: int(x))

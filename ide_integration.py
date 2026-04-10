@@ -7,11 +7,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Load mode configuration - 'mcp' or 'pure'
-AGENT_FILE_TOOLS = os.getenv('AGENT_FILE_TOOLS', 'mcp_integration')
+AGENT_FILE_TOOLS = os.getenv('AGENT_FILE_TOOLS', 'mcp')
 
 async def _tool_call_sse(path: str, name: str, args: dict = None):
-    from mcp_integration import ClientSession
-    from mcp_integration.client.sse import sse_client
+    from mcp import ClientSession
+    from mcp.client.sse import sse_client
     async with sse_client(path) as (
             read_stream,
             write_stream,
@@ -61,7 +61,7 @@ def _write_file_pure(project_path: str, path_in_project: str, text: str) -> dict
 
 def tool_call(path: str, name: str, args: dict = None) -> dict:
     if name == 'get_file_text_by_path':
-        # jetbrains' mcp truncate big files
+        # jetbrains'mcp truncate big files
         return _read_file_pure(args['projectPath'], args['pathInProject'])
 
     # Pure mode: use direct Python file operations

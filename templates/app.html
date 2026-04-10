@@ -16,6 +16,7 @@
     <script>
         var SESSION_ID = "{{ app.session_id }}";
         var AGENT_COMMAND = {{ app.commands | tojson }};
+        var MCP_COMMAND = {{ app.mcp_commands | tojson }};
     </script>
 </head>
 <body>

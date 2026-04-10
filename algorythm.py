@@ -83,8 +83,10 @@ class Copilot(LoggerMixin):
 
         shell_cmd_dir = os.getenv('SHELL_COMMAND_DIRECTORY', '.agent-commands')
         full_cmd_dir = os.path.join(self.session['project_base_path'], shell_cmd_dir)
-        self.agent_commands = parse_agent_commands(full_cmd_dir)
+        self.agent_commands = parse_agent_commands(full_cmd_dir, 'shell')
         self.manifest['agent_commands'] = self.agent_commands
+        self.mcp_commands = parse_agent_commands(full_cmd_dir, 'mcp')
+        self.manifest['mcp_commands'] = self.mcp_commands
 
         self.output = []
 
@@ -259,7 +261,7 @@ class Copilot(LoggerMixin):
                     message_id=output['id'],
                 )
 
-                agent = Agent.create(agent_name, self.agent_commands)
+                agent = Agent.create(agent_name, self.agent_commands, mcp_commands=self.manifest.get('mcp_commands', []))
                 agent.init(agent_instruction, self.manifest, self.LOG_FILE, images=agent_images)
 
                 is_agent_completes_work = False

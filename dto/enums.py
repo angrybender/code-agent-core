@@ -6,6 +6,7 @@ class AgentRole(str, Enum):
     ANALYTIC   = "ANALYTIC"
     CODER      = "CODER"
     REVIEWER   = "REVIEWER"
+    MCP        = "MCP"
 
 
 class EventType(str, Enum):

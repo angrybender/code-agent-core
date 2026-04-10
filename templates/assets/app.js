@@ -635,4 +635,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         window._chatInstance.addMessage({message: tableHtml, type: 'html', is_final: true}, 'html');
     }
+
+    if (typeof MCP_COMMAND !== 'undefined' && Array.isArray(MCP_COMMAND) && MCP_COMMAND.length > 0) {
+        const rows = MCP_COMMAND.map(c => {
+            const transport = (c.config && c.config.type) ? c.config.type : 'cli';
+            const url = (c.config && c.config.url) ? ` <small>(${escapeHtml(c.config.url)})</small>` : '';
+            return `<tr><td><strong>${escapeHtml(c.command)}</strong></td><td><code>${escapeHtml(c.cmd)}</code></td><td>${escapeHtml(transport)}${url}</td></tr>`;
+        }).join('');
+        const tableHtml = `<p><strong>Available MCP:</strong></p><table><thead><tr><th>Server</th><th>Command</th><th>Transport</th></tr></thead><tbody>${rows}</tbody></table>`;
+        window._chatInstance.addMessage({message: tableHtml, type: 'html', is_final: true}, 'html');
+    }
 });

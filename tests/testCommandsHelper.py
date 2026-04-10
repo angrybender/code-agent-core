@@ -185,6 +185,32 @@ class TestParseAgentCommands(unittest.TestCase):
         self.assertEqual(1, len(result))
         self.assertEqual('echo default', result[0]['cmd'])
 
+    def test_mcp_commands_returned_for_mcp_type(self):
+        """parse_agent_commands with type='mcp' should return commands with mcp: true frontmatter."""
+        self._write('test_server.md', "---\nmcp: true\ntype: cli\n---\n# Test MCP Server\n\n```\ndocker run test\n```\n")
+        result = parse_agent_commands(self.test_dir, 'mcp')
+        self.assertEqual(1, len(result))
+        self.assertEqual('test_server', result[0]['command'])
+
+    def test_mcp_commands_excluded_for_shell_type(self):
+        """parse_agent_commands with type='shell' should exclude commands with mcp: true frontmatter."""
+        self._write('test_server.md', "---\nmcp: true\ntype: cli\n---\n# Test MCP Server\n\n```\ndocker run test\n```\n")
+        result = parse_agent_commands(self.test_dir, 'shell')
+        self.assertEqual(0, len(result))
+
+    def test_shell_commands_excluded_for_mcp_type(self):
+        """parse_agent_commands with type='mcp' should exclude regular shell commands (no mcp: true)."""
+        self._write('run_tests.md', "# Run tests\n\n```\npython -m pytest\n```\n")
+        result = parse_agent_commands(self.test_dir, 'mcp')
+        self.assertEqual(0, len(result))
+
+    def test_default_type_is_shell(self):
+        """parse_agent_commands without type_command should default to 'shell' behavior."""
+        self._write('test_server.md', "---\nmcp: true\ntype: cli\n---\n# Test MCP Server\n\n```\ndocker run test\n```\n")
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual(0, len(result))
+
+
 class TestShellCommandUnknown(unittest.TestCase):
     """Tests for ToolsInterpreter._command_shell unknown-command error branch."""
 
