@@ -13,6 +13,7 @@ _FUNCTION_NAME_TITLES = {
     'replace_code_in_file': 'patch ',
     'shell_command': 'shell ',
     'read_file': 'read  ',
+    'attach_image': 'read  ',
     'read_multiply_files': 'read  ',
     'search_file': 'search',
     'select_mcp': 'select',
@@ -24,6 +25,7 @@ _FUNCTION_ARG_PRINT = {
     'replace_code_in_file': 'path',
     'shell_command': 'command_name',
     'read_file': 'path',
+    'attach_image': 'path',
     'read_multiply_files': 'root_path',
     'select_mcp': 'server_name',
 }
@@ -170,7 +172,10 @@ def _file_processing_tpl(result: dict) -> str:
         css_class = 'file_create'
         a_href = f"#call:jide_open_file//{result['file_path']}"
 
-    return f"<a class='jide_open_file {css_class}' href='{a_href}'>{result['file_name']}</a>"
+    if 'file_name' in result:
+        return f"<a class='jide_open_file {css_class}' href='{a_href}'>{result['file_name']}</a>"
+    else:
+        return '-'
 
 def agent_result_of_all_active_tpl(messages: list[dict]) -> dict|None:
     processed_files = []

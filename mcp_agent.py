@@ -1,4 +1,6 @@
+import base64
 import json
+import mimetypes
 import uuid
 import datetime
 import os
@@ -37,6 +39,34 @@ class MCPAgent(BaseAgent):
         self._selected_mcp_tools = None
         self._mcp_executor = None
         self._mcp_servers_tools = {}
+
+    @staticmethod
+    def _encode_image_to_data_url(file_path: str, project_root: str | None = None) -> tuple[str, str | None]:
+        if not file_path or not isinstance(file_path, str):
+            raise Exception("Invalid path")
+        if '\x00' in file_path:
+            raise Exception("Invalid path")
+
+        file_path = os.path.normpath(file_path)
+        if file_path.startswith('..') or file_path.startswith('/'):
+            raise Exception("Invalid path")
+
+        real_path = os.path.realpath(os.path.join(project_root, file_path))
+        if not os.path.exists(real_path):
+            raise Exception("File not exists")
+
+        mime_type, _ = mimetypes.guess_type(real_path)
+        if not mime_type or not mime_type.startswith('image/'):
+            return '', 'file is not an image'
+
+        max_size = 5 * 1024 * 1024  # 5 MB
+        if os.path.getsize(real_path) > max_size:
+            return '', 'file exceeds 5 MB limit'
+
+        with open(real_path, 'rb') as f:
+            encoded = base64.b64encode(f.read()).decode('ascii')
+
+        return f'data:{mime_type};base64,{encoded}', None
 
     def get_tools(self) -> list:
         if self._selected_server_name is not None and self._selected_mcp_tools is not None:
@@ -368,8 +398,44 @@ class MCPAgent(BaseAgent):
                     'content': tool_result,
                 })
 
+            # ── attach_image ──
+            elif fn_name == 'attach_image':
+                path = fn_args.get('path', '')
+                data_url, error = self._encode_image_to_data_url(path, self.interpreter.project_root)
+                if error:
+                    tool_result = f"ERROR: {error}"
+                    conversation.append({
+                        'role': 'tool',
+                        'tool_call_id': current_tool_call['id'],
+                        'name': fn_name,
+                        'content': tool_result,
+                    })
+                else:
+                    conversation.append({
+                        'role': 'tool',
+                        'tool_call_id': current_tool_call['id'],
+                        'name': fn_name,
+                        'content': f"Image attached successfully: {path}",
+                    })
+                    conversation.append({
+                        'role': 'user',
+                        'content': [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": data_url}
+                            }
+                        ],
+                    })
+                    yield DTOInstruction(
+                        type=EventType.TOOL,
+                        function=fn_name,
+                        args={"path": path},
+                        is_final=True,
+                        message_id=output['id'],
+                    )
+
             # ── mcp <tool_name> ──
-            elif fn_name in [t['function']["name"] for t in self._selected_mcp_tools]:
+            elif self._selected_mcp_tools and fn_name in [t['function']["name"] for t in self._selected_mcp_tools]:
                 if self._mcp_executor is None:
                     tool_result = "ERROR: No MCP server selected. Call select_mcp first."
                     conversation.append({
