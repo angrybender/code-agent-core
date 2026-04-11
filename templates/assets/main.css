@@ -130,6 +130,21 @@ button.default:disabled {
 .tool-message.error cite::before {
     content: "🔨 ❌ ";
 }
+.tool-message dl dt {
+    font-family: monospace;
+  font-size: 1.1em;
+  border: 1px solid rgb(171, 41, 106);
+  border-radius: 0.3em;
+  padding: 0.3em 0.5em;
+  display: inline-block;
+  margin-bottom: 0.3em;
+}
+.tool-message dl dd {
+    margin-left: 0;
+}
+.tool-message dl dd pre {
+    margin: 1em;
+}
 
 .agent-message {
     background-color: #e8f4fd;

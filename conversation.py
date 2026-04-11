@@ -15,6 +15,7 @@ _FUNCTION_NAME_TITLES = {
     'read_file': 'read  ',
     'read_multiply_files': 'read  ',
     'search_file': 'search',
+    'select_mcp': 'select',
 }
 
 _FUNCTION_ARG_PRINT = {
@@ -24,6 +25,7 @@ _FUNCTION_ARG_PRINT = {
     'shell_command': 'command_name',
     'read_file': 'path',
     'read_multiply_files': 'root_path',
+    'select_mcp': 'server_name',
 }
 
 def get_message(message: str, role: str, message_type: str=None) -> dict:
@@ -114,6 +116,15 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
             result_message = f'<cite>{function_alias}</cite>'
 
         message_if_final = True
+
+    elif message.type == EventType.TOOL and function_name[:4] == 'mcp:' and message.is_final:
+        result_message = f'<cite>{function_alias}</cite>'
+        _info = ''
+        if message.args:
+            for arg_name, arg_value in message.args.items():
+                _info += f'<dt>{arg_name}</dt><dd><pre>{arg_value}</pre></dd>'
+
+            result_message += f'<dl>{_info}</dl>'
 
     elif message.type == EventType.TOOL:
         _arg_name = _FUNCTION_ARG_PRINT.get(str(function_name))

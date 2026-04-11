@@ -354,9 +354,11 @@ class MCPAgent(BaseAgent):
                         f"Available tools: {available_tool_names}"
                     )
                     yield DTOInstruction(
-                        type=EventType.STATUS,
-                        message=f"Selected MCP server: {server_name}",
+                        type=EventType.TOOL,
+                        function=fn_name,
+                        args={"server_name": server_name},
                         is_final=True,
+                        message_id=output['id'],
                     )
 
                 conversation.append({
@@ -379,7 +381,7 @@ class MCPAgent(BaseAgent):
                 else:
                     yield DTOInstruction(
                         type=EventType.TOOL,
-                        function=fn_name,
+                        function=f"mcp:{fn_name}",
                         args=fn_args,
                         message_id=output['id'],
                     )
