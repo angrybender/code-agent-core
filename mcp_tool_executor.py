@@ -30,7 +30,7 @@ class MCPToolExecutor:
     def call_tool(self, tool_name: str, args: dict = None) -> dict:
         """
         Call a tool on the MCP server.
-        
+
         :param tool_name: Tool name, possibly prefixed with 'mcp:'
         :param args: Arguments to pass to the tool
         :return: Result dict with 'result', 'tool_name' and optional 'error' keys
@@ -47,5 +47,11 @@ class MCPToolExecutor:
     def close_session(self):
         try:
             self.client.destroy()
-        except:
+        except Exception:
+            pass
+
+    def __del__(self):
+        try:
+            self.client.destroy()
+        except Exception:
             pass

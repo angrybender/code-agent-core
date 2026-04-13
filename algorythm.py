@@ -279,6 +279,8 @@ class Copilot(LoggerMixin):
 
                     if is_agent_completes_work:
                         break
+
+                del agent
             else:
                 self.log("ERROR: \n" + pretty_format(output, truncate=0), True)
 

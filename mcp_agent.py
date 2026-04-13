@@ -509,5 +509,6 @@ class MCPAgent(BaseAgent):
                 _context_overflow_summarize = True
                 continue
 
+    def __del__(self):
         if self._mcp_executor:
             self._mcp_executor.close_session()
