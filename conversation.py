@@ -13,7 +13,7 @@ _FUNCTION_NAME_TITLES = {
     'replace_code_in_file': 'patch ',
     'shell_command': 'shell ',
     'read_file': 'read  ',
-    'attach_image': 'read  ',
+    'attach_image': 'attach',
     'read_multiply_files': 'read  ',
     'search_file': 'search',
     'select_mcp': 'select',
