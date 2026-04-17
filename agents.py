@@ -144,9 +144,6 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
             for img in self.images:
                 user_content.append({"type": "image_url", "image_url": {"url": img}})
 
-        self.log("============= INSTRUCTION =============", True)
-        self.log(user_content, True)
-
         conversation = [
             {
                 'role': 'system',
@@ -157,6 +154,11 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                 'content': user_content
             }
         ]
+
+        self.log("============= SYSTEM PROMPT =============", True)
+        self.log(conversation[0]['content'], True)
+        self.log("============= USER PROMPT =============", True)
+        self.log(conversation[1]['content'], True)
 
         agent_step = 0
         _summarize_count = 0  # counts how many times summarize has been triggered
