@@ -125,6 +125,7 @@ class TestParseAgentCommands(unittest.TestCase):
         self.assertEqual('./deploy.sh $1', result[0]['cmd'])
         self.assertEqual([{'placeholder': '$1', 'description': 'environment name'}], result[0]['args'])
         self.assertIn('Deploy app.', result[0]['description'])
+        self.assertNotIn('$1 - environment name', result[0]['description'])
 
     def test_description_is_empty_string_when_only_code_block(self):
         """Edge case: file contains only a fenced code block, description becomes empty"""

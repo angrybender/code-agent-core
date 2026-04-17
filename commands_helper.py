@@ -31,6 +31,8 @@ def parse_agent_commands(directory: str, type_command: str = 'shell') -> list[di
             continue
 
         description = re.sub(r'```.*?```', '', body, flags=re.DOTALL).strip()
+        description_lines = description.splitlines()
+        recognized_arg_lines = set()
         config = post.metadata
         if not config:
             config = {}
@@ -54,12 +56,18 @@ def parse_agent_commands(directory: str, type_command: str = 'shell') -> list[di
         args = []
         for digit in placeholder_digits:
             arg_desc = ''
-            for line in description.splitlines():
+            for index, line in enumerate(description_lines):
                 m = re.match(r'^\$' + digit + r'\s*[-–]\s*(.+)', line.strip())
                 if m:
                     arg_desc = m.group(1).strip()
+                    recognized_arg_lines.add(index)
                     break
             args.append({'placeholder': f'${digit}', 'description': arg_desc})
+
+        description = '\n'.join(
+            line for index, line in enumerate(description_lines)
+            if index not in recognized_arg_lines
+        ).strip()
 
         results.append({'command': command, 'description': description, 'cmd': cmd, 'args': args, 'config': config})
     return results

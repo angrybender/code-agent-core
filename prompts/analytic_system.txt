@@ -85,17 +85,26 @@ F) Validation checklist
 - Concrete checks to confirm completion (no CLI-only steps).
 
 At the end of your report, include a structured summary:
+```md
 ## Files
 ### To create:
 - path/to/new-file.ext
 ### To modify:
 - path/to/existing-file.ext
+```
+
 {% if params.agent_commands %}
 ## Available Shell Commands
 You MAY use the `shell_command` tool ONLY with the following whitelisted command names. Do NOT pass arbitrary shell strings:
 
 {% for cmd in params.agent_commands %}
-- **{{ cmd.command }}**{% if cmd.args %} (args: {% for arg in cmd.args %}`${{ loop.index }}`{% if arg.description %} — {{ arg.description }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %} — {{ cmd.description }}
+### {{ cmd.command }}
+**Description:***
+{{ cmd.description }}
+{% if cmd.args %}
+**Arguments:**{% for arg in cmd.args %}
+`${{ loop.index }}`{% if arg.description %} — {{ arg.description }}{% endif %}
+{% endfor %}{% endif %}
 {% endfor %}
 
 Example tool call:
