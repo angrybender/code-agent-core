@@ -94,6 +94,11 @@ At the end of your report, include a structured summary:
 ## Available Shell Commands
 You MAY use the `shell_command` tool ONLY with the following whitelisted command names. Do NOT pass arbitrary shell strings:
 
+```
+{% for cmd in params.agent_commands %}
+- **{{ cmd.command }}**{% if cmd.args %} (args: {% for arg in cmd.args %}`${{ loop.index }}`{% if arg.description %} — {{ arg.description }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %} — {{ cmd.description }}
+{% endfor %}
+
 Example tool call:
 ```json
 {
@@ -103,8 +108,4 @@ Example tool call:
     "args": ["value"]
   }
 }
-```
-{% for cmd in params.agent_commands %}
-- **{{ cmd.command }}**{% if cmd.args %} (args: {% for arg in cmd.args %}`${{ loop.index }}`{% if arg.description %} — {{ arg.description }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %} — {{ cmd.description }}
-{% endfor %}
 {% endif %}
