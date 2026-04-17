@@ -6,7 +6,7 @@ import datetime
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
 from log_helper import pretty_format
-from mcp_helper import tool_call
+from ide_integration import tool_call
 from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE
 from path_helper import get_relative_path
 from tools_interpreter import ToolsInterpreter
@@ -14,7 +14,6 @@ from agents import Agent
 from tools.tools import SUPERVISOR_TOOLS
 from logger_mixin import LoggerMixin
 
-from jinja2 import Environment, BaseLoader
 from commands_helper import parse_agent_commands
 from dotenv import load_dotenv
 
@@ -84,8 +83,10 @@ class Copilot(LoggerMixin):
 
         shell_cmd_dir = os.getenv('SHELL_COMMAND_DIRECTORY', '.agent-commands')
         full_cmd_dir = os.path.join(self.session['project_base_path'], shell_cmd_dir)
-        self.agent_commands = parse_agent_commands(full_cmd_dir)
+        self.agent_commands = parse_agent_commands(full_cmd_dir, 'shell')
         self.manifest['agent_commands'] = self.agent_commands
+        self.mcp_commands = parse_agent_commands(full_cmd_dir, 'mcp')
+        self.manifest['mcp_commands'] = self.mcp_commands
 
         self.output = []
 
@@ -112,14 +113,6 @@ class Copilot(LoggerMixin):
 
         self._init()
         Agent.setUp()
-
-        if self.agent_commands:
-            with open('./prompts/commands_table.html', 'r', encoding='utf8') as f:
-                tpl = f.read()
-            table = Environment(loader=BaseLoader).from_string(tpl).render(
-                agent_commands=self.agent_commands
-            )
-            yield DTOInstruction(type=EventType.HTML, message=table)
 
         with open(self.LOG_FILE, "w", encoding='utf8') as f:
             f.write(str(datetime.datetime.now()) + "\n\n")
@@ -268,7 +261,7 @@ class Copilot(LoggerMixin):
                     message_id=output['id'],
                 )
 
-                agent = Agent.create(agent_name, self.agent_commands)
+                agent = Agent.create(agent_name, self.agent_commands, mcp_commands=self.manifest.get('mcp_commands', []))
                 agent.init(agent_instruction, self.manifest, self.LOG_FILE, images=agent_images)
 
                 is_agent_completes_work = False
@@ -286,6 +279,8 @@ class Copilot(LoggerMixin):
 
                     if is_agent_completes_work:
                         break
+
+                del agent
             else:
                 self.log("ERROR: \n" + pretty_format(output, truncate=0), True)
 

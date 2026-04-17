@@ -1,5 +1,3 @@
-import logging
-import os
 import time
 import uuid
 
@@ -15,8 +13,10 @@ _FUNCTION_NAME_TITLES = {
     'replace_code_in_file': 'patch ',
     'shell_command': 'shell ',
     'read_file': 'read  ',
+    'attach_image': 'attach',
     'read_multiply_files': 'read  ',
     'search_file': 'search',
+    'select_mcp': 'select',
 }
 
 _FUNCTION_ARG_PRINT = {
@@ -25,7 +25,9 @@ _FUNCTION_ARG_PRINT = {
     'replace_code_in_file': 'path',
     'shell_command': 'command_name',
     'read_file': 'path',
+    'attach_image': 'path',
     'read_multiply_files': 'root_path',
+    'select_mcp': 'server_name',
 }
 
 def get_message(message: str, role: str, message_type: str=None) -> dict:
@@ -117,6 +119,15 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
 
         message_if_final = True
 
+    elif message.type == EventType.TOOL and function_name[:4] == 'mcp:' and message.is_final:
+        result_message = f'<cite>{function_alias}</cite>'
+        _info = ''
+        if message.args:
+            for arg_name, arg_value in message.args.items():
+                _info += f'<dt>{arg_name}</dt><dd><pre>{arg_value}</pre></dd>'
+
+            result_message += f'<dl>{_info}</dl>'
+
     elif message.type == EventType.TOOL:
         _arg_name = _FUNCTION_ARG_PRINT.get(str(function_name))
         if _arg_name and _arg_name in message.args:
@@ -161,7 +172,10 @@ def _file_processing_tpl(result: dict) -> str:
         css_class = 'file_create'
         a_href = f"#call:jide_open_file//{result['file_path']}"
 
-    return f"<a class='jide_open_file {css_class}' href='{a_href}'>{result['file_name']}</a>"
+    if 'file_name' in result:
+        return f"<a class='jide_open_file {css_class}' href='{a_href}'>{result['file_name']}</a>"
+    else:
+        return '-'
 
 def agent_result_of_all_active_tpl(messages: list[dict]) -> dict|None:
     processed_files = []

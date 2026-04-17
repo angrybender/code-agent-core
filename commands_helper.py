@@ -1,13 +1,14 @@
 import os
 import glob
 import re
-import shlex
 import subprocess
 import sys
 
 import frontmatter
 
-def parse_agent_commands(directory: str) -> list[dict]:
+def parse_agent_commands(directory: str, type_command: str = 'shell') -> list[dict]:
+    assert type_command in ['shell', 'mcp'], f'Unknown type={type_command}'
+
     if not os.path.isdir(directory):
         return []
 
@@ -30,7 +31,17 @@ def parse_agent_commands(directory: str) -> list[dict]:
             continue
 
         description = re.sub(r'```.*?```', '', body, flags=re.DOTALL).strip()
-        side_effects = bool(post.metadata.get('side_effects', False))
+        config = post.metadata
+        if not config:
+            config = {}
+        if config.get('enabled', True) is False:
+            continue
+
+        is_mcp = config.get('mcp', False) is True
+        if type_command == 'mcp' and not is_mcp:
+            continue
+        if type_command == 'shell' and is_mcp:
+            continue
 
         placeholder_digits = sorted(set(re.findall(r'\$(\d+)', cmd)), key=lambda x: int(x))
         if placeholder_digits:
@@ -50,7 +61,7 @@ def parse_agent_commands(directory: str) -> list[dict]:
                     break
             args.append({'placeholder': f'${digit}', 'description': arg_desc})
 
-        results.append({'command': command, 'description': description, 'cmd': cmd, 'args': args, 'side_effects': side_effects})
+        results.append({'command': command, 'description': description, 'cmd': cmd, 'args': args, 'config': config})
     return results
 
 def execute_terminal_command(cmd: str, timeout: int, cwd: str = None) -> dict:

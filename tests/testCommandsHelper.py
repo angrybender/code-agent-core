@@ -102,17 +102,12 @@ class TestParseAgentCommands(unittest.TestCase):
         self._write('check.md', "Some desc.\n\n```\nsome cmd\n```")
         result = parse_agent_commands(self.test_dir)
         self.assertEqual(1, len(result))
-        self.assertEqual({'command', 'description', 'cmd', 'args', 'side_effects'}, set(result[0].keys()))
-
-    def test_side_effects_defaults_to_false_without_frontmatter(self):
-        self._write('build.md', "Run build.\n\n```bash\nmake build\n```")
-        result = parse_agent_commands(self.test_dir)
-        self.assertEqual(False, result[0]['side_effects'])
+        self.assertEqual({'command', 'description', 'cmd', 'args', 'config'}, set(result[0].keys()))
 
     def test_side_effects_true_parsed_from_frontmatter(self):
         self._write('deploy.md', "---\nside_effects: true\n---\nDeploy app.\n\n```bash\n./deploy.sh\n```")
         result = parse_agent_commands(self.test_dir)
-        self.assertEqual(True, result[0]['side_effects'])
+        self.assertEqual(True, result[0]['config']['side_effects'])
 
     def test_frontmatter_excluded_from_description(self):
         self._write('deploy.md', "---\nside_effects: true\n---\nDeploy app.\n\n```bash\n./deploy.sh\n```")
@@ -173,6 +168,49 @@ class TestParseAgentCommands(unittest.TestCase):
         self.assertEqual(1, len(result))
         self.assertEqual('with_block', result[0]['command'])
 
+    def test_enabled_false_skips_command(self):
+        self._write('skip.md', "---\nenabled: false\n---\nDesc.\n\n```\necho skip\n```")
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual([], result)
+
+    def test_enabled_true_includes_command(self):
+        self._write('inc.md', "---\nenabled: true\n---\nDesc.\n\n```\necho include\n```")
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual(1, len(result))
+        self.assertEqual('echo include', result[0]['cmd'])
+
+    def test_enabled_absent_includes_command(self):
+        self._write('default.md', "Desc.\n\n```\necho default\n```")
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual(1, len(result))
+        self.assertEqual('echo default', result[0]['cmd'])
+
+    def test_mcp_commands_returned_for_mcp_type(self):
+        """parse_agent_commands with type='mcp' should return commands with mcp: true frontmatter."""
+        self._write('test_server.md', "---\nmcp: true\ntype: cli\n---\n# Test MCP Server\n\n```\ndocker run test\n```\n")
+        result = parse_agent_commands(self.test_dir, 'mcp')
+        self.assertEqual(1, len(result))
+        self.assertEqual('test_server', result[0]['command'])
+
+    def test_mcp_commands_excluded_for_shell_type(self):
+        """parse_agent_commands with type='shell' should exclude commands with mcp: true frontmatter."""
+        self._write('test_server.md', "---\nmcp: true\ntype: cli\n---\n# Test MCP Server\n\n```\ndocker run test\n```\n")
+        result = parse_agent_commands(self.test_dir, 'shell')
+        self.assertEqual(0, len(result))
+
+    def test_shell_commands_excluded_for_mcp_type(self):
+        """parse_agent_commands with type='mcp' should exclude regular shell commands (no mcp: true)."""
+        self._write('run_tests.md', "# Run tests\n\n```\npython -m pytest\n```\n")
+        result = parse_agent_commands(self.test_dir, 'mcp')
+        self.assertEqual(0, len(result))
+
+    def test_default_type_is_shell(self):
+        """parse_agent_commands without type_command should default to 'shell' behavior."""
+        self._write('test_server.md', "---\nmcp: true\ntype: cli\n---\n# Test MCP Server\n\n```\ndocker run test\n```\n")
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual(0, len(result))
+
+
 class TestShellCommandUnknown(unittest.TestCase):
     """Tests for ToolsInterpreter._command_shell unknown-command error branch."""
 
@@ -208,8 +246,8 @@ class TestAgentCommandFiltering(unittest.TestCase):
 
     def test_reviewer_filters_side_effect_commands(self):
         commands = [
-            {'command': 'build', 'cmd': 'make build', 'description': 'Build', 'args': [], 'side_effects': False},
-            {'command': 'deploy', 'cmd': './deploy.sh', 'description': 'Deploy', 'args': [], 'side_effects': True},
+            {'command': 'build', 'cmd': 'make build', 'description': 'Build', 'args': [], 'config': {'side_effects': False}},
+            {'command': 'deploy', 'cmd': './deploy.sh', 'description': 'Deploy', 'args': [], 'config': {'side_effects': True}},
         ]
         self.assertEqual(['build', 'deploy'], [cmd['command'] for cmd in Agent._get_role_agent_commands('CODER', commands)])
         self.assertEqual(['build'], [cmd['command'] for cmd in Agent._get_role_agent_commands('REVIEWER', commands)])
@@ -217,8 +255,8 @@ class TestAgentCommandFiltering(unittest.TestCase):
 
     def test_create_uses_filtered_command_list_for_reviewer(self):
         commands = [
-            {'command': 'safe', 'cmd': 'echo ok', 'description': 'Safe', 'args': [], 'side_effects': False},
-            {'command': 'unsafe', 'cmd': 'echo no', 'description': 'Unsafe', 'args': [], 'side_effects': True},
+            {'command': 'safe', 'cmd': 'echo ok', 'description': 'Safe', 'args': [], 'config': {'side_effects': False}},
+            {'command': 'unsafe', 'cmd': 'echo no', 'description': 'Unsafe', 'args': [], 'config': {'side_effects': True}},
         ]
         with patch('agents.AnalyticAgent') as analytic_agent_cls:
             analytic_agent_cls.return_value = object()

@@ -6,7 +6,7 @@ import shlex
 from commands_helper import execute_terminal_command
 
 from diff_helper import apply_patch, PatchError
-from mcp_helper import tool_call
+from ide_integration import tool_call
 from search_code import SearchCode
 
 SHELL_COMMAND_TIMEOUT = int(os.getenv('SHELL_COMMAND_TIMEOUT', 30))

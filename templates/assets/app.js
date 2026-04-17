@@ -625,4 +625,24 @@ class SimpleChat {
 // Initialize chat when page loads
 document.addEventListener('DOMContentLoaded', () => {
     window._chatInstance = new SimpleChat();
+
+    if (typeof AGENT_COMMAND !== 'undefined' && Array.isArray(AGENT_COMMAND) && AGENT_COMMAND.length > 0) {
+        const rows = AGENT_COMMAND.map(c => {
+            const availableTo = (c.config && c.config.side_effects) ? 'CODER' : '<i>all</i>';
+            return `<tr><td><strong>${c.command}</strong></td><td><code>${c.cmd}</code></td><td>${availableTo}</td></tr>`;
+        }).join('');
+        const tableHtml = `<p><strong>Available shell commands:</strong></p><table><thead><tr><th>Command</th><th>Shell</th><th>Available&nbsp;to</th></tr></thead><tbody>${rows}</tbody></table>`;
+
+        window._chatInstance.addMessage({message: tableHtml, type: 'html', is_final: true}, 'html');
+    }
+
+    if (typeof MCP_COMMAND !== 'undefined' && Array.isArray(MCP_COMMAND) && MCP_COMMAND.length > 0) {
+        const rows = MCP_COMMAND.map(c => {
+            const transport = (c.config && c.config.type) ? c.config.type : 'cli';
+            const url = (c.config && c.config.url) ? ` <small>(${escapeHtml(c.config.url)})</small>` : '';
+            return `<tr><td><strong>${escapeHtml(c.command)}</strong></td><td><code>${escapeHtml(c.cmd)}</code></td><td>${escapeHtml(transport)}${url}</td></tr>`;
+        }).join('');
+        const tableHtml = `<p><strong>Available MCP:</strong></p><table><thead><tr><th>Server</th><th>Command</th><th>Transport</th></tr></thead><tbody>${rows}</tbody></table>`;
+        window._chatInstance.addMessage({message: tableHtml, type: 'html', is_final: true}, 'html');
+    }
 });

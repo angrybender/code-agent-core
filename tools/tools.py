@@ -215,7 +215,7 @@ TOOL_CALL_AGENT = {
             "properties": {
                 "agent_name": {
                     "type": "string",
-                    "description": "agent_name is an agent name; possible values: ANALYTIC, CODER, REVIEWER"
+                    "description": "agent_name is an agent name; possible values: ANALYTIC, CODER, REVIEWER, MCP"
                 },
                 "instruction": {
                     "type": "string",
@@ -312,7 +312,49 @@ def get_analytic_tools(has_shell_commands: bool) -> list:
     return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_SEARCH_FILE, TOOL_REPORT]
 
 
+TOOL_SELECT_MCP = {
+    "type": "function",
+    "function": {
+        "name": "select_mcp",
+        "description": "Select a specific MCP server from the available list to work with. Call this first to choose which MCP server to use.",
+        "parameters": {
+            "type": "object",
+            "required": ["server_name"],
+            "properties": {
+                "server_name": {
+                    "type": "string",
+                    "description": "The name of the MCP server to select (e.g. 'mcp_browser'). Must match one of the available MCP server names."
+                }
+            }
+        }
+    }
+}
+
+TOOL_ATTACH_IMAGE = {
+    "type": "function",
+    "function": {
+        "name": "attach_image",
+        "description": (
+            "Read a local image file and attach it to the conversation as a vision input. "
+            "Use this when the task references a local image file that needs to be analyzed. "
+            "Accepts an absolute path to the image file within the project directory."
+        ),
+        "parameters": {
+            "type": "object",
+            "required": ["path"],
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path to the local image file. The path must be within the project directory."
+                }
+            }
+        }
+    }
+}
+
+
 ANALYTIC_TOOLS = [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_SEARCH_FILE, TOOL_REPORT]
 CODER_TOOLS = get_coder_tools(True)
 REVIEWER_TOOLS = get_reviewer_tools(True)
 SUPERVISOR_TOOLS = [TOOL_CALL_AGENT, TOOL_MESSAGE, TOOL_EXIT]
+MCP_BASE_TOOLS = [TOOL_SELECT_MCP, TOOL_ATTACH_IMAGE, TOOL_READ_FILE, TOOL_REPORT]
