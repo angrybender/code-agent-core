@@ -19,7 +19,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=os.getenv('MAX_ITERATION')
 
 import logging
@@ -52,7 +51,7 @@ class Copilot(LoggerMixin):
         self.command_state = []
 
     def get_manifest(self, project_base_path: str):
-        content = tool_call(IDE_MCP_HOST, 'get_file_text_by_path', {
+        content = tool_call('get_file_text_by_path', {
             'pathInProject': self.PROJECT_DESCRIPTION,
             'projectPath': project_base_path
         })
@@ -93,7 +92,7 @@ class Copilot(LoggerMixin):
         self.executed_commands = []
         self.command_state = []
         self.agent_step = 1
-        self.interpreter = ToolsInterpreter(IDE_MCP_HOST, self.session['project_base_path'])
+        self.interpreter = ToolsInterpreter(self.session['project_base_path'])
 
     def _read_project_structure(self, base_path) -> list:
         result = []
