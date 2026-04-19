@@ -94,7 +94,7 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
         self.images = images if isinstance(images, list) else []
         self.project_description = manifest['description']
         self.project_structure = manifest['files_structure']
-        self.interpreter = ToolsInterpreter(IDE_MCP_HOST, manifest['base_path'], self.search_service, commands=manifest.get('agent_commands', []))
+        self.interpreter = ToolsInterpreter(manifest['base_path'], self.search_service, commands=manifest.get('agent_commands', []))
         self.log_file = log_file
 
         self.storage_path = os.path.join(self.STORAGE_PATH, hashlib.sha256(manifest['base_path'].encode()).hexdigest())

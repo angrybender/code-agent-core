@@ -12,17 +12,18 @@ AGENT_FILE_TOOLS = os.getenv('AGENT_FILE_TOOLS', 'mcp')
 IDE_MCP_HOST=None
 
 # discovery JetBrains MCP server:
-_mimic = os.getenv('IDE_AUTODISCOVERY')
-if not _mimic:
-    IDE_MCP_HOST = os.getenv('IDE_MCP_HOST')
-    assert IDE_MCP_HOST, 'IDE_MCP_HOST empty'
-else:
-    assert os.path.exists(_mimic), f'IDE_AUTODISCOVERY={_mimic} does not contain valid path to file'
-    with open(_mimic, 'r', encoding='utf8') as f:
-        _mimic_cnfg = json.load(f)
+if AGENT_FILE_TOOLS == 'mcp':
+    _mimic = os.getenv('IDE_AUTODISCOVERY')
+    if not _mimic:
+        IDE_MCP_HOST = os.getenv('IDE_MCP_HOST')
+        assert IDE_MCP_HOST, 'IDE_MCP_HOST empty'
+    else:
+        assert os.path.exists(_mimic), f'IDE_AUTODISCOVERY={_mimic} does not contain valid path to file'
+        with open(_mimic, 'r', encoding='utf8') as f:
+            _mimic_cnfg = json.load(f)
 
-    IDE_MCP_HOST = _mimic_cnfg.get('mcpServers', {}).get('jetbrains', {}).get('serverUrl')
-    assert IDE_MCP_HOST, f'IDE_AUTODISCOVERY={_mimic} does not contain valid MCP configuration: `mcpServers.jetbrains.serverUrl`'
+        IDE_MCP_HOST = _mimic_cnfg.get('mcpServers', {}).get('jetbrains', {}).get('serverUrl')
+        assert IDE_MCP_HOST, f'IDE_AUTODISCOVERY={_mimic} does not contain valid MCP configuration: `mcpServers.jetbrains.serverUrl`'
 
 
 async def _tool_call_sse(path: str, name: str, args: dict = None):
@@ -74,7 +75,26 @@ def _write_file_pure(project_path: str, path_in_project: str, text: str) -> dict
     except (PermissionError, OSError) as e:
         return {'error': f"Cannot write file: {path_in_project} ({e})"}
 
+def _test__connection(project_path: str) -> dict:
+    try:
+        _ = asyncio.run(_tool_call_sse(IDE_MCP_HOST, 'list_directory_tree', {
+            'projectPath': project_path,
+            'directoryPath': '.',
+            'maxDepth': 0,
+        }))
+    except ExceptionGroup as e:
+        base = e.exceptions[0]
+        if 'All connection attempts failed' in str(base):
+            return {"result": False, "error": f"Invalid MCP server url: {IDE_MCP_HOST}"}
+        else:
+            return {"result": False, "error": str(e)}
+
+    return {"result": True}
+
 def tool_call(name: str, args: dict = None) -> dict:
+    if AGENT_FILE_TOOLS == 'mcp' and name == '__test__connection__':
+        return _test__connection(args['projectPath'])
+
     if name == 'get_file_text_by_path':
         # jetbrains'mcp truncate big files
         return _read_file_pure(args['projectPath'], args['pathInProject'])
@@ -91,15 +111,7 @@ def tool_call(name: str, args: dict = None) -> dict:
             raise Exception(f"Unknown tool: {name}")
 
     # MCP mode: use existing MCP protocol implementation
-    try:
-        result = asyncio.run(_tool_call_sse(IDE_MCP_HOST, name, args))
-    except ExceptionGroup as e:
-        base = e.exceptions[0]
-        if 'All connection attempts failed' in str(base):
-            raise Exception(f"Invalid MCP server url: {IDE_MCP_HOST}")
-        else:
-            raise e
-
+    result = asyncio.run(_tool_call_sse(IDE_MCP_HOST, name, args))
     if result.isError:
         return {
             'error': result.content[0].text

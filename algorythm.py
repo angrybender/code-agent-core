@@ -2,11 +2,12 @@ import json
 import os
 import glob
 import datetime
+import time
 
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
 from log_helper import pretty_format
-from ide_integration import tool_call
+import ide_integration
 from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE
 from path_helper import get_relative_path
 from tools_interpreter import ToolsInterpreter
@@ -51,7 +52,7 @@ class Copilot(LoggerMixin):
         self.command_state = []
 
     def get_manifest(self, project_base_path: str):
-        content = tool_call('get_file_text_by_path', {
+        content = ide_integration.tool_call('get_file_text_by_path', {
             'pathInProject': self.PROJECT_DESCRIPTION,
             'projectPath': project_base_path
         })
@@ -113,9 +114,16 @@ class Copilot(LoggerMixin):
         self._init()
         Agent.setUp()
 
-        with open(self.LOG_FILE, "w", encoding='utf8') as f:
-            f.write(str(datetime.datetime.now()) + "\n\n")
+        # ping IDE
+        start_msg_id = str(time.time())
+        yield DTOInstruction(type=EventType.AGENT, is_final=False, message_id=start_msg_id, function="SUPERVISOR")
+        ping_mcp = ide_integration.tool_call('__test__connection__', {"projectPath": self.session['project_base_path']})
+        if not ping_mcp['result']:
+            yield DTOInstruction(type=EventType.ERROR, message_id=start_msg_id, message=f"MCP ide indegration error: {ping_mcp['error']}")
+            return []
+        yield DTOInstruction(type=EventType.AGENT, hidden=True, message_id=start_msg_id, function="SUPERVISOR")
 
+        self.log(str(datetime.datetime.now()), True)
         self.log(f"RUN. Messages: `{self.instruction}`", False)
 
         current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
