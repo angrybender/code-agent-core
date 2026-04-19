@@ -119,7 +119,7 @@ class Copilot(LoggerMixin):
         yield DTOInstruction(type=EventType.AGENT, is_final=False, message_id=start_msg_id, function="SUPERVISOR")
         ping_mcp = ide_integration.tool_call('__test__connection__', {"projectPath": self.session['project_base_path']})
         if not ping_mcp['result']:
-            yield DTOInstruction(type=EventType.ERROR, message_id=start_msg_id, message=f"MCP ide indegration error: {ping_mcp['error']}")
+            yield DTOInstruction(type=EventType.ERROR, message_id=start_msg_id, message=f"MCP ide integration error: {ping_mcp['error']}")
             return []
         yield DTOInstruction(type=EventType.AGENT, hidden=True, message_id=start_msg_id, function="SUPERVISOR")
 
