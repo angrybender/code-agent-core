@@ -11,7 +11,7 @@ class ToolsMixin:
             llm_query(f"fix this JSON: ```{json_data}```\nwrap answer into tag <RESULT>", ['RESULT']).get('RESULT',
                                                                                                           [''])[0]
             if not json_data:
-                raise e
+                return {}
 
             try:
                 return json.loads(json_data)
