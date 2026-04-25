@@ -1,5 +1,5 @@
 ---
-side_effects: true
+role: CODER
 ---
 
 Create git commit

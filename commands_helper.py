@@ -6,6 +6,29 @@ import sys
 
 import frontmatter
 
+from dto.enums import AgentRole
+
+
+def _parse_command_roles(config: dict) -> dict:
+    raw_role = config.get('role')
+    if raw_role is None:
+        return config
+
+    if isinstance(raw_role, str):
+        roles = [role.strip() for role in raw_role.split(',') if role.strip()]
+    else:
+        raise ValueError('Command role must be a comma-separated string')
+
+    valid_roles = {role.value for role in AgentRole}
+    invalid_roles = [role for role in roles if role not in valid_roles or role == AgentRole.MCP.value]
+    if invalid_roles:
+        raise ValueError(f"Invalid command role(s): {', '.join(invalid_roles)}")
+
+    config = dict(config)
+    config['role'] = roles
+    return config
+
+
 def parse_agent_commands(directory: str, type_command: str = 'shell') -> list[dict]:
     assert type_command in ['shell', 'mcp'], f'Unknown type={type_command}'
 
@@ -36,6 +59,7 @@ def parse_agent_commands(directory: str, type_command: str = 'shell') -> list[di
         config = post.metadata
         if not config:
             config = {}
+        config = _parse_command_roles(config)
         if config.get('enabled', True) is False:
             continue
 

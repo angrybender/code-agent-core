@@ -504,11 +504,14 @@ class Agent:
     def _get_role_agent_commands(role, agent_commands: list = None) -> list:
         if role == 'MCP':
             return []
-        if role == 'CODER':
-            return agent_commands or []
-        if role in ('REVIEWER', 'ANALYTIC'):
-            return [cmd for cmd in (agent_commands or []) if not cmd['config'].get('side_effects', False)]
-        return []
+
+        filtered_commands = []
+        for cmd in agent_commands or []:
+            allowed_roles = cmd.get('config', {}).get('role')
+            if not allowed_roles or role in allowed_roles:
+                filtered_commands.append(cmd)
+
+        return filtered_commands
 
     @staticmethod
     def setUp():
