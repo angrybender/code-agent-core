@@ -9,24 +9,24 @@ load_dotenv()
 
 # Load mode configuration - 'mcp' or 'pure'
 class ConfigurationService:
-    AGENT_FILE_TOOLS = os.getenv('AGENT_FILE_TOOLS', 'mcp')
+    BACKEND = os.getenv('AGENT_FILE_TOOLS', 'mcp')
     IDE_MCP_HOST = None
 
     def refresh(self):
-        if self.AGENT_FILE_TOOLS == 'mcp':
+        if self.BACKEND == 'mcp':
             _mimic = os.getenv('IDE_AUTODISCOVERY')
             if not _mimic:
-                IDE_MCP_HOST = os.getenv('IDE_MCP_HOST')
-                assert IDE_MCP_HOST, 'IDE_MCP_HOST empty'
+                ide_mcp_host = os.getenv('IDE_MCP_HOST')
+                assert ide_mcp_host, 'IDE_MCP_HOST empty'
             else:
                 assert os.path.exists(_mimic), f'IDE_AUTODISCOVERY={_mimic} does not contain valid path to file'
                 with open(_mimic, 'r', encoding='utf8') as f:
                     _mimic_cnfg = json.load(f)
 
-                IDE_MCP_HOST = _mimic_cnfg.get('mcpServers', {}).get('jetbrains', {}).get('serverUrl')
-                assert IDE_MCP_HOST, f'IDE_AUTODISCOVERY={_mimic} does not contain valid MCP configuration: `mcpServers.jetbrains.serverUrl`'
+                ide_mcp_host = _mimic_cnfg.get('mcpServers', {}).get('jetbrains', {}).get('serverUrl')
+                assert ide_mcp_host, f'IDE_AUTODISCOVERY={_mimic} does not contain valid MCP configuration: `mcpServers.jetbrains.serverUrl`'
 
-            self.IDE_MCP_HOST = IDE_MCP_HOST
+            self.IDE_MCP_HOST = ide_mcp_host
 
 configuration = ConfigurationService()
 
@@ -101,7 +101,7 @@ def _test__connection(project_path: str) -> dict:
 
 def tool_call(name: str, args: dict = None) -> dict:
     configuration.refresh()
-    if configuration.AGENT_FILE_TOOLS == 'mcp' and name == '__test__connection__':
+    if configuration.BACKEND == 'mcp' and name == '__test__connection__':
         return _test__connection(args['projectPath'])
 
     if name == 'get_file_text_by_path':
@@ -109,7 +109,7 @@ def tool_call(name: str, args: dict = None) -> dict:
         return _read_file_pure(args['projectPath'], args['pathInProject'])
 
     # Pure mode: use direct Python file operations
-    if configuration.AGENT_FILE_TOOLS == 'pure':
+    if configuration.BACKEND == 'pure':
         if name == 'create_new_file':
             return _write_file_pure(
                 args['projectPath'],
