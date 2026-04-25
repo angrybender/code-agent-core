@@ -169,7 +169,7 @@ def index():
     session_id = hashlib.sha256(project_base_path.encode()).hexdigest()
     shell_cmd_dir = os.getenv('SHELL_COMMAND_DIRECTORY', '.agent-commands')
     full_cmd_dir = os.path.join(project_base_path, shell_cmd_dir)
-    commands = parse_agent_commands(full_cmd_dir, 'shell')
+    commands = parse_agent_commands(full_cmd_dir)
     mcp_commands = parse_mcp_commands(full_cmd_dir)
 
     template_app_data = {

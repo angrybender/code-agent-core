@@ -142,7 +142,7 @@ class TestParseAgentCommands(unittest.TestCase):
 
     def test_mcp_commands_excluded_for_shell_type(self):
         self._write('test_server.md', '---\nmcp: true\ntype: cli\n---\nMCP helpers\n---\nRun\n\n```\ndocker run test\n```\n')
-        result = parse_agent_commands(self.test_dir, 'shell')
+        result = parse_agent_commands(self.test_dir)
         self.assertEqual(0, len(result))
 
     def test_non_sequential_args_raises_exception(self):

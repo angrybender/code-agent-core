@@ -3,6 +3,9 @@ import os
 import glob
 import datetime
 import time
+import re
+
+from jinja2 import Environment, BaseLoader
 
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
@@ -71,7 +74,7 @@ class Copilot(LoggerMixin):
                 self.system_prompt = f.read()
 
         if not self.prompt:
-            with open('./prompts/step.txt', 'r', encoding='utf8') as f:
+            with open('./prompts/system_step.txt', 'r', encoding='utf8') as f:
                 self.prompt = f.read()
 
         assert self.instruction, 'Empty instruction'
@@ -84,7 +87,7 @@ class Copilot(LoggerMixin):
 
         shell_cmd_dir = os.getenv('SHELL_COMMAND_DIRECTORY', '.agent-commands')
         full_cmd_dir = os.path.join(self.session['project_base_path'], shell_cmd_dir)
-        self.agent_commands = parse_agent_commands(full_cmd_dir, 'shell')
+        self.agent_commands = parse_agent_commands(full_cmd_dir)
         self.manifest['agent_commands'] = self.agent_commands
         self.mcp_commands = parse_mcp_commands(full_cmd_dir)
         self.manifest['mcp_commands'] = self.mcp_commands
@@ -95,6 +98,28 @@ class Copilot(LoggerMixin):
         self.command_state = []
         self.agent_step = 1
         self.interpreter = ToolsInterpreter(self.session['project_base_path'])
+
+    def _sanitize_supervisor_command_description(self, text: str) -> str:
+        text = re.sub(r"```.*?```", "", text or "", flags=re.DOTALL)
+        return text.strip()
+
+    def _get_commands_guidance(self) -> str:
+        if not self.agent_commands:
+            return ''
+
+        command_items = []
+        for command in self.agent_commands:
+            description = self._sanitize_supervisor_command_description(command.get('description', ''))
+            if not description or len(description.split("\n")) < 2:
+                continue
+
+            available_to = ",".join(command.get('config', {}).get('role', ['all']))
+            command_items.append(f"<Guidance command_name=\"{command['command']}\" available_to=\"{available_to}\">\n{description}\n</Guidance>")
+
+        if not command_items:
+            return ''
+
+        return "\n\n".join(command_items)
 
     def _read_project_structure(self, base_path) -> list:
         result = []
@@ -108,6 +133,11 @@ class Copilot(LoggerMixin):
 
             result.append(dir_object)
         return result
+
+    @staticmethod
+    def _full_log(conversation: list[dict]):
+        with open('./conversations_log/log.json.log', 'w', encoding='utf8') as f:
+            f.write(pretty_format(conversation, truncate=0, max_line_len=0))
 
     def run(self):
         specific_model = os.environ.get('MODEL:SUPERVISOR', None)
@@ -124,14 +154,20 @@ class Copilot(LoggerMixin):
             return []
         yield DTOInstruction(type=EventType.AGENT, hidden=True, message_id=start_msg_id, function="SUPERVISOR")
 
+        self.flush_log_file()
         self.log(str(datetime.datetime.now()), True)
         self.log(f"RUN. Messages: `{self.instruction}`", False)
 
         current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-        sub_prompt = self.prompt.format(
+
+        supervisor_guidance = self._get_commands_guidance()
+        rtemplate = Environment(loader=BaseLoader).from_string(self.prompt)
+        sub_prompt = rtemplate.render(
             project_description=self.manifest['description'],
             project_structure="\n".join([f"- {path}" for path in self.manifest['files_structure']]),
             current_datetime=current_datetime,
+            project_guidance=supervisor_guidance,
+            max_tools_cnt=self.MAX_STEP-1,
         )
 
         pending_images = self.session.get('pending_images', []) if self.session else []
@@ -146,7 +182,7 @@ class Copilot(LoggerMixin):
         conversation_log = [
             {
                 'role': 'system',
-                'content': self.system_prompt + "\n" + sub_prompt + f"\nMaximum allowed tools calling: {self.MAX_STEP-1}; planing work with this restriction!"
+                'content': self.system_prompt + "\n" + sub_prompt
             },
             {
                 'role': 'user',
@@ -154,12 +190,21 @@ class Copilot(LoggerMixin):
             }
         ]
 
+        self.log("============= SYSTEM PROMPT =============", True)
+        self.log(conversation_log[0]['content'], True)
+
         agent_step_counter = 1
         while True:
             if agent_step_counter > self.MAX_STEP:
                 logger.warning("MAX_STEP exceed!")
                 yield DTOInstruction(type=EventType.ERROR, message="MAX_STEP exceed!")
                 break
+
+            if agent_step_counter > 1 and supervisor_guidance:
+                conversation_log.append({
+                    'role': 'user',
+                    'content': supervisor_guidance
+                })
 
             output = None
             message_id = None
@@ -327,3 +372,5 @@ class Copilot(LoggerMixin):
                     })
 
             agent_step_counter += 1
+
+        self._full_log(conversation_log)
