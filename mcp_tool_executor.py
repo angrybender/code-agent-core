@@ -18,9 +18,17 @@ class MCPToolExecutor:
         transport = config.get('type', 'cli')
         cmd_str = self.mcp_config.get('cmd', '')
         parts = shlex.split(cmd_str) if cmd_str else []
-        command = parts[0] if parts else None
+
+        command = None
+        url = None
+        if transport == 'cli':
+            command = parts[0] if parts else None
+        else:
+            url = parts[0] if parts else None
+
+        assert command or url
+
         args = parts[1:] if len(parts) > 1 else []
-        url = config.get('url')
         self.client = MCP(transport=transport, url=url, command=command, args=args)
 
     def list_tools(self) -> list:

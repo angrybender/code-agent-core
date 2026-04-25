@@ -12,8 +12,7 @@ from search_code import SearchCode
 SHELL_COMMAND_TIMEOUT = int(os.getenv('SHELL_COMMAND_TIMEOUT', 30))
 
 class ToolsInterpreter:
-    def __init__(self, mcp_host, project_root, search_service: SearchCode = None, commands: list = None):
-        self.mcp_host = mcp_host
+    def __init__(self, project_root, search_service: SearchCode = None, commands: list = None):
         self.project_root = project_root
         self.search_service = search_service
         self._commands_map = {c['command']: c for c in (commands or [])}
@@ -47,7 +46,7 @@ class ToolsInterpreter:
     def _command_read(self, path: str, offset: int = 0, limit: int = None) -> dict:
         if not self._validate_path(path):
             return {'result': 'ERROR: Invalid path', 'error': True}
-        content = tool_call(self.mcp_host, 'get_file_text_by_path', {
+        content = tool_call('get_file_text_by_path', {
             'pathInProject': path,
             'projectPath': self.project_root,
         })
@@ -153,7 +152,7 @@ class ToolsInterpreter:
 
         content = re.sub(r'```$', '', content)
 
-        mcp_result = tool_call(self.mcp_host, 'create_new_file', {
+        mcp_result = tool_call('create_new_file', {
             'pathInProject': path,
             'text': content.strip(),
             'projectPath': self.project_root,
@@ -194,7 +193,7 @@ class ToolsInterpreter:
         except PatchError as e:
             return {'result': f"ERROR: {e}", 'error': True}
 
-        content = tool_call(self.mcp_host, 'create_new_file', {
+        content = tool_call('create_new_file', {
             'pathInProject': path,
             'text': patched_file.strip(),
             'projectPath': self.project_root,
