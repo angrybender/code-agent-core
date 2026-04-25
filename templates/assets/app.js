@@ -631,19 +631,52 @@ document.addEventListener('DOMContentLoaded', () => {
         window._chatInstance = new SimpleChat();
     }
 
-    if (typeof AGENT_COMMAND !== 'undefined' && Array.isArray(AGENT_COMMAND) && AGENT_COMMAND.length > 0) {
-        const rows = AGENT_COMMAND.map(c => {
+    const agentCommandExists = typeof AGENT_COMMAND !== 'undefined';
+    const agentCommandIsArray = Array.isArray(agentCommandExists ? AGENT_COMMAND : undefined);
+    const agentCommandLength = agentCommandIsArray ? AGENT_COMMAND.length : 'n/a';
+    const shouldRenderAgentCommandTable = agentCommandExists && agentCommandIsArray && AGENT_COMMAND.length > 0;
+    const agentCommandRenderState = shouldRenderAgentCommandTable ? 'entered' : 'skipped';
+    const agentCommandSamples = agentCommandIsArray ? AGENT_COMMAND.slice(0, 3) : [];
+    const agentCommandSamplesHtml = agentCommandSamples.length > 0
+        ? agentCommandSamples.map((item, index) => {
+            const firstShellBlock = item && Array.isArray(item.shell_blocks) && item.shell_blocks.length > 0
+                ? item.shell_blocks[0]
+                : undefined;
+            const sample = {
+                command: item && item.command,
+                shellBlocksLength: item && Array.isArray(item.shell_blocks) ? item.shell_blocks.length : undefined,
+                firstShellBlockName: firstShellBlock && firstShellBlock.name,
+                firstShellBlockCmd: firstShellBlock && firstShellBlock.cmd,
+                firstShellBlockArgs: firstShellBlock && firstShellBlock.args,
+                configRole: item && item.config ? item.config.role : undefined
+            };
+            return `<li><strong>#${index + 1}</strong> <code>command=${escapeHtml(String(sample.command ?? 'undefined'))}</code>, <code>shell_blocks.length=${escapeHtml(String(sample.shellBlocksLength ?? 'undefined'))}</code>, <code>firstShellBlock.name=${escapeHtml(String(sample.firstShellBlockName ?? 'undefined'))}</code>, <code>firstShellBlock.cmd=${escapeHtml(String(sample.firstShellBlockCmd ?? 'undefined'))}</code>, <code>firstShellBlock.args=${escapeHtml(String(sample.firstShellBlockArgs ?? 'undefined'))}</code>, <code>config.role=${escapeHtml(String(sample.configRole ?? 'undefined'))}</code></li>`;
+        }).join('')
+        : '<li><em>No sample items available</em></li>';
+
+    if (shouldRenderAgentCommandTable) {
+        const rows = AGENT_COMMAND.flatMap(c => {
             const role = c.config && c.config.role;
             const normalizedRoles = role == null
                 ? []
                 : String(role)
                     .split(',')
-                    .map(item => item.trim())
-                    .filter(item => item && item !== 'MCP');
+                    .map(item => item.trim());
             const availableTo = normalizedRoles.length > 0
                 ? escapeHtml(normalizedRoles.join(', '))
                 : '<i>all</i>';
-            return `<tr><td><strong>${escapeHtml(c.command)}</strong></td><td><code>${escapeHtml(c.cmd)}</code></td><td>${availableTo}</td></tr>`;
+            const shellBlocks = Array.isArray(c && c.shell_blocks) ? c.shell_blocks : [];
+
+            return shellBlocks.map(shellBlock => {
+                const commandName = escapeHtml(String(c && c.command ? c.command : ''));
+                const shellBlockName = escapeHtml(String(shellBlock && shellBlock.name ? shellBlock.name : ''));
+                const commandLabel = shellBlockName
+                    ? `${commandName}/${shellBlockName}`
+                    : commandName;
+                const shellCmd = escapeHtml(String(shellBlock && shellBlock.cmd ? shellBlock.cmd : ''));
+
+                return `<tr><td><strong>${commandLabel}</strong></td><td><code>${shellCmd}</code></td><td>${availableTo}</td></tr>`;
+            });
         }).join('');
         const tableHtml = `<p><strong>Available shell commands:</strong></p><table><thead><tr><th>Command</th><th>Shell</th><th>Available&nbsp;to</th></tr></thead><tbody>${rows}</tbody></table>`;
 

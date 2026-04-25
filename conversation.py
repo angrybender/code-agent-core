@@ -23,7 +23,6 @@ _FUNCTION_ARG_PRINT = {
     'list_in_directory': 'path',
     'write_file': 'path',
     'replace_code_in_file': 'path',
-    'shell_command': 'command_name',
     'read_file': 'path',
     'attach_image': 'path',
     'read_multiply_files': 'root_path',
@@ -100,7 +99,8 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
         result_message = f'<cite>{function_alias}</cite> <dfn>{ext}</dfn> <dfn>{needle}</dfn>'
 
     elif function_name == 'shell_command' and message.is_final:
-        command_name = [f"<dfn>{message.args['command_name']}</dfn>"]
+        command_ref = f"{message.args['command_name']}/{message.args['shell_block']}"
+        command_name = [f"<dfn>{command_ref}</dfn>"]
 
         if 'args' in message.args:
             command_name += [f"<dfn>{_}</dfn>" for _ in message.args['args']]
@@ -129,13 +129,20 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
             result_message += f'<dl>{_info}</dl>'
 
     elif message.type == EventType.TOOL:
-        _arg_name = _FUNCTION_ARG_PRINT.get(str(function_name))
-        if _arg_name and _arg_name in message.args:
-            _arg = message.args[_arg_name]
-            if isinstance(_arg, str): _arg = [_arg]
-            suffix = " ".join([f"<dfn>{_}</dfn>" for _ in _arg])
+        if function_name == 'shell_command':
+            shell_ref = ''
+            if message.args.get('command_name') and message.args.get('shell_block'):
+                shell_ref = f"<dfn>{message.args['command_name']}/{message.args['shell_block']}</dfn>"
+            shell_args = " ".join([f"<dfn>{_}</dfn>" for _ in message.args.get('args', [])])
+            suffix = " ".join([part for part in [shell_ref, shell_args] if part])
         else:
-            suffix = ''
+            _arg_name = _FUNCTION_ARG_PRINT.get(str(function_name))
+            if _arg_name and _arg_name in message.args:
+                _arg = message.args[_arg_name]
+                if isinstance(_arg, str): _arg = [_arg]
+                suffix = " ".join([f"<dfn>{_}</dfn>" for _ in _arg])
+            else:
+                suffix = ''
 
         result_message = f'<cite>{function_alias}</cite> {suffix}'
 

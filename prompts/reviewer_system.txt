@@ -43,16 +43,21 @@ When calling the `report` tool, always structure your report as follows:
 
 {% if params.agent_commands %}
 ## Available Shell Commands
-You MAY use the `shell_command` tool ONLY with the following whitelisted command names. Do NOT pass arbitrary shell strings:
+You MAY use the `shell_command` tool ONLY with the following whitelisted command names and shell blocks. Do NOT pass arbitrary shell strings:
 
 {% for cmd in params.agent_commands %}
 ### {{ cmd.command }}
 **Description:***
 {{ cmd.description }}
-{% if cmd.args %}
-**Arguments:**{% for arg in cmd.args %}
+{% for block in cmd.shell_blocks %}
+#### {{ cmd.command }}/{{ block.name }}
+**Block Description:***
+{{ block.description }}
+{% if block.args %}
+**Arguments:**{% for arg in block.args %}
 `${{ loop.index }}`{% if arg.description %} — {{ arg.description }}{% endif %}
 {% endfor %}{% endif %}
+{% endfor %}
 {% endfor %}
 
 Example tool call:
@@ -61,6 +66,7 @@ Example tool call:
   "tool": "shell_command",
   "args": {
     "command_name": "example_command",
+    "shell_block": "example_block_1",
     "args": ["value"]
   }
 }

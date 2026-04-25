@@ -18,6 +18,7 @@ logger = logging.getLogger('APP')
 from algorythm import Copilot
 from commands_helper import parse_agent_commands
 from conversation import get_terminal, agent_result_of_all_active_tpl, agent_tool_tpl, _agent_call_tpl
+from mcp_integration.mcp_helper import parse_mcp_commands
 
 app = Flask(__name__)
 
@@ -169,7 +170,7 @@ def index():
     shell_cmd_dir = os.getenv('SHELL_COMMAND_DIRECTORY', '.agent-commands')
     full_cmd_dir = os.path.join(project_base_path, shell_cmd_dir)
     commands = parse_agent_commands(full_cmd_dir, 'shell')
-    mcp_commands = parse_agent_commands(full_cmd_dir, 'mcp')
+    mcp_commands = parse_mcp_commands(full_cmd_dir)
 
     template_app_data = {
         'session_id': session_id,

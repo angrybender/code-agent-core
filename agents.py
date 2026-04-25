@@ -404,8 +404,10 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                             self.artifacts['files_modified'].append(file_path)
                     elif fn == 'shell_command':
                         cmd_name = tool_args.get('command_name', '')
+                        shell_block = tool_args.get('shell_block', '')
+                        command_ref = f'{cmd_name}/{shell_block}' if cmd_name and shell_block else cmd_name or shell_block
                         self.artifacts['commands_run'].append({
-                            'command': cmd_name,
+                            'command': command_ref,
                             'status': result.get('status', 'unknown') if isinstance(result, dict) else 'unknown'
                         })
 

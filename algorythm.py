@@ -17,6 +17,7 @@ from logger_mixin import LoggerMixin
 
 from commands_helper import parse_agent_commands
 from dotenv import load_dotenv
+from mcp_integration.mcp_helper import parse_mcp_commands
 
 load_dotenv()
 
@@ -85,7 +86,7 @@ class Copilot(LoggerMixin):
         full_cmd_dir = os.path.join(self.session['project_base_path'], shell_cmd_dir)
         self.agent_commands = parse_agent_commands(full_cmd_dir, 'shell')
         self.manifest['agent_commands'] = self.agent_commands
-        self.mcp_commands = parse_agent_commands(full_cmd_dir, 'mcp')
+        self.mcp_commands = parse_mcp_commands(full_cmd_dir)
         self.manifest['mcp_commands'] = self.mcp_commands
 
         self.output = []

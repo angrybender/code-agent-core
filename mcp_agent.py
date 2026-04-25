@@ -30,7 +30,7 @@ class MCPAgent(BaseAgent):
         :param system_prompt: System prompt text
         :param step_prompt: Shared project context sub-prompt
         :param thinking: Whether deep thinking mode is enabled
-        :param mcp_commands: List of MCP command configs from parse_agent_commands(..., 'mcp')
+        :param mcp_commands: List of legacy MCP command configs loaded via the dedicated helper in mcp_integration/mcp_helper.py
         """
         super().__init__(role, system_prompt, step_prompt, thinking)
         self.mcp_commands = mcp_commands

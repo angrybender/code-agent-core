@@ -230,22 +230,38 @@ class ToolsInterpreter:
 
         return {"result": "\n\n".join(formatted_result), "tool_name": "search_file", "post_result": f"Found: {total_count} file(s)"}
 
-    def _command_shell(self, command_name: str, args: list = None) -> dict:
+    def _command_shell(self, command_name: str, shell_block: str, args: list = None) -> dict:
         if not command_name or not isinstance(command_name, str):
             return {'result': 'ERROR: command_name must be a non-empty string', 'error': True, 'tool_name': 'shell_command'}
+        if not shell_block or not isinstance(shell_block, str):
+            return {'result': 'ERROR: shell_block must be a non-empty string', 'error': True, 'tool_name': 'shell_command'}
 
         command_def = self._commands_map.get(command_name)
         if not command_def:
             available = ', '.join(self._commands_map.keys()) or 'none'
             return {'result': f"ERROR: Unknown command '{command_name}'. Available: {available}", 'error': True, 'tool_name': 'shell_command'}
-        cmd = command_def['cmd']
 
-        if args and len(args) != len(command_def['args']) or not args and command_def['args']:
-            return {'result': f"ERROR: Wrongs '{command_name}' argument list: current: {len(args)}; actual: {len(command_def['args'])}.", 'error': True, 'tool_name': 'shell_command'}
+        available_blocks = {block['name']: block for block in command_def.get('shell_blocks', [])}
+        block_def = available_blocks.get(shell_block)
+        if not block_def:
+            block_names = ', '.join(available_blocks.keys()) or 'none'
+            return {
+                'result': f"ERROR: Unknown shell_block '{shell_block}' for command '{command_name}'. Available: {block_names}",
+                'error': True,
+                'tool_name': 'shell_command'
+            }
 
-        if args:
-            for i, value in enumerate(args, start=1):
-                cmd = cmd.replace(f'${i}', shlex.quote(str(value)))
+        args = args or []
+        if len(args) != len(block_def['args']):
+            return {
+                'result': f"ERROR: Wrongs '{command_name}/{shell_block}' argument list: current: {len(args)}; actual: {len(block_def['args'])}.",
+                'error': True,
+                'tool_name': 'shell_command'
+            }
+
+        cmd = block_def['cmd']
+        for i, value in enumerate(args, start=1):
+            cmd = cmd.replace(f'${i}', shlex.quote(str(value)))
 
         raw = execute_terminal_command(cmd=cmd, timeout=SHELL_COMMAND_TIMEOUT, cwd=self.project_root)
         if raw['status'] == 'timeout':
@@ -265,7 +281,14 @@ class ToolsInterpreter:
 
             output = f"`$ {cmd}`\n\n```\n{output}\n```"
 
-            return {'result': output, 'tool_name': 'shell_command', 'cmd': cmd, 'status': raw['status']}
+            return {
+                'result': output,
+                'tool_name': 'shell_command',
+                'cmd': cmd,
+                'status': raw['status'],
+                'command_name': command_name,
+                'shell_block': shell_block,
+            }
 
     def _get_handlers(self) -> dict:
         return {
