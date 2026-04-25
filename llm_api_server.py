@@ -13,8 +13,6 @@ import signal
 
 import logging
 
-from dto.dto_instruction import DTOInstruction
-
 logger = logging.getLogger('APP')
 
 from algorythm import Copilot
@@ -118,7 +116,6 @@ def process_task(user_request: str, session_id: str):
         try:
             message = agent_tool_tpl(message)
         except Exception as e:
-            raise e
             logger.error(f"Error translate message: {e}")
             logger.error(message)
             message = asdict(message)

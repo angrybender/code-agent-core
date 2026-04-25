@@ -1,6 +1,8 @@
 var APP_HOST = '';
 var IS_APP_ACTIVE = true;
 
+window._chatInstance = null;
+
 function escapeHtml(unsafe) {
     return unsafe
         .replace(/&/g, "&amp;")
@@ -624,7 +626,10 @@ class SimpleChat {
 
 // Initialize chat when page loads
 document.addEventListener('DOMContentLoaded', () => {
-    window._chatInstance = new SimpleChat();
+
+    if (!window._chatInstance) {
+        window._chatInstance = new SimpleChat();
+    }
 
     if (typeof AGENT_COMMAND !== 'undefined' && Array.isArray(AGENT_COMMAND) && AGENT_COMMAND.length > 0) {
         const rows = AGENT_COMMAND.map(c => {
