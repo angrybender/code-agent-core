@@ -628,8 +628,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (typeof AGENT_COMMAND !== 'undefined' && Array.isArray(AGENT_COMMAND) && AGENT_COMMAND.length > 0) {
         const rows = AGENT_COMMAND.map(c => {
-            const availableTo = (c.config && c.config.side_effects) ? 'CODER' : '<i>all</i>';
-            return `<tr><td><strong>${c.command}</strong></td><td><code>${c.cmd}</code></td><td>${availableTo}</td></tr>`;
+            const role = c.config && c.config.role;
+            const normalizedRoles = role == null
+                ? []
+                : String(role)
+                    .split(',')
+                    .map(item => item.trim())
+                    .filter(item => item && item !== 'MCP');
+            const availableTo = normalizedRoles.length > 0
+                ? escapeHtml(normalizedRoles.join(', '))
+                : '<i>all</i>';
+            return `<tr><td><strong>${escapeHtml(c.command)}</strong></td><td><code>${escapeHtml(c.cmd)}</code></td><td>${availableTo}</td></tr>`;
         }).join('');
         const tableHtml = `<p><strong>Available shell commands:</strong></p><table><thead><tr><th>Command</th><th>Shell</th><th>Available&nbsp;to</th></tr></thead><tbody>${rows}</tbody></table>`;
 
