@@ -235,17 +235,6 @@ Browser SSE connection → GET /events → Incremental messages streamed
 - All agents use OpenAI function calling
 - Each agent has a specialized, minimal tool set
 
-### Shell Commands System
-- Agents cannot execute arbitrary shell commands — only whitelisted commands
-- Commands defined as Markdown files in `.agent-commands/` (or custom dir via `SHELL_COMMAND_DIRECTORY`)
-- Each command file: human-readable description + last fenced code block = shell command
-- Command files optionally support YAML frontmatter; the `side_effects: true` flag marks commands that may alter project state — these are excluded from the REVIEWER's tool set
-- Timeout enforced per command (`SHELL_COMMAND_TIMEOUT`, default 30 sec)
-- CODER receives the full command list
-- REVIEWER receives only commands where `side_effects: false`; commands with `side_effects: true` are filtered out via `Agent._get_role_agent_commands()` in `agents.py`
-- ANALYTIC never receives shell commands regardless of project configuration
-- Shell commands support **positional arguments** via `$1`, `$2`, ... placeholders in the command Markdown file. Argument descriptions are parsed from lines matching `$N - description` format. The `shell_command` tool accepts an optional `args` list; `$1` maps to `args[0]`, `$2` to `args[1]`, etc. `commands_helper.py` validates that the correct number of arguments is provided before execution.
-
 ### Search System
 - ANALYTIC and REVIEWER use `search_file` tool powered by `SearchCode`
 - Supports fuzzy token matching — useful when exact code location is unknown

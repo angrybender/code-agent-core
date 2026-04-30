@@ -9,7 +9,7 @@ class MCPToolExecutor:
     def __init__(self, server_name: str, mcp_config: dict):
         """
         :param server_name: Name of the MCP server (e.g. 'mcp_browser')
-        :param mcp_config: Config dict from parse_agent_commands(..., 'mcp'), includes 'config' sub-dict and 'cmd' field
+        :param mcp_config: Config dict loaded via the dedicated legacy MCP helper in mcp_integration/mcp_helper.py; includes 'config' sub-dict and 'cmd' field
         """
         self.server_name = server_name
         self.mcp_config = mcp_config

@@ -144,9 +144,6 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
             for img in self.images:
                 user_content.append({"type": "image_url", "image_url": {"url": img}})
 
-        self.log("============= INSTRUCTION =============", True)
-        self.log(user_content, True)
-
         conversation = [
             {
                 'role': 'system',
@@ -157,6 +154,11 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                 'content': user_content
             }
         ]
+
+        self.log("============= SYSTEM PROMPT =============", True)
+        self.log(conversation[0]['content'], True)
+        self.log("============= USER PROMPT =============", True)
+        self.log(conversation[1]['content'], True)
 
         agent_step = 0
         _summarize_count = 0  # counts how many times summarize has been triggered
@@ -402,8 +404,10 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                             self.artifacts['files_modified'].append(file_path)
                     elif fn == 'shell_command':
                         cmd_name = tool_args.get('command_name', '')
+                        shell_block = tool_args.get('shell_block', '')
+                        command_ref = f'{cmd_name}/{shell_block}' if cmd_name and shell_block else cmd_name or shell_block
                         self.artifacts['commands_run'].append({
-                            'command': cmd_name,
+                            'command': command_ref,
                             'status': result.get('status', 'unknown') if isinstance(result, dict) else 'unknown'
                         })
 
@@ -502,11 +506,14 @@ class Agent:
     def _get_role_agent_commands(role, agent_commands: list = None) -> list:
         if role == 'MCP':
             return []
-        if role == 'CODER':
-            return agent_commands or []
-        if role in ('REVIEWER', 'ANALYTIC'):
-            return [cmd for cmd in (agent_commands or []) if not cmd['config'].get('side_effects', False)]
-        return []
+
+        filtered_commands = []
+        for cmd in agent_commands or []:
+            allowed_roles = cmd.get('config', {}).get('role')
+            if not allowed_roles or role in allowed_roles:
+                filtered_commands.append(cmd)
+
+        return filtered_commands
 
     @staticmethod
     def setUp():

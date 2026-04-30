@@ -3,8 +3,98 @@ import glob
 import re
 import subprocess
 import sys
-
 import frontmatter
+
+from dto.enums import AgentRole
+
+
+def _parse_command_roles(config: dict) -> dict:
+    raw_role = config.get('role')
+    if raw_role is None:
+        return config
+
+    if isinstance(raw_role, str):
+        roles = [role.strip() for role in raw_role.split(',') if role.strip()]
+    else:
+        raise ValueError('Command role must be a comma-separated string')
+
+    valid_roles = {role.value for role in AgentRole}
+    invalid_roles = [role for role in roles if role not in valid_roles or role == AgentRole.MCP.value]
+    if invalid_roles:
+        raise ValueError(f"Invalid command role(s): {', '.join(invalid_roles)}")
+
+    config = dict(config)
+    config['role'] = roles
+    return config
+
+
+def _split_command_sections(body: str) -> list[str]:
+    return re.split(r'(?m)^---\n', body)
+
+
+def _extract_shell_command(block: str) -> str | None:
+    matches = re.findall(r'```[^\n`]*\n(.*?)```|```([^`\n]+)```', block, re.DOTALL)
+    commands = [(g1 or g2).strip() for g1, g2 in matches if (g1 or g2).strip()]
+    if len(commands) != 1:
+        return None
+    return commands[0]
+
+
+def _normalize_shell_block_name(cmd: str, index: int) -> str:
+    words = re.sub(r'[^a-zа-яё\d\-_$]+', ' ', cmd.lower())
+    words = re.split(r'\s+', words, flags=re.UNICODE)
+    words = [_ for _ in words if _]
+    if not words:
+        words = ["cmd"]
+
+    tokens = words[0].replace('-', '_').strip('_')
+    processed = 1
+    for w in words[1:]:
+        if w[0] == '-' or w[0] == '$' or len(w) == 1:
+            continue
+
+        if len(tokens + "_" + w) > 16:
+            break
+
+        tokens = tokens + '_' + w
+        processed += 1
+        if processed == 2:
+            break
+
+    tokens = tokens[:16].strip('_')
+    return f'{tokens}_{index}'
+
+
+def _parse_block_args(description: str, cmd: str) -> tuple[str, list[dict]]:
+    description_lines = description.splitlines()
+    recognized_arg_lines = set()
+
+    placeholder_digits = sorted(set(re.findall(r'\$(\d+)', cmd)), key=lambda x: int(x))
+    if placeholder_digits:
+        expected = [str(i) for i in range(1, len(placeholder_digits) + 1)]
+        if placeholder_digits != expected:
+            raise ValueError(
+                f"Command argument placeholders must be a contiguous sequence starting at $1, "
+                f"but got: {', '.join('$' + d for d in placeholder_digits)}"
+            )
+
+    args = []
+    for digit in placeholder_digits:
+        arg_desc = ''
+        for line_index, line in enumerate(description_lines):
+            m = re.match(r'^\$' + digit + r'\s*[-–]\s*(.+)', line.strip())
+            if m:
+                arg_desc = m.group(1).strip()
+                recognized_arg_lines.add(line_index)
+                break
+        args.append({'placeholder': f'${digit}', 'description': arg_desc})
+
+    cleaned_description = '\n'.join(
+        line for line_index, line in enumerate(description_lines)
+        if line_index not in recognized_arg_lines
+    ).strip()
+    return cleaned_description, args
+
 
 def parse_agent_commands(directory: str, type_command: str = 'shell') -> list[dict]:
     assert type_command in ['shell', 'mcp'], f'Unknown type={type_command}'
@@ -19,21 +109,12 @@ def parse_agent_commands(directory: str, type_command: str = 'shell') -> list[di
             content = f.read()
         post = frontmatter.loads(content)
         body = post.content
-        blocks = re.findall(r'```[^\n`]*\n(.*?)```|```([^`\n]+)```', body, re.DOTALL)
-        cmd_parts = [g1 or g2 for g1, g2 in blocks]
         command = os.path.splitext(os.path.basename(filepath))[0]
 
-        if not cmd_parts:
-            continue
-
-        cmd = cmd_parts[-1].strip()
-        if not cmd:
-            continue
-
-        description = re.sub(r'```.*?```', '', body, flags=re.DOTALL).strip()
         config = post.metadata
         if not config:
             config = {}
+        config = _parse_command_roles(config)
         if config.get('enabled', True) is False:
             continue
 
@@ -43,25 +124,35 @@ def parse_agent_commands(directory: str, type_command: str = 'shell') -> list[di
         if type_command == 'shell' and is_mcp:
             continue
 
-        placeholder_digits = sorted(set(re.findall(r'\$(\d+)', cmd)), key=lambda x: int(x))
-        if placeholder_digits:
-            expected = [str(i) for i in range(1, len(placeholder_digits) + 1)]
-            if placeholder_digits != expected:
-                raise ValueError(
-                    f"Command argument placeholders must be a contiguous sequence starting at $1, "
-                    f"but got: {', '.join('$' + d for d in placeholder_digits)}"
-                )
-        args = []
-        for digit in placeholder_digits:
-            arg_desc = ''
-            for line in description.splitlines():
-                m = re.match(r'^\$' + digit + r'\s*[-–]\s*(.+)', line.strip())
-                if m:
-                    arg_desc = m.group(1).strip()
-                    break
-            args.append({'placeholder': f'${digit}', 'description': arg_desc})
+        sections = _split_command_sections(body)
+        if len(sections) < 2:
+            continue
 
-        results.append({'command': command, 'description': description, 'cmd': cmd, 'args': args, 'config': config})
+        command_description = sections[0].strip()
+        shell_blocks = []
+        for block_index, raw_block in enumerate(sections[1:], start=1):
+            cmd = _extract_shell_command(raw_block)
+            if not cmd:
+                continue
+
+            block_description = re.sub(r'```.*?```', '', raw_block, flags=re.DOTALL).strip()
+            block_description, block_args = _parse_block_args(block_description, cmd)
+            shell_blocks.append({
+                'name': _normalize_shell_block_name(cmd, block_index),
+                'description': block_description,
+                'cmd': cmd,
+                'args': block_args,
+            })
+
+        if not shell_blocks:
+            continue
+
+        results.append({
+            'command': command,
+            'description': command_description,
+            'shell_blocks': shell_blocks,
+            'config': config,
+        })
     return results
 
 def execute_terminal_command(cmd: str, timeout: int, cwd: str = None) -> dict:
