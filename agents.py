@@ -22,7 +22,7 @@ from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE, LLMRequestFormat
 from tools_interpreter import ToolsInterpreter
 from tools.tools import get_analytic_tools, get_coder_tools, get_reviewer_tools, TOOL_SUMMARIZE, TOOL_REPORT
 from dto.dto_instruction import DTOInstruction
-from dto.enums import EventType, ToolOperation
+from dto.enums import EventType, ToolOperation, ToolPrefixes
 from context_helper import compact_conversation_remove_redundant
 from agents_logic.tools_mixin import ToolsMixin
 from agents_logic.conversation_mixin import ConversationMixin
@@ -91,8 +91,10 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
         self.images = images if isinstance(images, list) else []
         self.project_description = manifest['description']
         self.project_structure = manifest['files_structure']
+
+        tools = self.project.get_commandlets_tools(self.role)
         self.interpreter = ToolsInterpreter(
-            commands=manifest.get('agent_commands', []),
+            shell_tools={tool['function']['name']: True for tool in tools},
             project=self.project,
         )
         self.log_file = log_file
@@ -345,8 +347,8 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
             else:
                 yield DTOInstruction(type=EventType.NOPE)
 
-                is_pre_output = tool_call_description['function'] in ['shell_command', 'search_file']
-                is_output_resul_of_tool_separate_msg = tool_call_description['function'] in ['shell_command', 'search_file']
+                tool_prefix =  tool_call_description['function'].split('__')[0]
+                is_pre_output = tool_call_description['function'] == 'search_file' or tool_prefix == ToolPrefixes.SHELL
                 response_message_id = output['id'] + ':response'
 
                 if is_pre_output:
@@ -417,9 +419,9 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                         message_id=output['id']
                     )
 
-                if is_output_resul_of_tool_separate_msg:
+                if is_pre_output:
                     _result = tool_result.output
-                    yield DTOInstruction(type=EventType.MARKDOWN, message=_result, message_id=response_message_id)
+                    yield DTOInstruction(type=EventType.MARKDOWN, message=_result, message_id=response_message_id, hidden=not is_success)
 
                 result_msg = {
                     'role': 'tool',
@@ -483,13 +485,13 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
 class AnalyticAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
         if self.role == 'ANALYTIC':
-            return get_analytic_tools(self.has_shell_commands)
+            return get_analytic_tools(self.has_shell_commands) + self.project.get_commandlets_tools(self.role)
         else:
-            return get_reviewer_tools(self.has_shell_commands)
+            return get_reviewer_tools(self.has_shell_commands) + self.project.get_commandlets_tools(self.role)
 
 class CoderAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
-        return get_coder_tools(self.has_shell_commands)
+        return get_coder_tools(self.has_shell_commands) + self.project.get_commandlets_tools(self.role)
 
 
 class Agent:

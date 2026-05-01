@@ -1,25 +1,19 @@
 import os
-import os.path
 import json
-import shlex
-
-from commands_helper import execute_terminal_command
 
 from diff_helper import apply_patch, PatchError
 from dto.dto_tools import DTOTool
-from dto.enums import ToolOperation
+from dto.enums import ToolOperation, ToolPrefixes
 from project import Project
-
-SHELL_COMMAND_TIMEOUT = int(os.getenv('SHELL_COMMAND_TIMEOUT', 30))
 
 
 class ToolError(Exception):
     pass
 
 class ToolsInterpreter:
-    def __init__(self, commands: list = None, project: Project = None):
+    def __init__(self, shell_tools: dict = None, project: Project = None):
         self.project_root = project.get_project_root()
-        self._commands_map = {c['command']: c for c in (commands or [])}
+        self._shell_tools = shell_tools
         self.project = project
 
     def _correction_write_arg(self, value) -> str:
@@ -226,39 +220,24 @@ class ToolsInterpreter:
             output=f"Found: {total_count} file(s)",
         )
 
-    def _command_shell(self, command_name: str, shell_block: str, args: list = None) -> DTOTool:
-        if not command_name or not isinstance(command_name, str):
-            raise ToolError('`command_name` must be a non-empty string')
+    def _command_shell(self, tool_name: str, args: list = None) -> DTOTool:
+        if tool_name not in self._shell_tools:
+            available = ', '.join(self._shell_tools.keys()) or 'none'
+            raise ToolError(f"Unknown command `{tool_name}`. Available: {available}")
 
-        if not shell_block or not isinstance(shell_block, str):
-            raise ToolError('`shell_block` must be a non-empty string')
+        raw = self.project.run_commandlet(tool_name, args)
 
-        command_def = self._commands_map.get(command_name)
-        if not command_def:
-            available = ', '.join(self._commands_map.keys()) or 'none'
-            raise ToolError(f"Unknown command `{command_name}`. Available: {available}")
+        if 'error' in raw and raw['error_code'] == 'tool_name':
+            available = ', '.join(self._shell_tools.keys()) or 'none'
+            raise ToolError(f"Unknown command `{tool_name}`. Available: {available}")
 
-        available_blocks = {block['name']: block for block in command_def.get('shell_blocks', [])}
-        block_def = available_blocks.get(shell_block)
-        if not block_def:
-            block_names = ', '.join(available_blocks.keys()) or 'none'
-            raise ToolError(f"Unknown shell_block `{shell_block}` for command `{command_name}`. Available: {block_names}")
-
-        args = args or []
-        if len(args) != len(block_def['args']):
+        if 'error' in raw and raw['error_code'] == 'arguments':
             raise ToolError(
-                f"Wrongs `{command_name}` `{shell_block}` argument list: current: {len(args)}; actual: {len(block_def['args'])}."
+                f"Wrongs `{tool_name}` argument list: {raw['error']}."
             )
 
-        cmd = block_def['cmd']
-        for i, value in enumerate(args, start=1):
-            cmd = cmd.replace(f'${i}', shlex.quote(str(value)))
-
-        raw = execute_terminal_command(cmd=cmd, timeout=SHELL_COMMAND_TIMEOUT, cwd=self.project_root)
-        if raw['status'] == 'timeout':
-            raise ToolError(
-                f"Command timed out after {SHELL_COMMAND_TIMEOUT}s. Partial output: {raw['stdout']}"
-            )
+        if 'error' in raw and raw['status'] == 'timeout':
+            raise ToolError(raw['error'])
         else:
             output = f"stdout: {raw['stdout']}" if raw['stdout'] else ''
             if raw['stderr']:
@@ -271,7 +250,7 @@ class ToolsInterpreter:
             return DTOTool(
                 result=output,
                 tool_name='shell_command',
-                output=f"`$ {cmd}`\n\n```\n{output}\n```",
+                output=f"`$ {raw['cmd']}`\n\n```\n{output}\n```",
                 meta={
                     'status': raw['status'],
                 }
@@ -285,11 +264,14 @@ class ToolsInterpreter:
             'write_file': self._command_write,
             'replace_code_in_file': self._command_write_diff,
             'search_file': self._search_file,
-            'shell_command': self._command_shell,
         }
 
     def execute(self, tool_name: str, arguments: dict) -> DTOTool:
         try:
+            tool_prefix = tool_name.split('__')[0]
+            if tool_prefix == ToolPrefixes.SHELL:
+                return self._command_shell(tool_name, arguments.get('args', []))
+
             handler = self._get_handlers().get(tool_name)
             if not handler:
                 return DTOTool(

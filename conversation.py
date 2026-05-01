@@ -5,13 +5,12 @@ from dataclasses import asdict
 from markupsafe import escape
 
 from dto.dto_instruction import DTOInstruction
-from dto.enums import EventType, ToolOperation
+from dto.enums import EventType, ToolOperation, ToolPrefixes
 
 _FUNCTION_NAME_TITLES = {
     'list_in_directory': 'list  ',
     'write_file': 'write ',
     'replace_code_in_file': 'patch ',
-    'shell_command': 'shell ',
     'read_file': 'read  ',
     'attach_image': 'attach',
     'read_multiply_files': 'read  ',
@@ -98,13 +97,12 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
         ext = f"*.{ext}" if ext else '*.*'
         result_message = f'<cite>{function_alias}</cite> <dfn>{ext}</dfn> <dfn>{needle}</dfn>'
 
-    elif function_name == 'shell_command' and message.is_final:
-        command_ref = f"{message.args['command_name']}/{message.args['shell_block']}"
-        command_name = [f"<dfn>{command_ref}</dfn>"]
+    elif function_name and function_name[:len(ToolPrefixes.SHELL) + 2] == f'{ToolPrefixes.SHELL}__' and message.is_final:
+        command_name = [f"<dfn>{function_name[len(ToolPrefixes.SHELL) + 2:]}</dfn>"]
 
         if 'args' in message.args:
             command_name += [f"<dfn>{_}</dfn>" for _ in message.args['args']]
-        result_message = f'<cite>{function_alias}</cite> {" ".join(command_name)}'
+        result_message = f'<cite>shell</cite> {" ".join(command_name)}'
 
     elif function_name in ['write_file', 'replace_code_in_file'] and message.is_final:
         file_link = _file_processing_tpl(message.result)

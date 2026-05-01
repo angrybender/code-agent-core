@@ -1,14 +1,21 @@
-import os.path
+import os
 
+from dto.enums import ToolPrefixes
 from ide_integration import tool_call
 from search_code import SearchCode
+from commands_helper import parse_agent_commands, execute_terminal_command
 
+
+SHELL_COMMAND_TIMEOUT = int(os.getenv('SHELL_COMMAND_TIMEOUT', 30))
 
 class Project:
     def __init__(self, project_root: str):
         self.project_root = project_root
         self.files_history = []
         self.search_service = SearchCode()
+        shell_cmd_dir = os.getenv('SHELL_COMMAND_DIRECTORY', '.agent-commands')
+        full_cmd_dir = os.path.join(self.project_root, shell_cmd_dir)
+        self.shell_commands = parse_agent_commands(full_cmd_dir)
 
     def get_project_root(self) -> str:
         return self.project_root
@@ -90,3 +97,74 @@ class Project:
 
     def search_files(self, needle: str, extension: str) -> tuple[int, list[dict]]:
         return self.search_service.search(self.project_root, needle, extension)
+
+    def run_commandlet(self, tool_name: str, args: list = None) -> dict:
+        call_cmd = None
+        call_arg_cnt = 0
+        for commandlet in self.shell_commands:
+            for shell_blocks in commandlet.get('shell_blocks', []):
+                commandlet_tool_name = f"{ToolPrefixes.SHELL}__{commandlet['command']}_{shell_blocks['name']}"
+                if commandlet_tool_name == tool_name:
+                    call_cmd = shell_blocks['cmd']
+                    call_arg_cnt = len(shell_blocks['args'])
+                    break
+
+        if not call_cmd:
+            return {
+                'error': f'Unknown tool_name.',
+                'error_code': 'tool_name',
+            }
+
+        if call_arg_cnt != len(args):
+            return {
+                'error': f"current: {len(args)}; actual: {call_arg_cnt}.",
+                'error_code': 'arguments',
+            }
+
+        raw = execute_terminal_command(cmd=call_cmd, timeout=SHELL_COMMAND_TIMEOUT, cwd=self.project_root)
+        raw['cmd'] = call_cmd
+
+        if raw['status'] == 'timeout':
+            raw['error'] = f"Command timed out after {SHELL_COMMAND_TIMEOUT}s. Partial output: {raw['stdout']}"
+            raw['error_code'] = 'timeout'
+
+        return raw
+
+    def get_commandlets_tools(self, role_filter: str = None) -> list[dict]:
+        commands_tools = []
+        for commandlet in self.shell_commands:
+            role_access_to = commandlet['config'].get('role', [])
+            if role_access_to and role_filter and role_filter not in role_access_to:
+                continue
+
+            for shell_blocks in commandlet.get('shell_blocks', []):
+                parameters = {
+                    "type": "object",
+                    "properties": {}
+                }
+                if shell_blocks['args']:
+                    args = []
+                    for i, arg in enumerate(shell_blocks['args']):
+                        args.append(f"args[{i}] = {arg['description']}  (required)")
+
+                    parameters['required'] = ["args"]
+                    parameters['properties'] = {
+                        'args': {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "minItems": len(shell_blocks['args']),
+                            "maxItems": len(shell_blocks['args']),
+                            "description": f"Positional arguments for this shell block. Use strict order: {', '.join(args)}"
+                        }
+                    }
+
+                commands_tools.append({
+                    "type": "function",
+                    "function": {
+                        "name": f"{ToolPrefixes.SHELL}__{commandlet['command']}_{shell_blocks['name']}",
+                        "description": shell_blocks['description'],
+                        "parameters": parameters
+                    }
+                })
+
+        return commands_tools

@@ -672,7 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const commandName = escapeHtml(String(c && c.command ? c.command : ''));
                 const shellBlockName = escapeHtml(String(shellBlock && shellBlock.name ? shellBlock.name : ''));
                 const commandLabel = shellBlockName
-                    ? `${commandName}/${shellBlockName}`
+                    ? `${commandName}_${shellBlockName}`
                     : commandName;
                 const shellCmd = escapeHtml(String(shellBlock && shellBlock.cmd ? shellBlock.cmd : ''));
 

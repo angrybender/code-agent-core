@@ -151,39 +151,6 @@ TOOL_REPLACE_CODE_IN_FILE = {
     }
 }
 
-TOOL_SHELL_COMMAND = {
-    "type": "function",
-    "function": {
-        "name": "shell_command",
-        "description": (
-            "Execute a predefined named shell command block in the project root directory. "
-            "Use for build, test, lint, or install commands. "
-            "Pass the command file name via 'command_name' and the specific shell block code via 'shell_block'. "
-            "Some shell blocks accept positional arguments ($1, $2, ...) — pass them via the 'args' list. "
-            "Available command names, shell blocks, and their arguments are listed in the system prompt."
-        ),
-        "parameters": {
-            "type": "object",
-            "required": ["command_name", "shell_block"],
-            "properties": {
-                "command_name": {
-                    "type": "string",
-                    "description": "Name of the predefined command to execute. Must match one of the available command names listed in the system prompt."
-                },
-                "shell_block": {
-                    "type": "string",
-                    "description": "Code of the specific shell block to execute for the selected command. Must match one of the available shell block names listed in the system prompt."
-                },
-                "args": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Optional positional arguments for the selected shell block. $1 is args[0], $2 is args[1], etc. Only provide if that shell block definition includes $N placeholders."
-                }
-            }
-        }
-    }
-}
-
 TOOL_REPORT = {
     "type": "function",
     "function": {
@@ -292,21 +259,21 @@ TOOL_SUMMARIZE = {
 def get_coder_tools(has_shell_commands: bool) -> list:
     """Return CODER_TOOLS with or without shell command support."""
     if has_shell_commands:
-        return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_WRITE_FILE, TOOL_REPLACE_CODE_IN_FILE, TOOL_SHELL_COMMAND, TOOL_REPORT]
+        return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_WRITE_FILE, TOOL_REPLACE_CODE_IN_FILE, TOOL_REPORT]
     return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_WRITE_FILE, TOOL_REPLACE_CODE_IN_FILE, TOOL_REPORT]
 
 
 def get_reviewer_tools(has_shell_commands: bool) -> list:
     """Return REVIEWER_TOOLS with or without shell command support."""
     if has_shell_commands:
-        return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_SEARCH_FILE, TOOL_SHELL_COMMAND, TOOL_REPORT]
+        return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_SEARCH_FILE, TOOL_REPORT]
     return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_SEARCH_FILE, TOOL_REPORT]
 
 
 def get_analytic_tools(has_shell_commands: bool) -> list:
     """Return ANALYTIC tools with or without shell command support."""
     if has_shell_commands:
-        return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_SEARCH_FILE, TOOL_SHELL_COMMAND, TOOL_REPORT]
+        return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_SEARCH_FILE, TOOL_REPORT]
     return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_SEARCH_FILE, TOOL_REPORT]
 
 

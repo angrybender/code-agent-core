@@ -207,7 +207,7 @@ class TestMCPHelper(unittest.TestCase):
 class TestShellCommandInterpreter(unittest.TestCase):
 
     def _make_ti(self, commands=None):
-        return ToolsInterpreter(project=Project('/tmp'), commands=commands or [])
+        return ToolsInterpreter(project=Project('/tmp'), shell_tools=commands or [])
 
     def test_unknown_command_empty_commands_map(self):
         ti = self._make_ti()

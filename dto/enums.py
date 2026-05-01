@@ -34,3 +34,6 @@ class ToolOperation(str, Enum):
     SHELL   = 'SHELL'
     MCP     = 'MCP'
     OTHER   = 'OTHER'
+
+class ToolPrefixes:
+    SHELL   = 'shell'
