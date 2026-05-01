@@ -208,7 +208,11 @@ class ToolsInterpreter:
 
         total_count, results = self.project.search_files(needle, str(extension))
         if not results:
-            raise ToolError('Empty search result')
+            return DTOTool(
+                result="No matches found.",
+                tool_name="search_file",
+                output="Found: 0 file(s)",
+            )
 
         formatted_result = []
         for result in results:

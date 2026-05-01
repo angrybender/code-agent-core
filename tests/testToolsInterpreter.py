@@ -72,3 +72,37 @@ class TestToolsInterpreter(unittest.TestCase):
 
         self.assertEqual(result.tool_name, 'read_multiply_files')
         self.assertIn('--- file: env.example ---', result.result)
+
+    def test_search_file_no_matches(self):
+        """Test search_file with an unlikely needle returns a valid non-error result with no-results marker."""
+        root_path = os.path.join(os.path.dirname(__file__), '..')
+        instance = ToolsInterpreter(project=Project(str(root_path)))
+        # Search in tests directory with a needle that won't exist there
+        # Using __init__.py extension and searching for a string that won't be in test files
+        result = instance.execute('search_file', {'needle': 'QUxyz987654321NONEXISTENTneedleABC', 'extension': '__init__.py'})
+
+        self.assertEqual(result.tool_name, 'search_file')
+        self.assertFalse(result.error)
+        self.assertIsInstance(result.result, str)
+        self.assertTrue(len(result.result) > 0)
+        self.assertIsInstance(result.output, str)
+        self.assertTrue(len(result.output) > 0)
+        self.assertIn('Found: 0 file(s)', result.output)
+
+    def test_search_file_blank_needle_error(self):
+        """Test that blank/empty needle raises an error."""
+        root_path = os.path.join(os.path.dirname(__file__), '..')
+        instance = ToolsInterpreter(project=Project(str(root_path)))
+        result = instance.execute('search_file', {'needle': ''})
+
+        self.assertTrue(result.error)
+        self.assertIn('ERROR:', result.result)
+
+    def test_search_file_whitespace_needle_error(self):
+        """Test that whitespace-only needle raises an error."""
+        root_path = os.path.join(os.path.dirname(__file__), '..')
+        instance = ToolsInterpreter(project=Project(str(root_path)))
+        result = instance.execute('search_file', {'needle': '   '})
+
+        self.assertTrue(result.error)
+        self.assertIn('ERROR:', result.result)

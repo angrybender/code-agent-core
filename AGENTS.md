@@ -297,7 +297,6 @@ Browser SSE connection → GET /events → Incremental messages streamed
 | `SHELL_COMMAND_TIMEOUT` | 30 | Timeout for shell commands in seconds |
 | `SHELL_COMMAND_DIRECTORY` | .agent-commands | Directory with predefined shell commands |
 | `DEBUG` | 0 | Enable verbose LLM logging to `full_log.log` |
-| `DEEPTHINKING_AGENTS` | — | Comma-separated agent names for deep thinking mode (does **not** affect CODER — CODER always runs with `thinking=False`) |
 | `MAX_CONTEXT_WINDOW_SIZE` | 100000 | Maximum context window size in tokens for prompt usage tracking |
 
 ## Directory Structure
@@ -368,7 +367,6 @@ project_root/
 - **Change LLM provider**: Update `OPENAI_API_URL` and `OPENAI_API_KEY` in `.env`
 - **Switch to pure file mode**: Set `AGENT_FILE_TOOLS=pure` in `.env` (no IDE required)
 - **Adjust iteration limits**: Set `MAX_ITERATION` in `.env`
-- **Enable deep thinking**: Add agent name(s) to `DEEPTHINKING_AGENTS` in `.env`
 
 ## Testing
 

@@ -452,8 +452,9 @@ class SimpleChat {
 
         const messageContent = document.createElement('div');
         if (type === 'markdown') {
-            messageContent.innerHTML = marked.parse(message.message);
-            this.setupMarkdownCopyButton(messageDiv, message.message);
+            const markdownText = message.message ?? '';
+            messageContent.innerHTML = marked.parse(markdownText);
+            this.setupMarkdownCopyButton(messageDiv, markdownText);
         }
         else if (type === 'html') {
             messageContent.innerHTML = message.message;

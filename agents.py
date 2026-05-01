@@ -29,14 +29,12 @@ from agents_logic.conversation_mixin import ConversationMixin
 
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=int(os.getenv('MAX_ITERATION'))
-DEEPTHINKING_AGENTS=os.getenv('DEEPTHINKING_AGENTS', '').split(',')
 
 
 class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
-    DEEP_THINK_TAG = 'work_plan'
     STORAGE_PATH = './storage'
 
-    def __init__(self, role: str, system_prompt: str, step_prompt: str, thinking: bool, project: Project, has_shell_commands: bool = True):
+    def __init__(self, role: str, system_prompt: str, step_prompt: str, project: Project, has_shell_commands: bool = True):
         self.interpreter: ToolsInterpreter | None = None
         self.instruction = None
         self.images = []
@@ -50,7 +48,6 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
         self.project = project
         self.role = role
         self.log_file = role
-        self.thinking = thinking
         self.has_shell_commands = has_shell_commands
         self.artifacts = {
             'files_read': [],
@@ -528,7 +525,6 @@ class Agent:
     def create(role, project: Project, agent_commands: list = None, mcp_commands: list = None) -> BaseAgent:
         assert role in Agent.PROMPTS, f'invalid role: {role}'
 
-        thinking = role in DEEPTHINKING_AGENTS
         role_agent_commands = Agent._get_role_agent_commands(role, agent_commands)
         has_shell_commands = bool(role_agent_commands and len(role_agent_commands) > 0)
         system_prompt = Agent.PROMPTS[role]
@@ -537,7 +533,6 @@ class Agent:
 
             rtemplate = Environment(loader=BaseLoader).from_string(system_prompt)
             system_prompt = rtemplate.render(params={
-                'thinking': thinking,
                 'agent_commands': role_agent_commands
             })
 
@@ -545,11 +540,11 @@ class Agent:
             step_prompt = f.read()
 
         if role == 'ANALYTIC' or role == 'REVIEWER':
-            return AnalyticAgent(role, system_prompt, step_prompt, thinking, project=project, has_shell_commands=has_shell_commands)
+            return AnalyticAgent(role, system_prompt, step_prompt, project=project, has_shell_commands=has_shell_commands)
         elif role == 'CODER':
-            return CoderAgent(role, system_prompt, step_prompt, False, project=project, has_shell_commands=has_shell_commands)
+            return CoderAgent(role, system_prompt, step_prompt, project=project, has_shell_commands=has_shell_commands)
         elif role == 'MCP':
             from mcp_agent import MCPAgent
-            return MCPAgent(role, system_prompt, step_prompt, False, mcp_commands or [])
+            return MCPAgent(role, system_prompt, step_prompt, mcp_commands or [])
         else:
             raise Exception("unknown agent")
