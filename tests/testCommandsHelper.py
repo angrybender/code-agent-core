@@ -212,10 +212,10 @@ class TestShellCommandInterpreter(unittest.TestCase):
     def test_unknown_command_empty_commands_map(self):
         ti = self._make_ti()
         result = ti.execute('shell_command', {'command_name': 'nonexistent', 'shell_block': 'x_1'})
-        self.assertTrue(result.get('error'))
-        self.assertEqual('shell_command', result['tool_name'])
-        self.assertIn("Unknown command 'nonexistent'", result['result'])
-        self.assertIn('none', result['result'])
+        self.assertTrue(result.error)
+        self.assertEqual('shell_command', result.tool_name)
+        self.assertIn('Unknown command `nonexistent`', result.result)
+        self.assertIn('none', result.result)
 
     def test_unknown_shell_block_shows_available_names(self):
         commands = [{
@@ -229,10 +229,10 @@ class TestShellCommandInterpreter(unittest.TestCase):
         }]
         ti = self._make_ti(commands)
         result = ti.execute('shell_command', {'command_name': 'build', 'shell_block': 'deploy_1'})
-        self.assertTrue(result.get('error'))
-        self.assertIn("Unknown shell_block 'deploy_1'", result['result'])
-        self.assertIn('make_build_1', result['result'])
-        self.assertIn('make_test_2', result['result'])
+        self.assertTrue(result.error)
+        self.assertIn('Unknown shell_block `deploy_1`', result.result)
+        self.assertIn('make_build_1', result.result)
+        self.assertIn('make_test_2', result.result)
 
     @patch('tools_interpreter.execute_terminal_command')
     def test_executes_selected_block_with_args(self, execute_mock):
@@ -252,9 +252,10 @@ class TestShellCommandInterpreter(unittest.TestCase):
 
         execute_mock.assert_called_once()
         self.assertIn('git add', execute_mock.call_args.kwargs['cmd'])
-        self.assertEqual('git_add_1', result['shell_block'])
-        self.assertEqual('git', result['command_name'])
-        self.assertEqual('ok', result['status'])
+        self.assertEqual('shell_command', result.tool_name)
+        self.assertFalse(result.error)
+        self.assertIn('ok', result.result)
+        self.assertEqual('ok', result.meta['status'])
 
     def test_argument_validation_is_per_block(self):
         commands = [{
@@ -269,14 +270,14 @@ class TestShellCommandInterpreter(unittest.TestCase):
         ti = self._make_ti(commands)
 
         wrong = ti.execute('shell_command', {'command_name': 'git', 'shell_block': 'git_status_2', 'args': ['extra']})
-        self.assertTrue(wrong.get('error'))
-        self.assertIn("git/git_status_2", wrong['result'])
+        self.assertTrue(wrong.error)
+        self.assertIn('Wrongs `git` `git_status_2` argument list', wrong.result)
 
     def test_missing_shell_block_argument_fails(self):
         ti = self._make_ti([])
         result = ti.execute('shell_command', {'command_name': 'build'})
-        self.assertTrue(result.get('error'))
-        self.assertIn('wrong command code/arguments', result['result'])
+        self.assertTrue(result.error)
+        self.assertIn('wrong command code/arguments', result.result)
 
 
 class TestAgentCommandFiltering(unittest.TestCase):
@@ -300,14 +301,18 @@ class TestAgentCommandFiltering(unittest.TestCase):
         ]
         with patch('agents.AnalyticAgent') as analytic_agent_cls:
             analytic_agent_cls.return_value = object()
-            agent = Agent.create('REVIEWER', project=Project(''), agent_commands=commands)
+            project = Project('')
+            agent = Agent.create('REVIEWER', project=project, agent_commands=commands)
             self.assertIsNotNone(agent)
             args = analytic_agent_cls.call_args[0]
-            self.assertTrue(args[4])
+            kwargs = analytic_agent_cls.call_args.kwargs
+            self.assertEqual('REVIEWER', args[0])
             self.assertIn('all', args[1])
             self.assertIn('reviewer_only', args[1])
             self.assertNotIn('coder_only', args[1])
             self.assertIn('echo_reviewer_1', args[1])
+            self.assertIs(kwargs['project'], project)
+            self.assertTrue(kwargs['has_shell_commands'])
 
 
 class TestExecuteTerminalCommand(unittest.TestCase):
