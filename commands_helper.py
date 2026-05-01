@@ -96,9 +96,7 @@ def _parse_block_args(description: str, cmd: str) -> tuple[str, list[dict]]:
     return cleaned_description, args
 
 
-def parse_agent_commands(directory: str, type_command: str = 'shell') -> list[dict]:
-    assert type_command in ['shell', 'mcp'], f'Unknown type={type_command}'
-
+def parse_agent_commands(directory: str) -> list[dict]:
     if not os.path.isdir(directory):
         return []
 
@@ -118,10 +116,8 @@ def parse_agent_commands(directory: str, type_command: str = 'shell') -> list[di
         if config.get('enabled', True) is False:
             continue
 
-        is_mcp = config.get('mcp', False) is True
-        if type_command == 'mcp' and not is_mcp:
-            continue
-        if type_command == 'shell' and is_mcp:
+        is_shell = config.get('mcp', False) is False
+        if not is_shell:
             continue
 
         sections = _split_command_sections(body)
