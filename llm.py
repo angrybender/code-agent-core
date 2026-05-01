@@ -144,7 +144,6 @@ def record_decorator(func):
     def wrapper(*args, **kwargs):
         if IS_FAKE_LLM_REQUESTS:
             for value in _fake_llm_request_iterator:
-#                time.sleep(1)
                 yield value
         else:
             gen = func(*args, **kwargs)
