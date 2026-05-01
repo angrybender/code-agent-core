@@ -30,10 +30,6 @@ Repeat the following steps until the task is solved or you output a report:
 9. Never list directories:
 - .idea
 - .git
-{% if params.agent_commands %}
-10. CRITICAL: NEVER execute arbitrary shell commands. You may ONLY use the predefined named commands provided. Passing raw shell strings is STRICTLY PROHIBITED.
-11. You can run set of commands, list see below (this is white list)
-{% endif %}
 
 ## Report Format
 When calling the `report` tool, always include a structured "## Files" section listing:
@@ -47,35 +43,3 @@ Example:
 ### Modified:
 - src/controllers/auth.py
 - src/routes/api.py
-
-{% if params.agent_commands %}
-## Available Shell Commands
-You MAY use the `shell_command` tool ONLY with the following whitelisted command names and shell blocks. Do NOT pass arbitrary shell strings:
-
-{% for cmd in params.agent_commands %}
-### {{ cmd.command }}
-**Description:***
-{{ cmd.description }}
-{% for block in cmd.shell_blocks %}
-#### {{ cmd.command }}/{{ block.name }}
-**Block Description:***
-{{ block.description }}
-{% if block.args %}
-**Arguments:**{% for arg in block.args %}
-`${{ loop.index }}`{% if arg.description %} — {{ arg.description }}{% endif %}
-{% endfor %}{% endif %}
-{% endfor %}
-{% endfor %}
-
-Example tool call:
-```json
-{
-  "tool": "shell_command",
-  "args": {
-    "command_name": "example_command",
-    "shell_block": "example_block_1",
-    "args": ["value"]
-  }
-}
-```
-{% endif %}

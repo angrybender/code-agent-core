@@ -256,24 +256,16 @@ TOOL_SUMMARIZE = {
     }
 }
 
-def get_coder_tools(has_shell_commands: bool) -> list:
-    """Return CODER_TOOLS with or without shell command support."""
-    if has_shell_commands:
-        return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_WRITE_FILE, TOOL_REPLACE_CODE_IN_FILE, TOOL_REPORT]
+def get_coder_tools() -> list:
     return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_WRITE_FILE, TOOL_REPLACE_CODE_IN_FILE, TOOL_REPORT]
 
 
-def get_reviewer_tools(has_shell_commands: bool) -> list:
-    """Return REVIEWER_TOOLS with or without shell command support."""
-    if has_shell_commands:
-        return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_SEARCH_FILE, TOOL_REPORT]
+def get_reviewer_tools() -> list:
     return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_SEARCH_FILE, TOOL_REPORT]
 
 
-def get_analytic_tools(has_shell_commands: bool) -> list:
+def get_analytic_tools() -> list:
     """Return ANALYTIC tools with or without shell command support."""
-    if has_shell_commands:
-        return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_SEARCH_FILE, TOOL_REPORT]
     return [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_SEARCH_FILE, TOOL_REPORT]
 
 
@@ -319,7 +311,7 @@ TOOL_ATTACH_IMAGE = {
 
 
 ANALYTIC_TOOLS = [TOOL_READ_FILE, TOOL_READ_MULTIPLY_FILES, TOOL_LIST_IN_DIRECTORY, TOOL_SEARCH_FILE, TOOL_REPORT]
-CODER_TOOLS = get_coder_tools(True)
-REVIEWER_TOOLS = get_reviewer_tools(True)
+CODER_TOOLS = get_coder_tools()
+REVIEWER_TOOLS = get_reviewer_tools()
 SUPERVISOR_TOOLS = [TOOL_CALL_AGENT, TOOL_MESSAGE, TOOL_EXIT]
 MCP_BASE_TOOLS = [TOOL_SELECT_MCP, TOOL_ATTACH_IMAGE, TOOL_READ_FILE, TOOL_REPORT]

@@ -74,7 +74,7 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                     tool['args'] = list(self.parse_tool_arguments(tool_call['function']['arguments']).values()) if \
                     tool_call['function']['arguments'] else []
 
-                return "; ".join([f'{m['tool_calls'][0]['function']['name']}:{m['args'][0]}' for m in tools_list])
+                return "; ".join([f'{m['tool_calls'][0]['function']['name']}:{m['args'][0] if m['args'] else ''}' for m in tools_list])
 
             logger.info(
                 "Conv context! Before: " + _create_log(conversation) + " After: " + _create_log(
@@ -485,13 +485,13 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
 class AnalyticAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
         if self.role == 'ANALYTIC':
-            return get_analytic_tools(self.has_shell_commands) + self.project.get_commandlets_tools(self.role)
+            return get_analytic_tools() + self.project.get_commandlets_tools(self.role)
         else:
-            return get_reviewer_tools(self.has_shell_commands) + self.project.get_commandlets_tools(self.role)
+            return get_reviewer_tools() + self.project.get_commandlets_tools(self.role)
 
 class CoderAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
-        return get_coder_tools(self.has_shell_commands) + self.project.get_commandlets_tools(self.role)
+        return get_coder_tools() + self.project.get_commandlets_tools(self.role)
 
 
 class Agent:
@@ -524,27 +524,23 @@ class Agent:
                 shutil.rmtree(cache_path)
 
     @staticmethod
-    def create(role, project: Project, agent_commands: list = None, mcp_commands: list = None) -> BaseAgent:
+    def create(role, project: Project, mcp_commands: list = None) -> BaseAgent:
         assert role in Agent.PROMPTS, f'invalid role: {role}'
 
-        role_agent_commands = Agent._get_role_agent_commands(role, agent_commands)
-        has_shell_commands = bool(role_agent_commands and len(role_agent_commands) > 0)
         system_prompt = Agent.PROMPTS[role]
         with open(system_prompt, 'r', encoding='utf8') as f:
             system_prompt = f.read()
 
             rtemplate = Environment(loader=BaseLoader).from_string(system_prompt)
-            system_prompt = rtemplate.render(params={
-                'agent_commands': role_agent_commands
-            })
+            system_prompt = rtemplate.render(params={})
 
         with open(Agent.STEP_PROMPT, 'r', encoding='utf8') as f:
             step_prompt = f.read()
 
         if role == 'ANALYTIC' or role == 'REVIEWER':
-            return AnalyticAgent(role, system_prompt, step_prompt, project=project, has_shell_commands=has_shell_commands)
+            return AnalyticAgent(role, system_prompt, step_prompt, project=project)
         elif role == 'CODER':
-            return CoderAgent(role, system_prompt, step_prompt, project=project, has_shell_commands=has_shell_commands)
+            return CoderAgent(role, system_prompt, step_prompt, project=project)
         elif role == 'MCP':
             from mcp_agent import MCPAgent
             return MCPAgent(role, system_prompt, step_prompt, mcp_commands or [], project=project)

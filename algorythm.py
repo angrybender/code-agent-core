@@ -14,12 +14,10 @@ import ide_integration
 from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE
 from path_helper import get_relative_path
 from project import Project
-from tools_interpreter import ToolsInterpreter
 from agents import Agent
 from tools.tools import SUPERVISOR_TOOLS
 from logger_mixin import LoggerMixin
 
-from commands_helper import parse_agent_commands
 from dotenv import load_dotenv
 from mcp_integration.mcp_helper import parse_mcp_commands
 
@@ -88,8 +86,6 @@ class Copilot(LoggerMixin):
 
         shell_cmd_dir = os.getenv('SHELL_COMMAND_DIRECTORY', '.agent-commands')
         full_cmd_dir = os.path.join(self.session['project_base_path'], shell_cmd_dir)
-        self.agent_commands = parse_agent_commands(full_cmd_dir)
-        self.manifest['agent_commands'] = self.agent_commands
         self.mcp_commands = parse_mcp_commands(full_cmd_dir)
         self.manifest['mcp_commands'] = self.mcp_commands
 
@@ -99,6 +95,8 @@ class Copilot(LoggerMixin):
         self.command_state = []
         self.agent_step = 1
         self.project = Project(self.session['project_base_path'])
+        self.agent_commands = self.project.get_commandlets()
+        self.manifest['agent_commands'] = self.agent_commands
 
     def _sanitize_supervisor_command_description(self, text: str) -> str:
         text = re.sub(r"```.*?```", "", text or "", flags=re.DOTALL)
@@ -315,7 +313,7 @@ class Copilot(LoggerMixin):
                     message_id=output['id'],
                 )
 
-                agent = Agent.create(agent_name, agent_commands=self.agent_commands, project=self.project, mcp_commands=self.manifest.get('mcp_commands', []))
+                agent = Agent.create(agent_name, project=self.project, mcp_commands=self.manifest.get('mcp_commands', []))
                 agent.init(agent_instruction, self.manifest, self.LOG_FILE, images=agent_images)
 
                 is_agent_completes_work = False

@@ -17,6 +17,9 @@ class Project:
         full_cmd_dir = os.path.join(self.project_root, shell_cmd_dir)
         self.shell_commands = parse_agent_commands(full_cmd_dir)
 
+    def get_commandlets(self) -> list[dict]:
+        return self.shell_commands
+
     def get_project_root(self) -> str:
         return self.project_root
 
