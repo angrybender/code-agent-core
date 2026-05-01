@@ -545,6 +545,6 @@ class Agent:
             return CoderAgent(role, system_prompt, step_prompt, project=project, has_shell_commands=has_shell_commands)
         elif role == 'MCP':
             from mcp_agent import MCPAgent
-            return MCPAgent(role, system_prompt, step_prompt, mcp_commands or [])
+            return MCPAgent(role, system_prompt, step_prompt, mcp_commands or [], project=project)
         else:
             raise Exception("unknown agent")
