@@ -6,6 +6,8 @@ import logging
 import json
 import copy
 
+from functools import wraps
+
 from openai import OpenAI, BadRequestError, APIError
 from dotenv import load_dotenv
 
@@ -16,6 +18,10 @@ from log_helper import pretty_format
 load_dotenv()
 
 # setup logger
+IS_RECORD_LLM_REQUESTS = int(os.environ.get('RECORD_LLM_REQUESTS', 0)) == 1
+IS_FAKE_LLM_REQUESTS = int(os.environ.get('FAKE_LLM_REQUESTS', 0)) == 1
+LLM_REQUESTS_RECORD_FILE = './storage/RECORD_LLM_REQUESTS.jsonl'
+
 IS_DEBUG = int(os.environ.get('DEBUG', 0)) == 1
 if IS_DEBUG:
     logger = logging.getLogger('llm_api')
@@ -118,6 +124,38 @@ def _parse_json(json_str: str):
                 pass
 
     return None
+
+def _fake_llm_request_fabric():
+    if not os.path.exists(LLM_REQUESTS_RECORD_FILE):
+        raise Exception(f"File with requests record not exists: {LLM_REQUESTS_RECORD_FILE}")
+
+    with open(LLM_REQUESTS_RECORD_FILE, 'r', encoding='utf8') as f:
+        jsonl = f.read().split("\n")
+
+    for line in jsonl:
+        if line:
+            yield json.loads(line)
+
+if IS_FAKE_LLM_REQUESTS:
+    _fake_llm_request_iterator = _fake_llm_request_fabric()
+
+def record_decorator(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if IS_FAKE_LLM_REQUESTS:
+            for value in _fake_llm_request_iterator:
+#                time.sleep(1)
+                yield value
+        else:
+            gen = func(*args, **kwargs)
+            for value in gen:
+                if IS_RECORD_LLM_REQUESTS:
+                    with open(LLM_REQUESTS_RECORD_FILE, 'a', encoding='utf8') as f:
+                        f.write(json.dumps(value) + "\n")
+
+                yield value
+
+    return wrapper
 
 
 def llm_query(messages, tags=None, tools=None, model_name=None, max_tokens=None) -> dict|None:
@@ -246,6 +284,7 @@ def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str) ->
 
     return int(round(char_size*tokens_per_char))
 
+@record_decorator
 def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_tool=False):
     client = OpenAI(
         api_key=API_KEY,
