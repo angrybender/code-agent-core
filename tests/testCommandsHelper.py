@@ -207,14 +207,22 @@ class TestMCPHelper(unittest.TestCase):
 class TestShellCommandInterpreter(unittest.TestCase):
 
     def _make_ti(self, commands=None):
-        return ToolsInterpreter(project=Project('/tmp'), shell_tools=commands or [])
+        project = Project('/tmp')
+        commands = commands or []
+        project.shell_commands = commands
+        shell_tool_map = {}
+        for cmd in commands:
+            for block in cmd.get('shell_blocks', []):
+                tool_name = f"shell__{cmd['command']}_{block['name']}"
+                shell_tool_map[tool_name] = {}
+        return ToolsInterpreter(project=project, shell_tools=shell_tool_map)
 
     def test_unknown_command_empty_commands_map(self):
         ti = self._make_ti()
-        result = ti.execute('shell_command', {'command_name': 'nonexistent', 'shell_block': 'x_1'})
+        result = ti.execute('shell__nonexistent_x_1', {'args': []})
         self.assertTrue(result.error)
-        self.assertEqual('shell_command', result.tool_name)
-        self.assertIn('Unknown command `nonexistent`', result.result)
+        self.assertEqual('shell__nonexistent_x_1', result.tool_name)
+        self.assertIn('Unknown command `shell__nonexistent_x_1`', result.result)
         self.assertIn('none', result.result)
 
     def test_unknown_shell_block_shows_available_names(self):
@@ -228,13 +236,13 @@ class TestShellCommandInterpreter(unittest.TestCase):
             ]
         }]
         ti = self._make_ti(commands)
-        result = ti.execute('shell_command', {'command_name': 'build', 'shell_block': 'deploy_1'})
+        result = ti.execute('shell__build_deploy_1', {'args': []})
         self.assertTrue(result.error)
-        self.assertIn('Unknown shell_block `deploy_1`', result.result)
-        self.assertIn('make_build_1', result.result)
-        self.assertIn('make_test_2', result.result)
+        self.assertIn('shell__build_deploy_1', result.result)
+        self.assertIn('shell__build_make_build_1', result.result)
+        self.assertIn('shell__build_make_test_2', result.result)
 
-    @patch('tools_interpreter.execute_terminal_command')
+    @patch('project.execute_terminal_command')
     def test_executes_selected_block_with_args(self, execute_mock):
         execute_mock.return_value = {'stdout': 'ok', 'stderr': '', 'status': 'ok'}
         commands = [{
@@ -248,11 +256,13 @@ class TestShellCommandInterpreter(unittest.TestCase):
         }]
         ti = self._make_ti(commands)
 
-        result = ti.execute('shell_command', {'command_name': 'git', 'shell_block': 'git_add_1', 'args': ['tests/test.py']})
+        result = ti.execute('shell__git_git_add_1', {'args': ['tests/test.py']})
 
         execute_mock.assert_called_once()
         self.assertIn('git add', execute_mock.call_args.kwargs['cmd'])
+        self.assertIn('git add $1', execute_mock.call_args.kwargs['cmd'])
         self.assertEqual('shell_command', result.tool_name)
+        self.assertEqual('git add $1', execute_mock.call_args.kwargs['cmd'])
         self.assertFalse(result.error)
         self.assertIn('ok', result.result)
         self.assertEqual('ok', result.meta['status'])
@@ -269,15 +279,13 @@ class TestShellCommandInterpreter(unittest.TestCase):
         }]
         ti = self._make_ti(commands)
 
-        wrong = ti.execute('shell_command', {'command_name': 'git', 'shell_block': 'git_status_2', 'args': ['extra']})
+        wrong = ti.execute('shell__git_git_status_2', {'args': ['extra']})
         self.assertTrue(wrong.error)
-        self.assertIn('Wrongs `git` `git_status_2` argument list', wrong.result)
+        self.assertIn("Wrongs `shell__git_git_status_2` argument list", wrong.result)
 
-    def test_missing_shell_block_argument_fails(self):
-        ti = self._make_ti([])
-        result = ti.execute('shell_command', {'command_name': 'build'})
-        self.assertTrue(result.error)
-        self.assertIn('wrong command code/arguments', result.result)
+        missing = ti.execute('shell__git_git_add_1', {})
+        self.assertTrue(missing.error)
+        self.assertIn("Wrongs `shell__git_git_add_1` argument list", missing.result)
 
 
 class TestAgentCommandFiltering(unittest.TestCase):
