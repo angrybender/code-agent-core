@@ -13,6 +13,7 @@ from log_helper import pretty_format
 import ide_integration
 from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE
 from path_helper import get_relative_path
+from project import Project
 from tools_interpreter import ToolsInterpreter
 from agents import Agent
 from tools.tools import SUPERVISOR_TOOLS
@@ -43,8 +44,8 @@ class Copilot(LoggerMixin):
         self.manifest = {}
         self.session = session
         self.instruction = instruction
+        self.project = None
 
-        self.interpreter = None
         self.role = 'SUPERVISOR'
         self.log_file = self.LOG_FILE
 
@@ -97,7 +98,7 @@ class Copilot(LoggerMixin):
         self.executed_commands = []
         self.command_state = []
         self.agent_step = 1
-        self.interpreter = ToolsInterpreter(self.session['project_base_path'])
+        self.project = Project(self.session['project_base_path'])
 
     def _sanitize_supervisor_command_description(self, text: str) -> str:
         text = re.sub(r"```.*?```", "", text or "", flags=re.DOTALL)
@@ -314,7 +315,7 @@ class Copilot(LoggerMixin):
                     message_id=output['id'],
                 )
 
-                agent = Agent.create(agent_name, self.agent_commands, mcp_commands=self.manifest.get('mcp_commands', []))
+                agent = Agent.create(agent_name, agent_commands=self.agent_commands, project=self.project, mcp_commands=self.manifest.get('mcp_commands', []))
                 agent.init(agent_instruction, self.manifest, self.LOG_FILE, images=agent_images)
 
                 is_agent_completes_work = False

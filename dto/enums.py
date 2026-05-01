@@ -25,3 +25,12 @@ class EventType(str, Enum):
     WARNING  = "warning"
     EXIT    = "exit"
     CONTEXT = "context"
+
+
+class ToolOperation(str, Enum):
+    READ    = 'READ'
+    CREATE  = 'CREATE'
+    UPDATE  = 'UPDATE'
+    SHELL   = 'SHELL'
+    MCP     = 'MCP'
+    OTHER   = 'OTHER'

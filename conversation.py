@@ -5,7 +5,7 @@ from dataclasses import asdict
 from markupsafe import escape
 
 from dto.dto_instruction import DTOInstruction
-from dto.enums import EventType
+from dto.enums import EventType, ToolOperation
 
 _FUNCTION_NAME_TITLES = {
     'list_in_directory': 'list  ',
@@ -172,15 +172,15 @@ def _agent_call_tpl(message: DTOInstruction) -> dict:
 def _file_processing_tpl(result: dict) -> str:
     css_class = ''
     a_href = '#'
-    if 'file_edit' in result:
+    if result['operation'] == ToolOperation.UPDATE:
         css_class = 'file_edit'
-        a_href = f"#call:jide_open_file//{result['file_path']}//{result['source_file_path']}"
-    elif 'file_create' in result:
+        a_href = f"#call:jide_open_file//{result['file_path']}//{result['meta']['source_file_path']}"
+    elif result['operation'] == ToolOperation.CREATE:
         css_class = 'file_create'
         a_href = f"#call:jide_open_file//{result['file_path']}"
 
-    if 'file_name' in result:
-        return f"<a class='jide_open_file {css_class}' href='{a_href}'>{result['file_name']}</a>"
+    if 'file_name' in result['meta']:
+        return f"<a class='jide_open_file {css_class}' href='{a_href}'>{result['meta']['file_name']}</a>"
     else:
         return '-'
 

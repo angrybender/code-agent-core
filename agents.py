@@ -11,6 +11,7 @@ from jinja2 import Environment, BaseLoader
 import logging
 
 from logger_mixin import LoggerMixin
+from project import Project
 
 logger = logging.getLogger('APP')
 
@@ -20,9 +21,8 @@ load_dotenv()
 from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE, LLMRequestFormat
 from tools_interpreter import ToolsInterpreter
 from tools.tools import get_analytic_tools, get_coder_tools, get_reviewer_tools, TOOL_SUMMARIZE, TOOL_REPORT
-from search_code import SearchCode
 from dto.dto_instruction import DTOInstruction
-from dto.enums import EventType
+from dto.enums import EventType, ToolOperation
 from context_helper import compact_conversation_remove_redundant
 from agents_logic.tools_mixin import ToolsMixin
 from agents_logic.conversation_mixin import ConversationMixin
@@ -36,21 +36,21 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
     DEEP_THINK_TAG = 'work_plan'
     STORAGE_PATH = './storage'
 
-    def __init__(self, role: str, system_prompt: str, step_prompt: str, thinking: bool, has_shell_commands: bool = True):
-        self.system_prompt = system_prompt
-        self.step_prompt = step_prompt
-
+    def __init__(self, role: str, system_prompt: str, step_prompt: str, thinking: bool, project: Project, has_shell_commands: bool = True):
+        self.interpreter: ToolsInterpreter | None = None
         self.instruction = None
         self.images = []
         self.project_description = None
         self.project_structure = None
         self.current_open_file = None
-        self.interpreter = None
+        self.storage_path = None
+
+        self.system_prompt = system_prompt
+        self.step_prompt = step_prompt
+        self.project = project
         self.role = role
         self.log_file = role
         self.thinking = thinking
-        self.storage_path = None
-        self.search_service = SearchCode()
         self.has_shell_commands = has_shell_commands
         self.artifacts = {
             'files_read': [],
@@ -94,7 +94,10 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
         self.images = images if isinstance(images, list) else []
         self.project_description = manifest['description']
         self.project_structure = manifest['files_structure']
-        self.interpreter = ToolsInterpreter(manifest['base_path'], self.search_service, commands=manifest.get('agent_commands', []))
+        self.interpreter = ToolsInterpreter(
+            commands=manifest.get('agent_commands', []),
+            project=self.project,
+        )
         self.log_file = log_file
 
         self.storage_path = os.path.join(self.STORAGE_PATH, hashlib.sha256(manifest['base_path'].encode()).hexdigest())
@@ -129,7 +132,6 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
     def run(self):
         assert self.instruction, 'Init() s required'
         specific_model = os.environ.get(f'MODEL:{self.role}', None)
-        self.search_service.reset()
 
         current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         sub_prompt = self.step_prompt.format(
@@ -364,14 +366,11 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                         is_final=False
                     )
 
-                result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
-                is_success = not result.get('error', False)
+                tool_result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
+                is_success = not tool_result.error
 
-                if 'error' in result:
-                    del result['error']
-
-                if is_success and 'file_edit' in result:
-                    result['source_file_path'] = self.cache_file(result['file_name'], result['source_file_content'])
+                if tool_result.operation == ToolOperation.UPDATE:
+                    tool_result.meta['source_file_path'] = self.cache_file(tool_result.file_path)
 
                 if not tool_call_description['args']:
                     tool_call_description['args'] = {}
@@ -394,9 +393,9 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                     elif fn == 'write_file':
                         file_path = tool_args.get('path', '')
                         if file_path:
-                            if result.get('file_create'):
+                            if tool_result.operation == ToolOperation.CREATE:
                                 self.artifacts['files_created'].append(file_path)
-                            elif result.get('file_edit'):
+                            elif tool_result.operation == ToolOperation.UPDATE:
                                 self.artifacts['files_modified'].append(file_path)
                     elif fn == 'replace_code_in_file':
                         file_path = tool_args.get('path', '')
@@ -408,7 +407,7 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                         command_ref = f'{cmd_name}/{shell_block}' if cmd_name and shell_block else cmd_name or shell_block
                         self.artifacts['commands_run'].append({
                             'command': command_ref,
-                            'status': result.get('status', 'unknown') if isinstance(result, dict) else 'unknown'
+                            'status': tool_result.meta.get('status', 'unknown')
                         })
 
                 if not is_pre_output:
@@ -416,20 +415,20 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                         type=EventType.TOOL,
                         function=tool_call_description['function'],
                         args=tool_call_description['args'],
-                        result=result,
+                        result=tool_result.__dict__,
                         is_success=is_success,
                         message_id=output['id']
                     )
 
                 if is_output_resul_of_tool_separate_msg:
-                    _result = result.get('post_result', result['result'])
+                    _result = tool_result.output
                     yield DTOInstruction(type=EventType.MARKDOWN, message=_result, message_id=response_message_id)
 
                 result_msg = {
                     'role': 'tool',
                     'tool_call_id': current_tool_call['id'],
                     'name': current_tool_call['function']['name'],
-                    'content': result['result'],
+                    'content': tool_result.result
                 }
                 self.log("TOOL RESULT:", True)
                 self.log(result_msg, True)
@@ -471,11 +470,15 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
 
 
 
-    def cache_file(self, file_name: str, source_file_content: str) -> str:
+    def cache_file(self, file_name: str) -> str:
+        file_history = self.project.get_file_history(file_name)
+        assert len(file_history) > 1, f"For file `{file_name}` where are no history of changes"
+
+        prev_version = file_history[0]['content'] # TODO diff between versions
         source_file_content_path = os.path.join(self.storage_path, hashlib.sha256(file_name.encode()).hexdigest() + '.txt')
         if not os.path.exists(source_file_content_path):
             with open(source_file_content_path, 'w', encoding='utf8') as f:
-                f.write(source_file_content)
+                f.write(prev_version)
 
         return os.path.abspath(source_file_content_path)
 
@@ -522,7 +525,7 @@ class Agent:
                 shutil.rmtree(cache_path)
 
     @staticmethod
-    def create(role, agent_commands: list = None, mcp_commands: list = None) -> BaseAgent:
+    def create(role, project: Project, agent_commands: list = None, mcp_commands: list = None) -> BaseAgent:
         assert role in Agent.PROMPTS, f'invalid role: {role}'
 
         thinking = role in DEEPTHINKING_AGENTS
@@ -542,9 +545,9 @@ class Agent:
             step_prompt = f.read()
 
         if role == 'ANALYTIC' or role == 'REVIEWER':
-            return AnalyticAgent(role, system_prompt, step_prompt, thinking, has_shell_commands)
+            return AnalyticAgent(role, system_prompt, step_prompt, thinking, project=project, has_shell_commands=has_shell_commands)
         elif role == 'CODER':
-            return CoderAgent(role, system_prompt, step_prompt, False, has_shell_commands)
+            return CoderAgent(role, system_prompt, step_prompt, False, project=project, has_shell_commands=has_shell_commands)
         elif role == 'MCP':
             from mcp_agent import MCPAgent
             return MCPAgent(role, system_prompt, step_prompt, False, mcp_commands or [])

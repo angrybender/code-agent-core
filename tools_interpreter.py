@@ -1,21 +1,26 @@
 import os
 import os.path
-import re
 import json
 import shlex
+
 from commands_helper import execute_terminal_command
 
 from diff_helper import apply_patch, PatchError
-from ide_integration import tool_call
-from search_code import SearchCode
+from dto.dto_tools import DTOTool
+from dto.enums import ToolOperation
+from project import Project
 
 SHELL_COMMAND_TIMEOUT = int(os.getenv('SHELL_COMMAND_TIMEOUT', 30))
 
+
+class ToolError(Exception):
+    pass
+
 class ToolsInterpreter:
-    def __init__(self, project_root, search_service: SearchCode = None, commands: list = None):
-        self.project_root = project_root
-        self.search_service = search_service
+    def __init__(self, commands: list = None, project: Project = None):
+        self.project_root = project.get_project_root()
         self._commands_map = {c['command']: c for c in (commands or [])}
+        self.project = project
 
     def _correction_write_arg(self, value) -> str:
         """
@@ -43,74 +48,69 @@ class ToolsInterpreter:
         project_root_real = os.path.realpath(self.project_root)
         return real_path.startswith(project_root_real + os.sep)
 
-    def _command_read(self, path: str, offset: int = 0, limit: int = None) -> dict:
+    def _command_read(self, path: str, offset: int = 0, limit: int = None) -> DTOTool:
         if not self._validate_path(path):
-            return {'result': 'ERROR: Invalid path', 'error': True}
-        content = tool_call('get_file_text_by_path', {
-            'pathInProject': path,
-            'projectPath': self.project_root,
-        })
+            raise ToolError('Invalid path')
+        content = self.project.read_file(path)
 
-        is_success = False
-        total_lines = 0
-        lines = []
-        if 'error' in content:
+        if content['error']:
             result = content['error']
             result = result.replace(self.project_root, '')
-        elif 'status' not in content:
-            result = "ERROR: File not exists"
-        else:
-            is_success = True
-            full_content = content['status']
-            lines = full_content.split('\n')
-            total_lines = len(lines)
-            lines = lines[offset:]
-            if limit is not None:
-                lines = lines[:limit]
-            result = '\n'.join(lines)
+            raise ToolError(result)
 
-        response = {'result': result, 'exists': 'status' in content}
-        if is_success:
-            response['tool_name'] = 'read'
-            response['file_path'] = path
-            response['total_lines'] = total_lines
-            response['offset'] = offset
-            response['returned_lines'] = len(lines)
-        else:
-            response['error'] = True
+        full_content = content['content']
+        lines = full_content.split('\n')
+        lines = lines[offset:]
+        if limit is not None:
+            lines = lines[:limit]
+        result = '\n'.join(lines)
 
-        return response
+        return DTOTool(
+            result=result,
+            operation=ToolOperation.READ,
+            tool_name='read',
+            file_path=path,
+        )
 
-    def _command_read_multiply(self, root_path: str, file_name: list) -> dict:
+
+    def _command_read_multiply(self, root_path: str, file_name: list) -> DTOTool:
         results = []
+        file_paths = []
         for name in file_name:
             file_path = os.path.join(root_path, name)
+            header = f"--- file: {file_path} ---"
 
             if root_path:
                 real_file = os.path.realpath(os.path.join(self.project_root, file_path))
                 real_root = os.path.realpath(os.path.join(self.project_root, root_path))
                 if not (real_file.startswith(real_root + os.sep) or real_file == real_root):
-                    results.append(f"Error: invalid path of /{name}")
+                    results.append(f"{header}\ninvalid path of /{name}")
                     continue
 
-            single_result = self._command_read(path=file_path)
-            header = f"--- file: {file_path} ---"
-            results.append(f"{header}\n{single_result['result']}")
-        return {
-            'result': "\n\n".join(results),
-            'tool_name': 'read_multiply_files',
-        }
+            file_paths.append(name)
+            try:
+                single_result = self._command_read(path=file_path)
+                results.append(f"{header}\n{single_result.result}")
+            except ToolError:
+                results.append(f"{header}\ninvalid path of /{name}")
 
-    def _command_list(self, path) -> dict:
+        return DTOTool(
+            result="\n\n".join(results),
+            tool_name='read_multiply_files',
+            file_path="\n".join(file_paths),
+            operation=ToolOperation.READ,
+        )
+
+    def _command_list(self, path) -> DTOTool:
         if not self._validate_path(path):
-            return {'result': 'ERROR: Invalid path', 'error': True}
+            raise ToolError('Invalid path')
         absolute_path = os.path.join(self.project_root, path)
 
         if not os.path.exists(absolute_path):
-            return {'result': 'ERROR: Path not exists'}
+            raise ToolError('Path not exists')
 
         if not os.path.isdir(absolute_path):
-            return {'result': 'ERROR: this is a file'}
+            raise ToolError('This is a file, use read file tool')
 
         result = []
         for _path in os.listdir(str(absolute_path)):
@@ -131,58 +131,52 @@ class ToolsInterpreter:
                 lines_str = f"{line_count} lines" if line_count is not None else "? lines"
                 result.append(f"- {_path} ({file_size} bytes, {lines_str})")
 
-        return {'result': "\n".join(result), 'tool_name': 'list_in_directory'}
+        return DTOTool(
+            result="\n".join(result),
+            tool_name='list_in_directory'
+        )
 
-    def _command_write(self, path, content) -> dict:
+    def _command_write(self, path, content) -> DTOTool:
         if not self._validate_path(path):
-            return {'result': 'ERROR: Invalid path', 'error': True}
+            raise ToolError('Invalid path')
+
         # looking for file exists:
-        source_file = self._command_read(path)
-        is_exist = source_file['exists']
+        try:
+            _ = self._command_read(path).result
+            is_exist = True
+        except ToolError:
+            is_exist = False
 
         content = self._correction_write_arg(content)
         if type(content) is not str:
-            return {'result': "ERROR: file content must be string!"}
+            raise ToolError('File content must be string!')
 
         content = content.strip()
-        if re.match(r'^```[a-z]+\s', content):
-            content = re.sub(r'^```[a-z]+\s', '', content)
-        elif content[:3] == '```':
-            content = content[3:]
+        result = self.project.write_file(path, content)
 
-        content = re.sub(r'```$', '', content)
+        if result['error']:
+            raise ToolError(result['error'])
 
-        mcp_result = tool_call('create_new_file', {
-            'pathInProject': path,
-            'text': content.strip(),
-            'projectPath': self.project_root,
-            'overwrite': True,
-        })
+        return DTOTool(
+            result="True",
+            tool_name="write",
+            file_path=str(os.path.join(self.project_root, path)),
+            operation=ToolOperation.UPDATE if is_exist else ToolOperation.CREATE,
+            meta={
+                'file_name': path
+            }
+        )
 
-        result = {'result': "True" if 'status' in mcp_result else "ERROR: " + mcp_result['error']}
-        if 'status' in mcp_result:
-            result['tool_name'] = 'write'
-            result['file_path'] = os.path.join(self.project_root, path)
-            result['file_name'] = path
-
-            if is_exist:
-                result['file_edit'] = True
-                result['source_file_content'] = source_file['result']
-            else:
-                result['file_create'] = True
-        else:
-            result['error'] = True
-
-        return result
-
-    def _command_write_diff(self, path, str_find, str_replace):
+    def _command_write_diff(self, path, str_find, str_replace) -> DTOTool:
         if not self._validate_path(path):
-            return {'result': 'ERROR: Invalid path', 'error': True}
-        source_file = self._command_read(path)
-        if not source_file['exists']:
-            return {'result': "ERROR: file not exist"}
+            raise ToolError('Invalid path')
 
-        source_code = source_file['result']
+        try:
+            source_file = self._command_read(path)
+        except ToolError:
+            raise ToolError('File not exist')
+
+        source_code = source_file.result
         source_code = [_.rstrip() for _ in source_code.split("\n")]
 
         str_find = self._correction_write_arg(str_find)
@@ -191,36 +185,30 @@ class ToolsInterpreter:
         try:
             patched_file = apply_patch("\n".join(source_code), str_find, str_replace)
         except PatchError as e:
-            return {'result': f"ERROR: {e}", 'error': True}
+            raise ToolError(str(e))
 
-        content = tool_call('create_new_file', {
-            'pathInProject': path,
-            'text': patched_file.strip(),
-            'projectPath': self.project_root,
-            'overwrite': True,
-        })
+        result = self.project.write_file(path, patched_file.strip())
+        if result['error']:
+            raise ToolError(result['error'])
 
-        result = {'result': "True" if 'status' in content else "ERROR: " + content['error']}
-        if 'status' in content:
-            result['file_edit'] = True
-            result['tool_name'] = 'write_diff'
-            result['file_path'] = os.path.join(self.project_root, path)
-            result['file_name'] = path
-            result['source_file_content'] = source_file['result']
-        else:
-            result['error'] = True
+        return DTOTool(
+            result="True",
+            tool_name="write_diff",
+            file_path=str(os.path.join(self.project_root, path)),
+            operation=ToolOperation.UPDATE,
+            meta={
+                'file_name': path
+            }
+        )
 
-        return result
-
-    def _search_file(self, needle, extension=None):
-        if self.search_service is None:
-            return {'error': 'Search service is not available'}
+    def _search_file(self, needle, extension=None) -> DTOTool:
         needle = str(needle).strip()
         if not needle:
-            return {'error': 'needle must be a non-empty string', 'tool_name': 'search_file'}
-        total_count, results = self.search_service.search(self.project_root, needle, str(extension))
+            raise ToolError('Needle must be a non-empty string')
+
+        total_count, results = self.project.search_files(needle, str(extension))
         if not results:
-            return {"result": "ERROR: empty search result", "tool_name": "search_file"}
+            raise ToolError('Empty search result')
 
         formatted_result = []
         for result in results:
@@ -228,36 +216,35 @@ class ToolsInterpreter:
                 f"file: `{result['file']}`\nline: {result['line_number']}\nfound line: ```{result['found']}```"
             )
 
-        return {"result": "\n\n".join(formatted_result), "tool_name": "search_file", "post_result": f"Found: {total_count} file(s)"}
+        return DTOTool(
+            result="\n\n".join(formatted_result),
+            tool_name="search_file",
+            output=f"Found: {total_count} file(s)",
+        )
 
-    def _command_shell(self, command_name: str, shell_block: str, args: list = None) -> dict:
+    def _command_shell(self, command_name: str, shell_block: str, args: list = None) -> DTOTool:
         if not command_name or not isinstance(command_name, str):
-            return {'result': 'ERROR: command_name must be a non-empty string', 'error': True, 'tool_name': 'shell_command'}
+            raise ToolError('`command_name` must be a non-empty string')
+
         if not shell_block or not isinstance(shell_block, str):
-            return {'result': 'ERROR: shell_block must be a non-empty string', 'error': True, 'tool_name': 'shell_command'}
+            raise ToolError('`shell_block` must be a non-empty string')
 
         command_def = self._commands_map.get(command_name)
         if not command_def:
             available = ', '.join(self._commands_map.keys()) or 'none'
-            return {'result': f"ERROR: Unknown command '{command_name}'. Available: {available}", 'error': True, 'tool_name': 'shell_command'}
+            raise ToolError(f"Unknown command `{command_name}`. Available: {available}")
 
         available_blocks = {block['name']: block for block in command_def.get('shell_blocks', [])}
         block_def = available_blocks.get(shell_block)
         if not block_def:
             block_names = ', '.join(available_blocks.keys()) or 'none'
-            return {
-                'result': f"ERROR: Unknown shell_block '{shell_block}' for command '{command_name}'. Available: {block_names}",
-                'error': True,
-                'tool_name': 'shell_command'
-            }
+            raise ToolError(f"Unknown shell_block `{shell_block}` for command `{command_name}`. Available: {block_names}")
 
         args = args or []
         if len(args) != len(block_def['args']):
-            return {
-                'result': f"ERROR: Wrongs '{command_name}/{shell_block}' argument list: current: {len(args)}; actual: {len(block_def['args'])}.",
-                'error': True,
-                'tool_name': 'shell_command'
-            }
+            raise ToolError(
+                f"Wrongs `{command_name}` `{shell_block}` argument list: current: {len(args)}; actual: {len(block_def['args'])}."
+            )
 
         cmd = block_def['cmd']
         for i, value in enumerate(args, start=1):
@@ -265,11 +252,9 @@ class ToolsInterpreter:
 
         raw = execute_terminal_command(cmd=cmd, timeout=SHELL_COMMAND_TIMEOUT, cwd=self.project_root)
         if raw['status'] == 'timeout':
-            return {
-                'result': f"ERROR: Command timed out after {SHELL_COMMAND_TIMEOUT}s. Partial output: {raw['stdout']}",
-                'error': True,
-                'tool_name': 'shell_command',
-            }
+            raise ToolError(
+                f"Command timed out after {SHELL_COMMAND_TIMEOUT}s. Partial output: {raw['stdout']}"
+            )
         else:
             output = f"stdout: {raw['stdout']}" if raw['stdout'] else ''
             if raw['stderr']:
@@ -279,16 +264,14 @@ class ToolsInterpreter:
             if not output:
                 output = raw['status']
 
-            output = f"`$ {cmd}`\n\n```\n{output}\n```"
-
-            return {
-                'result': output,
-                'tool_name': 'shell_command',
-                'cmd': cmd,
-                'status': raw['status'],
-                'command_name': command_name,
-                'shell_block': shell_block,
-            }
+            return DTOTool(
+                result=output,
+                tool_name='shell_command',
+                output=f"`$ {cmd}`\n\n```\n{output}\n```",
+                meta={
+                    'status': raw['status'],
+                }
+            )
 
     def _get_handlers(self) -> dict:
         return {
@@ -301,11 +284,25 @@ class ToolsInterpreter:
             'shell_command': self._command_shell,
         }
 
-    def execute(self, opcode: str, arguments: dict) -> dict:
+    def execute(self, tool_name: str, arguments: dict) -> DTOTool:
         try:
-            handler = self._get_handlers().get(opcode)
+            handler = self._get_handlers().get(tool_name)
             if not handler:
-                return {"result": "ERROR: wrong tool name, check tools list and call correct", 'error': True}
+                return DTOTool(
+                    tool_name=tool_name,
+                    result="ERROR: wrong tool name, check tools list and call correct",
+                    error=True
+                )
+
             return handler(**arguments)
+        except ToolError as e:
+            return DTOTool(
+                tool_name=tool_name,
+                result=f"ERROR: {e}",
+                error=True
+            )
         except TypeError:
-            return {"result": "ERROR: wrong command code/arguments, check tools list and call correct", 'error': True}
+            return DTOTool(
+                tool_name=tool_name, result="ERROR: wrong command code/arguments, check tools list and call correct",
+                error=True
+            )

@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from commands_helper import parse_agent_commands, execute_terminal_command
 from mcp_integration.mcp_helper import parse_mcp_commands
+from project import Project
 from tools_interpreter import ToolsInterpreter
 from agents import Agent
 
@@ -206,7 +207,7 @@ class TestMCPHelper(unittest.TestCase):
 class TestShellCommandInterpreter(unittest.TestCase):
 
     def _make_ti(self, commands=None):
-        return ToolsInterpreter('', '/tmp', commands=commands or [])
+        return ToolsInterpreter(project=Project('/tmp'), commands=commands or [])
 
     def test_unknown_command_empty_commands_map(self):
         ti = self._make_ti()
@@ -299,7 +300,7 @@ class TestAgentCommandFiltering(unittest.TestCase):
         ]
         with patch('agents.AnalyticAgent') as analytic_agent_cls:
             analytic_agent_cls.return_value = object()
-            agent = Agent.create('REVIEWER', commands)
+            agent = Agent.create('REVIEWER', project=Project(''), agent_commands=commands)
             self.assertIsNotNone(agent)
             args = analytic_agent_cls.call_args[0]
             self.assertTrue(args[4])

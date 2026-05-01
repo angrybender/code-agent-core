@@ -110,13 +110,7 @@ TOOL_WRITE_FILE = {
                 },
                 "content": {
                     "type": "string",
-                    "description":
-"""Data to write to the file. YOU MUST WRAP the output in ```, don't escape quotes (\") and brackets (< >)
-example:
-```json
-{
-    "id": 1
-}```"""
+                    "description": "Data to write to the file. Don't escape quotes (\") and brackets (< >)"
                 }
             }
         }

@@ -2,6 +2,7 @@ import unittest
 import os
 import re
 
+from project import Project
 from tools_interpreter import ToolsInterpreter
 
 class TestToolsInterpreter(unittest.TestCase):
@@ -16,14 +17,14 @@ class TestToolsInterpreter(unittest.TestCase):
 
     def test_command_list2(self):
         root_path = os.path.join(os.path.dirname(__file__), '..', '_invalid_dir')
-        instance = ToolsInterpreter(str(root_path))
+        instance = ToolsInterpreter(project=Project(str(root_path)))
         result = instance.execute('list_in_directory', {'path': '.'})
 
         self.assertIn('ERROR:', result['result'])
 
     def test_read_multiply_files(self):
         root_path = os.path.join(os.path.dirname(__file__), '..')
-        instance = ToolsInterpreter(str(root_path))
+        instance = ToolsInterpreter(project=Project(str(root_path)))
         result = instance.execute('read_multiply_files', {'root_path': './', 'file_name': ['env.example', 'requirements.txt']})
 
         self.assertEqual(result['tool_name'], 'read_multiply_files')
@@ -32,7 +33,7 @@ class TestToolsInterpreter(unittest.TestCase):
 
     def test_read_multiply_files_1(self):
         root_path = os.path.join(os.path.dirname(__file__), '..')
-        instance = ToolsInterpreter(str(root_path))
+        instance = ToolsInterpreter(project=Project(str(root_path)))
         result = instance.execute('read_multiply_files', {'root_path': './tests', 'file_name': ['__init__.py']})
 
         self.assertEqual(result['tool_name'], 'read_multiply_files')
@@ -58,7 +59,7 @@ class TestToolsInterpreter(unittest.TestCase):
 
     def test_read_multiply_files_empty_list(self):
         root_path = os.path.join(os.path.dirname(__file__), '..')
-        instance = ToolsInterpreter(str(root_path))
+        instance = ToolsInterpreter(project=Project(str(root_path)))
         result = instance.execute('read_multiply_files', {'root_path': '', 'file_name': []})
 
         self.assertEqual(result['tool_name'], 'read_multiply_files')
@@ -66,7 +67,7 @@ class TestToolsInterpreter(unittest.TestCase):
 
     def test_read_multiply_files_single_file(self):
         root_path = os.path.join(os.path.dirname(__file__), '..')
-        instance = ToolsInterpreter(str(root_path))
+        instance = ToolsInterpreter(project=Project(str(root_path)))
         result = instance.execute('read_multiply_files', {'root_path': '', 'file_name': ['env.example']})
 
         self.assertEqual(result['tool_name'], 'read_multiply_files')
