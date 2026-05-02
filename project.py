@@ -7,8 +7,8 @@ from mcp_integration.mcp_helper import parse_mcp_commands
 from search_code import SearchCode
 from commands_helper import parse_agent_commands, execute_terminal_command
 
-
 SHELL_COMMAND_TIMEOUT = int(os.getenv('SHELL_COMMAND_TIMEOUT', 30))
+
 
 class Project:
     PROJECT_DESCRIPTION = "./AGENTS.md"

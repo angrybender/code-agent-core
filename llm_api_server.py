@@ -1,6 +1,8 @@
 from dataclasses import asdict
 
-from flask import Flask, render_template, request, Response
+from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse, Response, StreamingResponse
+from fastapi.templating import Jinja2Templates
 import json
 import time
 import os
@@ -17,10 +19,11 @@ logger = logging.getLogger('APP')
 
 from algorythm import Copilot
 from commands_helper import parse_agent_commands
-from conversation import get_terminal, agent_result_of_all_active_tpl, agent_tool_tpl, _agent_call_tpl
+from conversation import get_terminal, agent_result_of_all_active_tpl, agent_tool_tpl
 from mcp_integration.mcp_helper import parse_mcp_commands
 
-app = Flask(__name__)
+app = FastAPI()
+templates = Jinja2Templates(directory="templates")
 
 load_dotenv()
 HTTP_PORT = int(os.getenv('HTTP_PORT', 5000))
@@ -28,6 +31,17 @@ MODEL = os.getenv('MODEL')
 IS_DEBUG = int(os.environ.get('DEBUG', 0)) == 1
 STREAM_PENDING_PERIOD = 1
 VERSION_TAG = 2
+HTML_HEADERS = {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    'Access-Control-Allow-Origin': '*'
+}
+SSE_HEADERS = {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*'
+}
 
 if IS_DEBUG:
     logging.getLogger().setLevel(logging.DEBUG)
@@ -101,6 +115,10 @@ class SessionsManaged:
 SESSION_MANAGER_INSTANCE = SessionsManaged()
 
 
+def json_text_response(data, status_code: int = 200):
+    return Response(content=json.dumps(data), status_code=status_code)
+
+
 def process_task(user_request: str, session_id: str):
     session = Copilot(user_request, SESSION_MANAGER_INSTANCE.get_session_data(session_id))
 
@@ -149,22 +167,22 @@ def process_task(user_request: str, session_id: str):
     yield f"data: {json.dumps(get_terminal())}\n\n"
 
 
-@app.route('/')
-def index():
-    project_base_path = request.args.get('project')
+@app.get('/')
+async def index(request: Request):
+    project_base_path = request.query_params.get('project')
     if not project_base_path:
-        return 'Empty ?project=', 400
+        return PlainTextResponse('Empty ?project=', status_code=400)
 
     if not os.path.exists(project_base_path):
-        return f'Wrong ?project={project_base_path}', 400
+        return PlainTextResponse(f'Wrong ?project={project_base_path}', status_code=400)
 
-    ui_version_tag = int(request.args.get('versionTag', 0))
+    ui_version_tag = int(request.query_params.get('versionTag', 0))
     if ui_version_tag != VERSION_TAG:
-        return Response(render_template('error.html', core_version=VERSION_TAG, ui_version=ui_version_tag), mimetype='text/html', headers={
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'no-cache',
-            'Access-Control-Allow-Origin': '*'
-        })
+        return templates.TemplateResponse(
+            'error.html',
+            {'request': request, 'core_version': VERSION_TAG, 'ui_version': ui_version_tag},
+            headers=HTML_HEADERS
+        )
 
     session_id = hashlib.sha256(project_base_path.encode()).hexdigest()
     shell_cmd_dir = os.getenv('SHELL_COMMAND_DIRECTORY', '.agent-commands')
@@ -193,90 +211,91 @@ def index():
 
     SESSION_MANAGER_INSTANCE.add_session_parameter(session_id, 'project_base_path', project_base_path)
 
-    return Response(render_template('app.html', app=template_app_data), mimetype='text/html', headers={
-        'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'no-cache',
-        'Access-Control-Allow-Origin': '*'
-    })
+    return templates.TemplateResponse(
+        'app.html',
+        {'request': request, 'app': template_app_data},
+        headers=HTML_HEADERS
+    )
 
-@app.route('/control', methods=['POST'])
-def control_action():
-    data = request.get_json()
+
+@app.post('/control')
+async def control_action(request: Request):
+    data = await request.json()
     command = data.get('command', '').strip()
     user_session_id = data.get('session_id', '').strip()
     if not user_session_id:
-        return json.dumps({'status': 'error', 'message': 'empty session'}), 400
+        return json_text_response({'status': 'error', 'message': 'empty session'}, 400)
 
     if command not in ['stop']:
-        return json.dumps({'status': 'error', 'message': 'invalid command'}), 400
+        return json_text_response({'status': 'error', 'message': 'invalid command'}, 400)
 
     SESSION_MANAGER_INSTANCE.send_command(user_session_id, command)
 
-    return json.dumps({'status': 'success'})
+    return json_text_response({'status': 'success'})
 
 
-@app.route('/file_content', methods=['GET'])
-def file_content():
-    file_path = request.args.get('path', '').strip()
+@app.get('/file_content')
+async def file_content(request: Request):
+    file_path = request.query_params.get('path', '').strip()
 
     if not file_path:
-        return json.dumps({'error': 'path parameter is required'}), 400
+        return json_text_response({'error': 'path parameter is required'}, 400)
 
     if not os.path.isabs(file_path):
-        return json.dumps({'error': 'path must be absolute'}), 400
+        return json_text_response({'error': 'path must be absolute'}, 400)
 
     file_path = os.path.realpath(file_path)
 
     if not os.path.isfile(file_path):
-        return json.dumps({'error': 'file not found'}), 404
+        return json_text_response({'error': 'file not found'}, 404)
 
     mime_type, _ = mimetypes.guess_type(file_path)
     if not mime_type or not mime_type.startswith('image/'):
-        return json.dumps({'error': 'file is not an image'}), 400
+        return json_text_response({'error': 'file is not an image'}, 400)
 
     max_size = 5 * 1024 * 1024
     if os.path.getsize(file_path) > max_size:
-        return json.dumps({'error': 'file exceeds 5 MB limit'}), 400
+        return json_text_response({'error': 'file exceeds 5 MB limit'}, 400)
 
     with open(file_path, 'rb') as f:
         encoded = base64.b64encode(f.read()).decode('ascii')
 
     data_url = f'data:{mime_type};base64,{encoded}'
 
-    return json.dumps({
+    return json_text_response({
         'data_url': data_url,
         'mime_type': mime_type,
         'error': None
     })
 
 
-@app.route('/api/agent', methods=['POST'])
-def agent_api():
+@app.post('/api/agent')
+async def agent_api(request: Request):
     try:
-        data = request.get_json()
+        data = await request.json()
         user_message = data.get('message', '').strip()
         project_base_path = data.get('project_base_path', '').strip()
         max_working_time = data.get('max_working_time')
 
         if not project_base_path:
-            return json.dumps({'status': 'error', 'message': 'project_base_path is required and must be non-empty'}), 400
+            return json_text_response({'status': 'error', 'message': 'project_base_path is required and must be non-empty'}, 400)
 
         if not os.path.exists(project_base_path):
-            return json.dumps({'status': 'error', 'message': 'project_base_path is not exists'}), 400
+            return json_text_response({'status': 'error', 'message': 'project_base_path is not exists'}, 400)
 
         if not os.path.isabs(project_base_path):
-            return json.dumps({'status': 'error', 'message': 'project_base_path must be an absolute path'}), 400
+            return json_text_response({'status': 'error', 'message': 'project_base_path must be an absolute path'}, 400)
 
         project_base_path = os.path.realpath(project_base_path)
 
         if not user_message:
-            return json.dumps({'status': 'error', 'message': 'message is required and must be non-empty'}), 400
+            return json_text_response({'status': 'error', 'message': 'message is required and must be non-empty'}, 400)
 
         if max_working_time is None:
-            return json.dumps({'status': 'error', 'message': 'max_working_time is required'}), 400
+            return json_text_response({'status': 'error', 'message': 'max_working_time is required'}, 400)
 
         if not isinstance(max_working_time, int) or max_working_time <= 0:
-            return json.dumps({'status': 'error', 'message': 'max_working_time must be a positive integer'}), 400
+            return json_text_response({'status': 'error', 'message': 'max_working_time must be a positive integer'}, 400)
 
         session_data = {'project_base_path': project_base_path}
         copilot = Copilot(user_message, session_data)
@@ -294,7 +313,7 @@ def agent_api():
             message = asdict(message)
             results.append(message)
 
-        return json.dumps({
+        return json_text_response({
             'status': 'success',
             'results': results,
             'timeout': timeout_occurred,
@@ -302,40 +321,42 @@ def agent_api():
         })
 
     except Exception as e:
-        return json.dumps({'status': 'error', 'message': str(e)}), 500
+        return json_text_response({'status': 'error', 'message': str(e)}, 500)
 
 
-@app.route('/send_message', methods=['POST'])
-def message_action():
+@app.post('/send_message')
+async def message_action(request: Request):
     try:
-        data = request.get_json()
+        data = await request.json()
         user_message = data.get('message', '').strip()
         user_session_id = data.get('session_id', '').strip()
 
         if not user_message:
-            return json.dumps({'status': 'error', 'message': 'Empty message'}), 400
+            return json_text_response({'status': 'error', 'message': 'Empty message'}, 400)
 
         images = data.get('images')
         if images is not None:
             if not isinstance(images, list) or not all(
                 isinstance(img, str) and img.startswith('data:image/') for img in images
             ):
-                return json.dumps({"status": "error", "message": "Invalid image format"}), 400
+                return json_text_response({"status": "error", "message": "Invalid image format"}, 400)
 
         if SESSION_MANAGER_INSTANCE.get_message(user_session_id):
-            return json.dumps({'status': 'error', 'message': 'Session is locked'}), 400
+            return json_text_response({'status': 'error', 'message': 'Session is locked'}, 400)
 
         SESSION_MANAGER_INSTANCE.send_message(user_session_id, user_message)
         if images:
             SESSION_MANAGER_INSTANCE.add_session_parameter(user_session_id, 'pending_images', images)
 
-        return json.dumps({'status': 'success'})
+        return json_text_response({'status': 'success'})
 
     except Exception as e:
-        return json.dumps({'status': 'error', 'message': str(e)}), 500
+        return json_text_response({'status': 'error', 'message': str(e)}, 500)
+
 
 def _get_heartbeat():
     return f"data: {json.dumps({'role': 'system', 'type': 'heartbeat'})}\n\n"
+
 
 def _get_project_status(session: dict):
     try:
@@ -344,6 +365,7 @@ def _get_project_status(session: dict):
         return f"data: {json.dumps({'role': 'system', 'type': 'status', 'message': project_path})}\n\n"
     except (KeyError, TypeError):
         return f"data: {json.dumps({'role': 'system', 'type': 'status', 'message': 'unknown project'})}\n\n"
+
 
 def event_stream(session: dict):
     session_id = session['id']
@@ -359,11 +381,9 @@ def event_stream(session: dict):
             if message:
                 yield from process_task(message, session_id)
 
-                # finished work:
                 SESSION_MANAGER_INSTANCE.commit_message(session_id)
                 SESSION_MANAGER_INSTANCE.add_session_parameter(session_id, 'pending_images', [])
             else:
-                # Send heartbeat to keep connection alive
                 now = time.time()
                 if now - last_heartbeat_time >= heartbeat_time:
                     yield _get_heartbeat()
@@ -380,19 +400,17 @@ def event_stream(session: dict):
             logging.exception("message")
             break
 
-@app.route('/events')
-def events():
-    session_id = request.args.get('session_id')
+
+@app.get('/events')
+async def events(request: Request):
+    session_id = request.query_params.get('session_id')
     session = {
         'id': session_id
     }
 
-    return Response(event_stream(session), mimetype='text/event-stream', headers={
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Access-Control-Allow-Origin': '*'
-    })
+    return StreamingResponse(event_stream(session), media_type='text/event-stream', headers=SSE_HEADERS)
 
 if __name__ == '__main__':
-    app.run(debug=IS_DEBUG, port=HTTP_PORT)
+    import uvicorn
+
+    uvicorn.run(app, host="127.0.0.1", port=HTTP_PORT, log_level="debug" if IS_DEBUG else "info", timeout_graceful_shutdown=10)

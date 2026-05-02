@@ -131,11 +131,10 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
         assert self.instruction, 'Init() s required'
         specific_model = os.environ.get(f'MODEL:{self.role}', None)
 
-        current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         sub_prompt = self.step_prompt.format(
             project_description=self.project_description,
             project_structure="\n".join([f"- {path}" for path in self.project_structure]),
-            current_datetime=current_datetime,
+            current_datetime=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
         )
 
         user_content = self.instruction

@@ -75,7 +75,6 @@ class Copilot(LoggerMixin):
         self.command_state = []
         self.agent_step = 1
         self.agent_commands = self.project.get_commandlets()
-        self.manifest['agent_commands'] = self.agent_commands
 
     def _sanitize_supervisor_command_description(self, text: str) -> str:
         text = re.sub(r"```.*?```", "", text or "", flags=re.DOTALL)
@@ -128,14 +127,12 @@ class Copilot(LoggerMixin):
         self.log(str(datetime.datetime.now()), True)
         self.log(f"RUN. Messages: `{self.instruction}`", False)
 
-        current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-
         supervisor_guidance = self._get_commands_guidance()
         rtemplate = Environment(loader=BaseLoader).from_string(self.prompt)
         sub_prompt = rtemplate.render(
             project_description=self.manifest['description'],
             project_structure=self.manifest['files_structure'],
-            current_datetime=current_datetime,
+            current_datetime=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
             project_guidance=supervisor_guidance,
             max_tools_cnt=self.MAX_STEP-1,
         )
