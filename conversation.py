@@ -102,7 +102,7 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
 
         if 'args' in message.args:
             command_name += [f"<dfn>{_}</dfn>" for _ in message.args['args']]
-        result_message = f'<cite>shell</cite> {" ".join(command_name)}'
+        result_message = f'<cite>shell </cite> {" ".join(command_name)}'
 
     elif function_name in ['write_file', 'replace_code_in_file'] and message.is_final:
         file_link = _file_processing_tpl(message.result)

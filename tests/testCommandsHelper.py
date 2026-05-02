@@ -307,20 +307,20 @@ class TestAgentCommandFiltering(unittest.TestCase):
             {'command': 'coder_only', 'description': 'Coder', 'shell_blocks': [{'name': 'echo_coder_1', 'description': 'Coder', 'cmd': 'echo coder', 'args': []}], 'config': {'role': ['CODER']}},
             {'command': 'reviewer_only', 'description': 'Reviewer', 'shell_blocks': [{'name': 'echo_reviewer_1', 'description': 'Reviewer', 'cmd': 'echo reviewer', 'args': []}], 'config': {'role': ['REVIEWER']}},
         ]
-        with patch('agents.AnalyticAgent') as analytic_agent_cls:
-            analytic_agent_cls.return_value = object()
-            project = Project('')
-            agent = Agent.create('REVIEWER', project=project, agent_commands=commands)
-            self.assertIsNotNone(agent)
-            args = analytic_agent_cls.call_args[0]
-            kwargs = analytic_agent_cls.call_args.kwargs
-            self.assertEqual('REVIEWER', args[0])
-            self.assertIn('all', args[1])
-            self.assertIn('reviewer_only', args[1])
-            self.assertNotIn('coder_only', args[1])
-            self.assertIn('echo_reviewer_1', args[1])
-            self.assertIs(kwargs['project'], project)
-            self.assertTrue(kwargs['has_shell_commands'])
+        project = Project('')
+        project.shell_commands = commands
+
+        reviewer_tools = project.get_commandlets_tools('REVIEWER')
+        tool_names = [t['function']['name'] for t in reviewer_tools]
+
+        self.assertIn('shell__all_echo_all_1', tool_names)
+        self.assertIn('shell__reviewer_only_echo_reviewer_1', tool_names)
+        self.assertNotIn('shell__coder_only_echo_coder_1', tool_names)
+
+        coder_tools = project.get_commandlets_tools('CODER')
+        coder_tool_names = [t['function']['name'] for t in coder_tools]
+        self.assertIn('shell__coder_only_echo_coder_1', coder_tool_names)
+        self.assertNotIn('shell__reviewer_only_echo_reviewer_1', coder_tool_names)
 
 
 class TestExecuteTerminalCommand(unittest.TestCase):

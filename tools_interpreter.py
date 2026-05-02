@@ -5,6 +5,7 @@ from diff_helper import apply_patch, PatchError
 from dto.dto_tools import DTOTool
 from dto.enums import ToolOperation, ToolPrefixes
 from project import Project
+from path_helper import ls_la
 
 
 class ToolError(Exception):
@@ -66,7 +67,6 @@ class ToolsInterpreter:
             file_path=path,
         )
 
-
     def _command_read_multiply(self, root_path: str, file_name: list) -> DTOTool:
         results = []
         file_paths = []
@@ -106,24 +106,8 @@ class ToolsInterpreter:
         if not os.path.isdir(absolute_path):
             raise ToolError('This is a file, use read file tool')
 
-        result = []
-        for _path in os.listdir(str(absolute_path)):
-            full_path = os.path.join(absolute_path, _path)
-            if os.path.isdir(full_path):
-                try:
-                    file_count = sum(len(files) for _, _, files in os.walk(full_path, followlinks=False))
-                    result.append(f"- {_path}/ (total {file_count} files)")
-                except (PermissionError, OSError):
-                    result.append(f"- {_path}/ (permission denied)")
-            else:
-                file_size = os.path.getsize(full_path)
-                try:
-                    with open(full_path, 'rb') as f:
-                        line_count = f.read().count(b'\n')
-                except (PermissionError, OSError):
-                    line_count = None
-                lines_str = f"{line_count} lines" if line_count is not None else "? lines"
-                result.append(f"- {_path} ({file_size} bytes, {lines_str})")
+        result = ls_la(str(absolute_path))
+        result = [_['line'] for _ in result]
 
         return DTOTool(
             result="\n".join(result),

@@ -34,7 +34,7 @@ MAX_ITERATION=int(os.getenv('MAX_ITERATION'))
 class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
     STORAGE_PATH = './storage'
 
-    def __init__(self, role: str, system_prompt: str, step_prompt: str, project: Project, has_shell_commands: bool = True):
+    def __init__(self, role: str, system_prompt: str, step_prompt: str, project: Project):
         self.interpreter: ToolsInterpreter | None = None
         self.instruction = None
         self.images = []
@@ -48,7 +48,6 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
         self.project = project
         self.role = role
         self.log_file = role
-        self.has_shell_commands = has_shell_commands
         self.artifacts = {
             'files_read': [],
             'files_created': [],
@@ -524,7 +523,7 @@ class Agent:
                 shutil.rmtree(cache_path)
 
     @staticmethod
-    def create(role, project: Project, mcp_commands: list = None) -> BaseAgent:
+    def create(role, project: Project) -> BaseAgent:
         assert role in Agent.PROMPTS, f'invalid role: {role}'
 
         system_prompt = Agent.PROMPTS[role]
@@ -543,6 +542,6 @@ class Agent:
             return CoderAgent(role, system_prompt, step_prompt, project=project)
         elif role == 'MCP':
             from mcp_agent import MCPAgent
-            return MCPAgent(role, system_prompt, step_prompt, mcp_commands or [], project=project)
+            return MCPAgent(role, system_prompt, step_prompt, project=project)
         else:
             raise Exception("unknown agent")

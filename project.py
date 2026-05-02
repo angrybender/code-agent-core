@@ -1,7 +1,9 @@
 import os
 
+import ide_integration
 from dto.enums import ToolPrefixes
 from ide_integration import tool_call
+from mcp_integration.mcp_helper import parse_mcp_commands
 from search_code import SearchCode
 from commands_helper import parse_agent_commands, execute_terminal_command
 
@@ -9,6 +11,8 @@ from commands_helper import parse_agent_commands, execute_terminal_command
 SHELL_COMMAND_TIMEOUT = int(os.getenv('SHELL_COMMAND_TIMEOUT', 30))
 
 class Project:
+    PROJECT_DESCRIPTION = "./AGENTS.md"
+
     def __init__(self, project_root: str):
         self.project_root = project_root
         self.files_history = []
@@ -16,6 +20,7 @@ class Project:
         shell_cmd_dir = os.getenv('SHELL_COMMAND_DIRECTORY', '.agent-commands')
         full_cmd_dir = os.path.join(self.project_root, shell_cmd_dir)
         self.shell_commands = parse_agent_commands(full_cmd_dir)
+        self.mcp_servers = parse_mcp_commands(full_cmd_dir)
 
     def get_commandlets(self) -> list[dict]:
         return self.shell_commands
@@ -101,6 +106,15 @@ class Project:
     def search_files(self, needle: str, extension: str) -> tuple[int, list[dict]]:
         return self.search_service.search(self.project_root, needle, extension)
 
+    def get_project_rules(self) -> str:
+        content = self.read_file(self.PROJECT_DESCRIPTION)
+        content = content['content']
+
+        if not content:
+            return ''
+        else:
+            return str(content).strip()
+
     def run_commandlet(self, tool_name: str, args: list = None) -> dict:
         call_cmd = None
         call_arg_cnt = 0
@@ -171,3 +185,20 @@ class Project:
                 })
 
         return commands_tools
+
+    def get_mcp(self):
+        return self.mcp_servers
+
+    def ping_mcp(self) -> dict:
+        ping_mcp = ide_integration.tool_call('__test__connection__', {"projectPath": self.project_root})
+
+        if not ping_mcp['result']:
+            return {
+                'result': False,
+                'error': ping_mcp['error']
+            }
+        else:
+            return {
+                'result': True,
+                'error': None
+            }

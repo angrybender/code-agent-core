@@ -25,16 +25,15 @@ class MCPAgent(BaseAgent):
     2. Execution: LLM selects a server via select_mcp, then calls MCP tools to complete the task.
     """
 
-    def __init__(self, role: str, system_prompt: str, step_prompt: str, mcp_commands: list, project: Project):
+    def __init__(self, role: str, system_prompt: str, step_prompt: str, project: Project):
         """
         :param role: Agent role string (e.g. 'MCP')
         :param system_prompt: System prompt text
         :param step_prompt: Shared project context sub-prompt
-        :param mcp_commands: List of legacy MCP command configs loaded via the dedicated helper in mcp_integration/mcp_helper.py
         """
-        super().__init__(role, system_prompt, step_prompt, project=project, has_shell_commands=False)
-        self.mcp_commands = mcp_commands
-        self._mcp_commands_map = {cmd['command']: cmd for cmd in mcp_commands}
+        super().__init__(role, system_prompt, step_prompt, project=project)
+        self.mcp_commands = project.get_mcp()
+        self._mcp_commands_map = {cmd['command']: cmd for cmd in self.mcp_commands}
         self._selected_server_name = None
         self._selected_mcp_tools = None
         self._mcp_executor = None
