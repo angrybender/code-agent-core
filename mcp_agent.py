@@ -80,7 +80,7 @@ class MCPAgent(BaseAgent):
         current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         sub_prompt = self.step_prompt.format(
             project_description=self.project_description,
-            project_structure="\n".join([f"- {path}" for path in self.project_structure]),
+            project_structure=self.project_structure,
             current_datetime=current_datetime,
         )
 
