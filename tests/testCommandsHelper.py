@@ -259,12 +259,38 @@ class TestShellCommandInterpreter(unittest.TestCase):
         result = ti.execute('shell__git_git_add_1', {'args': ['tests/test.py']})
 
         execute_mock.assert_called_once()
-        self.assertIn('git add', execute_mock.call_args.kwargs['cmd'])
-        self.assertIn('git add $1', execute_mock.call_args.kwargs['cmd'])
+        self.assertEqual('git add tests/test.py', execute_mock.call_args.kwargs['cmd'])
         self.assertEqual('shell_command', result.tool_name)
-        self.assertEqual('git add $1', execute_mock.call_args.kwargs['cmd'])
         self.assertFalse(result.error)
         self.assertIn('ok', result.result)
+        self.assertEqual('ok', result.meta['status'])
+
+    @patch('project.execute_terminal_command')
+    def test_executes_selected_block_with_multiple_args(self, execute_mock):
+        execute_mock.return_value = {'stdout': 'ok', 'stderr': '', 'status': 'ok'}
+        commands = [{
+            'command': 'git',
+            'description': 'Git helpers',
+            'config': {},
+            'shell_blocks': [
+                {
+                    'name': 'git_diff_1',
+                    'cmd': 'git diff $1 -- $2',
+                    'description': 'Diff file in branch',
+                    'args': [
+                        {'placeholder': '$1', 'description': 'branch'},
+                        {'placeholder': '$2', 'description': 'file'},
+                    ]
+                },
+            ]
+        }]
+        ti = self._make_ti(commands)
+
+        result = ti.execute('shell__git_git_diff_1', {'args': ['main', 'tests/test.py']})
+
+        execute_mock.assert_called_once()
+        self.assertEqual('git diff main -- tests/test.py', execute_mock.call_args.kwargs['cmd'])
+        self.assertFalse(result.error)
         self.assertEqual('ok', result.meta['status'])
 
     def test_argument_validation_is_per_block(self):

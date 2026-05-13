@@ -116,6 +116,7 @@ class Project:
             return str(content).strip()
 
     def run_commandlet(self, tool_name: str, args: list = None) -> dict:
+        args = args or []
         call_cmd = None
         call_arg_cnt = 0
         for commandlet in self.shell_commands:
@@ -138,8 +139,12 @@ class Project:
                 'error_code': 'arguments',
             }
 
-        raw = execute_terminal_command(cmd=call_cmd, timeout=SHELL_COMMAND_TIMEOUT, cwd=self.project_root)
-        raw['cmd'] = call_cmd
+        final_cmd = call_cmd
+        for index, value in sorted(enumerate(args, start=1), reverse=True):
+            final_cmd = final_cmd.replace(f'${index}', value)
+
+        raw = execute_terminal_command(cmd=final_cmd, timeout=SHELL_COMMAND_TIMEOUT, cwd=self.project_root)
+        raw['cmd'] = final_cmd
 
         if raw['status'] == 'timeout':
             raw['error'] = f"Command timed out after {SHELL_COMMAND_TIMEOUT}s. Partial output: {raw['stdout']}"
