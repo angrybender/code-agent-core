@@ -294,7 +294,7 @@ TOOL_ATTACH_IMAGE = {
         "description": (
             "Read a local image file and attach it to the conversation as a vision input. "
             "Use this when the task references a local image file that needs to be analyzed. "
-            "Accepts an absolute path to the image file within the project directory."
+            "Pass a project-relative file path to the image within the project directory."
         ),
         "parameters": {
             "type": "object",
@@ -302,7 +302,7 @@ TOOL_ATTACH_IMAGE = {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Absolute path to the local image file. The path must be within the project directory."
+                    "description": "Project-relative path to the local image file. The path must stay within the project directory."
                 }
             }
         }

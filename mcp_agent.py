@@ -42,28 +42,33 @@ class MCPAgent(BaseAgent):
     @staticmethod
     def _encode_image_to_data_url(file_path: str, project_root: str | None = None) -> tuple[str, str | None]:
         if not file_path or not isinstance(file_path, str):
-            raise Exception("Invalid path")
+            return '', 'Invalid path'
         if '\x00' in file_path:
-            raise Exception("Invalid path")
+            return '', 'Invalid path'
 
         file_path = os.path.normpath(file_path)
         if file_path.startswith('..') or file_path.startswith('/'):
-            raise Exception("Invalid path")
+            return '', 'Invalid path'
 
         real_path = os.path.realpath(os.path.join(project_root, file_path))
         if not os.path.exists(real_path):
-            raise Exception("File not exists")
+            return '', 'File not exists'
 
         mime_type, _ = mimetypes.guess_type(real_path)
         if not mime_type or not mime_type.startswith('image/'):
             return '', 'file is not an image'
 
         max_size = 5 * 1024 * 1024  # 5 MB
-        if os.path.getsize(real_path) > max_size:
-            return '', 'file exceeds 5 MB limit'
+        try:
+            if os.path.getsize(real_path) > max_size:
+                return '', 'file exceeds 5 MB limit'
 
-        with open(real_path, 'rb') as f:
-            encoded = base64.b64encode(f.read()).decode('ascii')
+            with open(real_path, 'rb') as f:
+                encoded = base64.b64encode(f.read()).decode('ascii')
+        except OSError as e:
+            return '', f'failed to read file: {e}'
+        except Exception as e:
+            return '', f'failed to encode file: {e}'
 
         return f'data:{mime_type};base64,{encoded}', None
 
