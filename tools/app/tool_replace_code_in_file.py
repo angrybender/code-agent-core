@@ -25,9 +25,7 @@ class ToolReplaceCodeInFile(ATool):
         if source_file['error']:
             raise ToolError('File not exist')
 
-        source_file = source_file['content']
-
-        source_code = source_file.result
+        source_code = source_file['content']
         source_code = [_.rstrip() for _ in source_code.split("\n")]
 
         str_find = self._correction_write_arg(str_find)
