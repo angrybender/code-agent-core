@@ -405,7 +405,7 @@ class MCPAgent(BaseAgent):
             # ── attach_image ──
             elif fn_name == 'attach_image':
                 path = fn_args.get('path', '')
-                data_url, error = self._encode_image_to_data_url(path, self.interpreter.project_root)
+                data_url, error = self._encode_image_to_data_url(path, self.project.get_project_root())
                 if error:
                     tool_result = f"ERROR: {error}"
                     conversation.append({
