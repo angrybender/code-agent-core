@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 MAX_ITERATION=os.getenv('MAX_ITERATION')
+SUPERVISORD_COMMANDLET_GUIDANCE_AGGRESSIVE=int(os.getenv('SUPERVISORD_COMMANDLET_GUIDANCE_AGGRESSIVE', 1)) == 1
 
 import logging
 logger = logging.getLogger('APP')
@@ -167,7 +168,7 @@ class Copilot(LoggerMixin):
                 yield DTOInstruction(type=EventType.ERROR, message="MAX_STEP exceed!")
                 break
 
-            if agent_step_counter > 1 and supervisor_guidance and conversation_log[-1].get('name') == 'call_agent':
+            if SUPERVISORD_COMMANDLET_GUIDANCE_AGGRESSIVE and agent_step_counter > 1 and supervisor_guidance and conversation_log[-1].get('name') == 'call_agent':
                 conversation_log.append({
                     'role': 'user',
                     'content': supervisor_guidance
