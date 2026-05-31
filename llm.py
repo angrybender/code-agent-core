@@ -157,7 +157,7 @@ def record_decorator(func):
     return wrapper
 
 
-def llm_query(messages, tags=None, tools=None, model_name=None, max_tokens=None) -> dict|None:
+def llm_query(messages, tags=None, tools=None, model_name=None, max_tokens=None, c_api_key=None, c_api_url=None) -> dict|None:
     """
     :param messages:
     :param tags:
@@ -165,9 +165,15 @@ def llm_query(messages, tags=None, tools=None, model_name=None, max_tokens=None)
     :param model_name:
     :return:
     """
+    if not c_api_key:
+        c_api_key = API_KEY
+
+    if not c_api_url:
+        c_api_url = API_URL
+
     client = OpenAI(
-        api_key=API_KEY,
-        base_url=API_URL,
+        api_key=c_api_key,
+        base_url=c_api_url,
         timeout=API_TIMEOUT,
     )
 
@@ -251,7 +257,7 @@ def _filter_messages(messages: list[dict]) -> list[dict]:
         result.append(m)
     return result
 
-def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str) -> int:
+def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str, c_api_key=None, c_api_url=None) -> int:
     cache_model_name = re.sub(r'[^a-z\d\-]+', '_', model_name, flags=re.IGNORECASE)
     assert messages, 'Empty messages'
     stat_cache = f'./storage/calculate_tokens_usage_workaround_{cache_model_name}.json'
@@ -270,7 +276,7 @@ def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str) ->
 
         _messages[0]['role'] = 'user' # models required at least once users' message
         char_size = len(json.dumps(_messages))
-        test_response = llm_query(_messages, model_name=model_name, max_tokens=1)
+        test_response = llm_query(_messages, model_name=model_name, max_tokens=1, c_api_key=c_api_key, c_api_url=c_api_url)
         assert '_usage' in test_response, 'Wrong response or empty response'
         tokens_usage = test_response['_usage'].prompt_tokens
         tokens_per_char = round(tokens_usage/char_size, 3)
@@ -285,9 +291,11 @@ def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str) ->
 
 @record_decorator
 def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_tool=False):
+    c_api_key = os.environ.get(f"MODEL:{model_name}:OPENAI_API_KEY", API_KEY)
+    c_api_url = os.environ.get(f"MODEL:{model_name}:OPENAI_API_URL", API_URL)
     client = OpenAI(
-        api_key=API_KEY,
-        base_url=API_URL,
+        api_key=c_api_key,
+        base_url=c_api_url,
         timeout=API_TIMEOUT,
     )
 
@@ -403,7 +411,7 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_too
 
             if not _tokens_usage:
                 _tokens_usage = {
-                    "prompt": _calculate_tokens_usage_workaround(messages, options['model']),
+                    "prompt": _calculate_tokens_usage_workaround(messages, options['model'], c_api_key, c_api_url),
                     "completion": _calculate_tokens_usage_workaround([{"content": _output, "tool_calls": _tool_calls}], options['model']),
                 }
 
