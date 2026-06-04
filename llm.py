@@ -291,6 +291,7 @@ def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str, c_
 
 @record_decorator
 def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_tool=False):
+    model_name = model_name if model_name else MODEL
     c_api_key = os.environ.get(f"MODEL:{model_name}:OPENAI_API_KEY", API_KEY)
     c_api_url = os.environ.get(f"MODEL:{model_name}:OPENAI_API_URL", API_URL)
     client = OpenAI(
@@ -301,6 +302,23 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_too
 
     if type(messages) is str:
         messages = [{'role': 'user', 'content': messages}]
+
+    ## token cache {
+    if os.environ.get(f"CACHED_TOKENS_FAMILY:{model_name}") == 'anthropic':
+        cache_control_cnt = 0
+        for m in messages:
+            if type(m['content']) is list and 'cache_control' and type(m['content'][0]) is dict and 'cache_control' in m['content'][0]:
+                cache_control_cnt += 1
+
+        if cache_control_cnt < 4 and len(messages)//2 >= 2**cache_control_cnt and 'content' in messages[-1] and type(messages[-1]['content']) is str:
+            messages[-1]['content'] = [{
+                 "type": "text",
+                 "text": messages[-1]['content'],
+                 "cache_control": {"type": "ephemeral", "ttl": "1h"},
+             }]
+
+            logger.info(f"cache_control_activate, cache_control_cnt: {cache_control_cnt}, messages: {len(messages)}")
+    ## token cache }
 
     logger.debug(f"INPUT (with tools: {'Y' if tools else 'N'}):")
     for m in messages:
@@ -318,10 +336,11 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_too
 
     options = {
         'messages': messages,
-        'model': model_name if model_name else MODEL,
+        'model': model_name,
         'tools': tools,
         'stream': True,
-        'tool_choice': tool_choice
+        'tool_choice': tool_choice,
+        'stream_options': {'include_usage': True},
     }
 
     if REASONING_EFFORT:
@@ -408,6 +427,12 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_too
 
                 if chunk.usage:
                     _tokens_usage = {"prompt": chunk.usage.prompt_tokens, "completion": chunk.usage.completion_tokens}
+
+                    try:
+                        logger.info('cached_tokens: ' + str(chunk.usage.prompt_tokens_details.cached_tokens))
+                        _tokens_usage["cached_tokens"] = chunk.usage.prompt_tokens_details.cached_tokens
+                    except:
+                        pass
 
             if not _tokens_usage:
                 _tokens_usage = {
