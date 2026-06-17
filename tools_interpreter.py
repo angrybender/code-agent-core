@@ -6,14 +6,13 @@ import shlex
 from commands_helper import execute_terminal_command
 
 from diff_helper import apply_patch, PatchError
-from mcp_helper import tool_call
+from ide_integration import tool_call
 from search_code import SearchCode
 
 SHELL_COMMAND_TIMEOUT = int(os.getenv('SHELL_COMMAND_TIMEOUT', 30))
 
 class ToolsInterpreter:
-    def __init__(self, mcp_host, project_root, search_service: SearchCode = None, commands: list = None):
-        self.mcp_host = mcp_host
+    def __init__(self, project_root, search_service: SearchCode = None, commands: list = None):
         self.project_root = project_root
         self.search_service = search_service
         self._commands_map = {c['command']: c for c in (commands or [])}
@@ -44,11 +43,11 @@ class ToolsInterpreter:
         project_root_real = os.path.realpath(self.project_root)
         return real_path.startswith(project_root_real + os.sep)
 
-    def _command_read(self, file_path: str, offset: int = 0, limit: int = None) -> dict:
-        if not self._validate_path(file_path):
+    def _command_read(self, path: str, offset: int = 0, limit: int = None) -> dict:
+        if not self._validate_path(path):
             return {'result': 'ERROR: Invalid path', 'error': True}
-        content = tool_call(self.mcp_host, 'get_file_text_by_path', {
-            'pathInProject': file_path,
+        content = tool_call('get_file_text_by_path', {
+            'pathInProject': path,
             'projectPath': self.project_root,
         })
 
@@ -73,7 +72,7 @@ class ToolsInterpreter:
         response = {'result': result, 'exists': 'status' in content}
         if is_success:
             response['tool_name'] = 'read'
-            response['file_path'] = file_path
+            response['file_path'] = path
             response['total_lines'] = total_lines
             response['offset'] = offset
             response['returned_lines'] = len(lines)
@@ -81,6 +80,26 @@ class ToolsInterpreter:
             response['error'] = True
 
         return response
+
+    def _command_read_multiply(self, root_path: str, file_name: list) -> dict:
+        results = []
+        for name in file_name:
+            file_path = os.path.join(root_path, name)
+
+            if root_path:
+                real_file = os.path.realpath(os.path.join(self.project_root, file_path))
+                real_root = os.path.realpath(os.path.join(self.project_root, root_path))
+                if not (real_file.startswith(real_root + os.sep) or real_file == real_root):
+                    results.append(f"Error: invalid path of /{name}")
+                    continue
+
+            single_result = self._command_read(path=file_path)
+            header = f"--- file: {file_path} ---"
+            results.append(f"{header}\n{single_result['result']}")
+        return {
+            'result': "\n\n".join(results),
+            'tool_name': 'read_multiply_files',
+        }
 
     def _command_list(self, path) -> dict:
         if not self._validate_path(path):
@@ -104,41 +123,47 @@ class ToolsInterpreter:
                     result.append(f"- {_path}/ (permission denied)")
             else:
                 file_size = os.path.getsize(full_path)
-                result.append(f"- {_path} ({file_size} bytes)")
+                try:
+                    with open(full_path, 'rb') as f:
+                        line_count = f.read().count(b'\n')
+                except (PermissionError, OSError):
+                    line_count = None
+                lines_str = f"{line_count} lines" if line_count is not None else "? lines"
+                result.append(f"- {_path} ({file_size} bytes, {lines_str})")
 
         return {'result': "\n".join(result), 'tool_name': 'list_in_directory'}
 
-    def _command_write(self, file_path, data) -> dict:
-        if not self._validate_path(file_path):
+    def _command_write(self, path, content) -> dict:
+        if not self._validate_path(path):
             return {'result': 'ERROR: Invalid path', 'error': True}
         # looking for file exists:
-        source_file = self._command_read(file_path)
+        source_file = self._command_read(path)
         is_exist = source_file['exists']
 
-        data = self._correction_write_arg(data)
-        if type(data) is not str:
+        content = self._correction_write_arg(content)
+        if type(content) is not str:
             return {'result': "ERROR: file content must be string!"}
 
-        data = data.strip()
-        if re.match(r'^```[a-z]+\s', data):
-            data = re.sub(r'^```[a-z]+\s', '', data)
-        elif data[:3] == '```':
-            data = data[3:]
+        content = content.strip()
+        if re.match(r'^```[a-z]+\s', content):
+            content = re.sub(r'^```[a-z]+\s', '', content)
+        elif content[:3] == '```':
+            content = content[3:]
 
-        data = re.sub(r'```$', '', data)
+        content = re.sub(r'```$', '', content)
 
-        content = tool_call(self.mcp_host, 'create_new_file', {
-            'pathInProject': file_path,
-            'text': data.strip(),
+        mcp_result = tool_call('create_new_file', {
+            'pathInProject': path,
+            'text': content.strip(),
             'projectPath': self.project_root,
             'overwrite': True,
         })
 
-        result = {'result': "True" if 'status' in content else "ERROR: " + content['error']}
-        if 'status' in content:
+        result = {'result': "True" if 'status' in mcp_result else "ERROR: " + mcp_result['error']}
+        if 'status' in mcp_result:
             result['tool_name'] = 'write'
-            result['file_path'] = os.path.join(self.project_root, file_path)
-            result['file_name'] = file_path
+            result['file_path'] = os.path.join(self.project_root, path)
+            result['file_name'] = path
 
             if is_exist:
                 result['file_edit'] = True
@@ -150,10 +175,10 @@ class ToolsInterpreter:
 
         return result
 
-    def _command_write_diff(self, file_path, str_find, str_replace):
-        if not self._validate_path(file_path):
+    def _command_write_diff(self, path, str_find, str_replace):
+        if not self._validate_path(path):
             return {'result': 'ERROR: Invalid path', 'error': True}
-        source_file = self._command_read(file_path)
+        source_file = self._command_read(path)
         if not source_file['exists']:
             return {'result': "ERROR: file not exist"}
 
@@ -168,8 +193,8 @@ class ToolsInterpreter:
         except PatchError as e:
             return {'result': f"ERROR: {e}", 'error': True}
 
-        content = tool_call(self.mcp_host, 'create_new_file', {
-            'pathInProject': file_path,
+        content = tool_call('create_new_file', {
+            'pathInProject': path,
             'text': patched_file.strip(),
             'projectPath': self.project_root,
             'overwrite': True,
@@ -179,8 +204,8 @@ class ToolsInterpreter:
         if 'status' in content:
             result['file_edit'] = True
             result['tool_name'] = 'write_diff'
-            result['file_path'] = os.path.join(self.project_root, file_path)
-            result['file_name'] = file_path
+            result['file_path'] = os.path.join(self.project_root, path)
+            result['file_name'] = path
             result['source_file_content'] = source_file['result']
         else:
             result['error'] = True
@@ -205,22 +230,38 @@ class ToolsInterpreter:
 
         return {"result": "\n\n".join(formatted_result), "tool_name": "search_file", "post_result": f"Found: {total_count} file(s)"}
 
-    def _command_shell(self, command_name: str, args: list = None) -> dict:
+    def _command_shell(self, command_name: str, shell_block: str, args: list = None) -> dict:
         if not command_name or not isinstance(command_name, str):
             return {'result': 'ERROR: command_name must be a non-empty string', 'error': True, 'tool_name': 'shell_command'}
+        if not shell_block or not isinstance(shell_block, str):
+            return {'result': 'ERROR: shell_block must be a non-empty string', 'error': True, 'tool_name': 'shell_command'}
 
         command_def = self._commands_map.get(command_name)
         if not command_def:
             available = ', '.join(self._commands_map.keys()) or 'none'
             return {'result': f"ERROR: Unknown command '{command_name}'. Available: {available}", 'error': True, 'tool_name': 'shell_command'}
-        cmd = command_def['cmd']
 
-        if args and len(args) != len(command_def['args']) or not args and command_def['args']:
-            return {'result': f"ERROR: Wrongs '{command_name}' argument list: current: {len(args)}; actual: {len(command_def['args'])}.", 'error': True, 'tool_name': 'shell_command'}
+        available_blocks = {block['name']: block for block in command_def.get('shell_blocks', [])}
+        block_def = available_blocks.get(shell_block)
+        if not block_def:
+            block_names = ', '.join(available_blocks.keys()) or 'none'
+            return {
+                'result': f"ERROR: Unknown shell_block '{shell_block}' for command '{command_name}'. Available: {block_names}",
+                'error': True,
+                'tool_name': 'shell_command'
+            }
 
-        if args:
-            for i, value in enumerate(args, start=1):
-                cmd = cmd.replace(f'${i}', str(value))
+        args = args or []
+        if len(args) != len(block_def['args']):
+            return {
+                'result': f"ERROR: Wrongs '{command_name}/{shell_block}' argument list: current: {len(args)}; actual: {len(block_def['args'])}.",
+                'error': True,
+                'tool_name': 'shell_command'
+            }
+
+        cmd = block_def['cmd']
+        for i, value in enumerate(args, start=1):
+            cmd = cmd.replace(f'${i}', shlex.quote(str(value)))
 
         raw = execute_terminal_command(cmd=cmd, timeout=SHELL_COMMAND_TIMEOUT, cwd=self.project_root)
         if raw['status'] == 'timeout':
@@ -240,23 +281,31 @@ class ToolsInterpreter:
 
             output = f"`$ {cmd}`\n\n```\n{output}\n```"
 
-            return {'result': output, 'tool_name': 'shell_command', 'cmd': cmd, 'status': raw['status']}
+            return {
+                'result': output,
+                'tool_name': 'shell_command',
+                'cmd': cmd,
+                'status': raw['status'],
+                'command_name': command_name,
+                'shell_block': shell_block,
+            }
 
-    def execute(self, opcode: str, arguments) -> dict:
+    def _get_handlers(self) -> dict:
+        return {
+            'read_file': self._command_read,
+            'read_multiply_files': self._command_read_multiply,
+            'list_in_directory': self._command_list,
+            'write_file': self._command_write,
+            'replace_code_in_file': self._command_write_diff,
+            'search_file': self._search_file,
+            'shell_command': self._command_shell,
+        }
+
+    def execute(self, opcode: str, arguments: dict) -> dict:
         try:
-            if opcode == 'read_file':
-                return self._command_read(*arguments)
-            elif opcode == 'list_in_directory':
-                return self._command_list(*arguments)
-            elif opcode == 'write_file':
-                return self._command_write(*arguments)
-            elif opcode == 'replace_code_in_file':
-                return self._command_write_diff(*arguments)
-            elif opcode == 'search_file':
-                return self._search_file(*arguments)
-            elif opcode == 'shell_command':
-                return self._command_shell(*arguments)
-            else:
+            handler = self._get_handlers().get(opcode)
+            if not handler:
                 return {"result": "ERROR: wrong tool name, check tools list and call correct", 'error': True}
+            return handler(**arguments)
         except TypeError:
             return {"result": "ERROR: wrong command code/arguments, check tools list and call correct", 'error': True}

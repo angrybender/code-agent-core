@@ -3,50 +3,45 @@ import json
 import hashlib
 import shutil
 import glob
+import uuid
+import datetime
 
 from jinja2 import Environment, BaseLoader
 
 import logging
 
-from log_helper import pretty_print_as_json
+from logger_mixin import LoggerMixin
 
 logger = logging.getLogger('APP')
 
 from dotenv import load_dotenv
 load_dotenv()
 
-from llm import llm_query
+from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE, LLMRequestFormat
 from tools_interpreter import ToolsInterpreter
-from tools.tools import ANALYTIC_TOOLS, CODER_TOOLS, REVIEWER_TOOLS
+from tools.tools import get_analytic_tools, get_coder_tools, get_reviewer_tools, TOOL_SUMMARIZE, TOOL_REPORT
 from search_code import SearchCode
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
+from context_helper import compact_conversation_remove_redundant
+from agents_logic.tools_mixin import ToolsMixin
+from agents_logic.conversation_mixin import ConversationMixin
 
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=int(os.getenv('MAX_ITERATION'))
 DEEPTHINKING_AGENTS=os.getenv('DEEPTHINKING_AGENTS', '').split(',')
-AVOID_EMPTY_RESPONSE = int(os.getenv('AVOID_EMPTY_RESPONSE', 0)) == 1
-
-def _parse_tool_arguments(json_data: str):
-    try:
-        return json.loads(json_data)
-    except json.decoder.JSONDecodeError as e:
-        json_data = llm_query(f"fix this JSON: ```{json_data}```\nwrap answer into tag <RESULT>", ['RESULT']).get('RESULT', [''])[0]
-        if not json_data:
-            raise e
-
-        return json.loads(json_data)
 
 
-class BaseAgent:
+class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
     DEEP_THINK_TAG = 'work_plan'
     STORAGE_PATH = './storage'
 
-    def __init__(self, role: str, system_prompt: str, step_prompt: str, thinking: bool):
+    def __init__(self, role: str, system_prompt: str, step_prompt: str, thinking: bool, has_shell_commands: bool = True):
         self.system_prompt = system_prompt
         self.step_prompt = step_prompt
 
         self.instruction = None
+        self.images = []
         self.project_description = None
         self.project_structure = None
         self.current_open_file = None
@@ -56,37 +51,98 @@ class BaseAgent:
         self.thinking = thinking
         self.storage_path = None
         self.search_service = SearchCode()
+        self.has_shell_commands = has_shell_commands
+        self.artifacts = {
+            'files_read': [],
+            'files_created': [],
+            'files_modified': [],
+            'commands_run': [],
+        }
 
     def conversation_filter(self, conversation: list[dict]) -> list[dict]:
-        return conversation
+        conversation = self.merge_assistant_messages(conversation)
+
+        tools_cnt = len([_ for _ in conversation if 'tool_calls' in _])
+        if tools_cnt <= MAX_ITERATION // 2:
+            return conversation
+
+        before_len = len(conversation)
+        new_conversation = compact_conversation_remove_redundant(conversation)
+
+        if len(new_conversation) < before_len:
+            def _create_log(conversation: list[dict]):
+                tools_list = [_ for _ in conversation if 'tool_calls' in _]
+                for tool in tools_list:
+                    tool_call = tool['tool_calls'][0]
+                    tool['args'] = list(self.parse_tool_arguments(tool_call['function']['arguments']).values()) if \
+                    tool_call['function']['arguments'] else []
+
+                return "; ".join([f'{m['tool_calls'][0]['function']['name']}:{m['args'][0]}' for m in tools_list])
+
+            logger.info(
+                "Conv context! Before: " + _create_log(conversation) + " After: " + _create_log(
+                    new_conversation)
+            )
+
+        return new_conversation
 
     def get_tools(self) -> list[dict]:
         return []
 
-    def init(self, instruction: str, manifest: dict, log_file: str):
+    def init(self, instruction: str, manifest: dict, log_file: str, images: list = None):
         self.instruction = instruction
+        self.images = images if isinstance(images, list) else []
         self.project_description = manifest['description']
         self.project_structure = manifest['files_structure']
-        self.interpreter = ToolsInterpreter(IDE_MCP_HOST, manifest['base_path'], self.search_service, commands=manifest.get('agent_commands', []))
+        self.interpreter = ToolsInterpreter(manifest['base_path'], self.search_service, commands=manifest.get('agent_commands', []))
         self.log_file = log_file
 
         self.storage_path = os.path.join(self.STORAGE_PATH, hashlib.sha256(manifest['base_path'].encode()).hexdigest())
         if not os.path.exists(self.storage_path):
             os.mkdir(self.storage_path)
 
+        self.artifacts = {
+            'files_read': [],
+            'files_created': [],
+            'files_modified': [],
+            'commands_run': [],
+        }
+
+    def _build_artifact_summary(self) -> str:
+        """Build a deterministic summary of tracked artifacts"""
+        lines = ["## Verified Actions:"]
+        files_read = list(dict.fromkeys(self.artifacts['files_read']))  # deduplicate, preserve order
+        if files_read:
+            lines.append(f"- Files read: {', '.join(files_read)}")
+        if self.artifacts['files_created']:
+            lines.append(f"- Files created: {', '.join(self.artifacts['files_created'])}")
+        if self.artifacts['files_modified']:
+            lines.append(f"- Files modified: {', '.join(self.artifacts['files_modified'])}")
+        if self.artifacts['commands_run']:
+            for cmd in self.artifacts['commands_run']:
+                status = cmd.get('status', 'unknown')
+                lines.append(f"- Command `{cmd['command']}`: {status}")
+        if len(lines) == 1:
+            lines.append("- No tool actions recorded yet.")
+        return "\n".join(lines)
+
     def run(self):
         assert self.instruction, 'Init() s required'
         specific_model = os.environ.get(f'MODEL:{self.role}', None)
         self.search_service.reset()
 
-        yield DTOInstruction(type=EventType.INFO, message=f"start {self.role}...")
-
+        current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         sub_prompt = self.step_prompt.format(
             project_description=self.project_description,
             project_structure="\n".join([f"- {path}" for path in self.project_structure]),
+            current_datetime=current_datetime,
         )
 
-        self.log("============= INSTRUCTION =============\n" + self.instruction, True)
+        user_content = self.instruction
+        if self.images:
+            user_content = [{"type": "text", "text": self.instruction}]
+            for img in self.images:
+                user_content.append({"type": "image_url", "image_url": {"url": img}})
 
         conversation = [
             {
@@ -95,11 +151,20 @@ class BaseAgent:
             },
             {
                 'role': 'user',
-                'content': self.instruction
+                'content': user_content
             }
         ]
 
+        self.log("============= SYSTEM PROMPT =============", True)
+        self.log(conversation[0]['content'], True)
+        self.log("============= USER PROMPT =============", True)
+        self.log(conversation[1]['content'], True)
+
         agent_step = 0
+        _summarize_count = 0  # counts how many times summarize has been triggered
+        _context_overflow_summarize = False
+        _max_step_workaround = False
+        _llm_format_error_workaround = 0
         while True:
             agent_step += 1
             if agent_step > MAX_ITERATION:
@@ -108,86 +173,195 @@ class BaseAgent:
                 break
 
             conversation = self.conversation_filter(conversation)
+            assert conversation, 'Empty conversation'
 
-            is_empty_workaround = False
-            while True:
-                yield DTOInstruction(type=EventType.NOPE)
-                output = llm_query(conversation, tools=self.get_tools(), model_name=specific_model)
-                if output:
-                    break
+            yield DTOInstruction(type=EventType.NOPE)
 
-                if not AVOID_EMPTY_RESPONSE:
-                    if conversation[-1]['role'] == 'assistant' and conversation[-1]['content'].strip():
-                        _report = conversation[-1]['content']
-                        logger.info("Empty response. Create report from previous message")
+            output = None
+            message_id = None
+            tools_for_model = self.get_tools()
+            force_tool = False
+            if _context_overflow_summarize or _max_step_workaround:
+                tools_for_model = [TOOL_SUMMARIZE]
+                force_tool = True
+
+            if _max_step_workaround or _llm_format_error_workaround > 0:
+                tools_for_model = [TOOL_REPORT]
+                force_tool = True
+
+            try:
+                for chunk in llm_query_stream(conversation, tools=tools_for_model, model_name=specific_model, force_tool=force_tool):
+                    message_id = chunk['id']
+                    if chunk['type'] == 'final':
+                        output = chunk
+                        break
+                    elif chunk['type'] == 'tool':
+                        _tool_call = chunk['tool_calls'][0]
+                        yield DTOInstruction(
+                            type=EventType.TOOL,
+                            is_final=False,
+                            function=_tool_call['function']['name'],
+                            args=_tool_call['function'].get('arguments_parsed', {}),
+                            message_id=chunk['id']
+                        )
                     else:
-                        _report = "I've completed task"
-                        logger.info("Empty response [agents]")
+                        yield DTOInstruction(type=EventType.PENDING, message_id=chunk['id'], message=chunk.get('content'), is_final=False)
+            except LLMRequestFormat as e:
+                if _llm_format_error_workaround <= 3:
+                    _llm_format_error_workaround +=1
+                    conversation.pop()
+                    if _llm_format_error_workaround > 1:
+                        conversation.pop() # remove instruction below
+                    else:
+                        yield DTOInstruction(type=EventType.WARNING, message_id=str(uuid.uuid4()), message=f"LLM error: {e}. Workaround...", is_final=True)
 
-                    yield DTOInstruction(type=EventType.REPORT, message=_report, exit=True, hidden=True)
-                    return
-
-                logger.info("Empty response. Force to using tool")
-
-                if not is_empty_workaround:
-                    is_empty_workaround = True
                     conversation.append({
                         'role': 'user',
-                        'content': 'Dont answer with empty message. If you have finished the work - call `report` tool!'
+                        'content': (
+                            'IMPORTANT: Create report of the your work. '
+                            'Use the `report` tool to provide a comprehensive structured summary of all work done so far. '
+                            'Dont continue your work!'
+                        )
                     })
+                    self.log(f"LLMRequestFormat workaround: {e}")
+                    continue
+                else:
+                    yield DTOInstruction(type=EventType.ERROR, message=str(e), exit=True)
+                    return
+
+            _llm_format_error_workaround = 0
+            _prompt_tokens = output.get('tokens_usage', {}).get('prompt', 0)
+            total_context_size = 0
+            if _prompt_tokens > 0:
+                total_context_size = _prompt_tokens + output['tokens_usage']['completion']
+                yield DTOInstruction(
+                    type=EventType.CONTEXT,
+                    context_window={"used": total_context_size, "limit": MAX_CONTEXT_WINDOW_SIZE}
+                )
+
+            if not output:
+                yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id, metadata={})
+                _report = self.create_report(conversation)
+                if _report:
+                    _report = conversation[-1]['content']
+                    logger.info("Empty response. Create report from previous message")
+                else:
+                    _report = "I've completed task"
+                    logger.info("Empty response [agents]")
+
+                yield DTOInstruction(type=EventType.REPORT, message=_report, exit=True, hidden=True, message_id=message_id, metadata=self.artifacts)
+                return
 
             self.log('LLM OUTPUT:\n' + output.get('output', ''), True)
 
             tool_call_description = None
             current_tool_call = None
-            tool_calls = output.get('_tool_calls', [])
+            tool_calls = output.get('tool_calls', [])
             if not tool_calls:
                 tool_calls = []
 
             for tool_call in tool_calls:
+                _args = self.parse_tool_arguments(tool_call['function']['arguments']) if tool_call['function']['arguments'] else {}
                 tool_call_description = {
-                    'function': tool_call.function.name,
-                    'id': tool_call.id,
-                    'args': list(_parse_tool_arguments(tool_call.function.arguments).values()) if tool_call.function.arguments else []
+                    'function': tool_call['function']['name'],
+                    'id': tool_call['id'],
+                    'args': _args,
                 }
                 current_tool_call = tool_call
+                current_tool_call['function']['arguments'] = json.dumps(_args) # correct json always
                 break
 
-            if not current_tool_call and not output['_output']:
-                logger.warning("Empty response")
-                continue
-            elif not current_tool_call and output['_output']:
-                yield DTOInstruction(type=EventType.MARKDOWN, message=output['_output'], exit=True)
+            if not current_tool_call and not output['output']:
+                _report = self.create_report(conversation)
+                if _report:
+                    logger.info("Empty response. Create report from previous message (2)")
+                else:
+                    _report = "Agent has not completed work, empty response"
+
+                yield DTOInstruction(type=EventType.REPORT, message=_report, exit=True, hidden=True, message_id=message_id, metadata=self.artifacts)
+                return
+
+            elif not current_tool_call and output['output']:
+                yield DTOInstruction(type=EventType.MARKDOWN, message=output['output'], exit=True)
 
                 conversation.append({
                     'role': 'assistant',
-                    'content': output['_output'],
+                    'content': output['output'],
                 })
 
                 continue
 
             self.log(tool_call_description, True)
+
             conversation.append({
                 'role': 'assistant',
-                'content': output['_output'],
+                'content': output['output'] if output['output'] else None,
                 'tool_calls': [current_tool_call]
             })
 
             if tool_call_description['function'] == 'report':
-                yield DTOInstruction(type=EventType.REPORT, message=tool_call_description['args'][0], exit=True)
+                yield DTOInstruction(
+                    type=EventType.REPORT,
+                    message=tool_call_description['args'].get('text', '') if tool_call_description['args'] else '',
+                    exit=True,
+                    message_id=output['id'],
+                    metadata=self.artifacts
+                )
                 break
+            elif tool_call_description['function'] == 'summarize':
+                    _context_overflow_summarize = False
+                    _summarize_count += 1
+
+                    llm_summary = tool_call_description['args'].get('text', '') if tool_call_description['args'] else ''
+                    artifact_summary = self._build_artifact_summary()
+
+                    combined_summary = f"{artifact_summary}\n\n## Agent Findings and Progress:\n{llm_summary}"
+
+                    conversation = conversation[:2]
+
+                    # todo `report` tool ?
+                    conversation.append({
+                        'role': 'assistant',
+                        'content': (
+                            f"I have summarized my work below (summarization cycle #{_summarize_count}):\n"
+                            f"{combined_summary}\n"
+                            f"Based on this summary I will continue working."
+                        ),
+                    })
+
+                    conversation.append({
+                        'role': 'system',
+                        'content': f"Continue the work of create report!",
+                    })
+
+                    self.log(f"SUMMARIZE RESULT:\n{combined_summary}", True)
+
+                    yield DTOInstruction(
+                        type=EventType.MARKDOWN,
+                        message=tool_call_description['args'].get('text', '') if tool_call_description['args'] else '',
+                        message_id=output['id']
+                    )
+
+                    continue
             else:
                 yield DTOInstruction(type=EventType.NOPE)
 
                 is_pre_output = tool_call_description['function'] in ['shell_command', 'search_file']
                 is_output_resul_of_tool_separate_msg = tool_call_description['function'] in ['shell_command', 'search_file']
+                response_message_id = output['id'] + ':response'
 
                 if is_pre_output:
-                    _args = tool_call_description['args'][0] if tool_call_description['args'] else ''
                     yield DTOInstruction(
                         type=EventType.TOOL,
                         function=tool_call_description['function'],
                         args=tool_call_description['args'],
+                        message_id=output['id']
+                    )
+
+                    yield DTOInstruction(
+                        type=EventType.PENDING,
+                        message_id=response_message_id,
+                        is_final=False
                     )
 
                 result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
@@ -200,7 +374,42 @@ class BaseAgent:
                     result['source_file_path'] = self.cache_file(result['file_name'], result['source_file_content'])
 
                 if not tool_call_description['args']:
-                    tool_call_description['args'] = ['']
+                    tool_call_description['args'] = {}
+
+                if is_success:
+                    fn = tool_call_description['function']
+                    tool_args = tool_call_description.get('args', {}) if isinstance(tool_call_description.get('args'), dict) else {}
+                    if fn == 'read_file':
+                        file_path = tool_args.get('path', '')
+                        if file_path:
+                            self.artifacts['files_read'].append(file_path)
+                    elif fn == 'read_multiply_files':
+                        root_path = tool_args.get('root_path', '')
+                        file_names = tool_args.get('file_name', [])
+                        if isinstance(file_names, list):
+                            for name in file_names:
+                                if name:
+                                    file_path = os.path.join(root_path, name) if root_path else name
+                                    self.artifacts['files_read'].append(file_path)
+                    elif fn == 'write_file':
+                        file_path = tool_args.get('path', '')
+                        if file_path:
+                            if result.get('file_create'):
+                                self.artifacts['files_created'].append(file_path)
+                            elif result.get('file_edit'):
+                                self.artifacts['files_modified'].append(file_path)
+                    elif fn == 'replace_code_in_file':
+                        file_path = tool_args.get('path', '')
+                        if file_path:
+                            self.artifacts['files_modified'].append(file_path)
+                    elif fn == 'shell_command':
+                        cmd_name = tool_args.get('command_name', '')
+                        shell_block = tool_args.get('shell_block', '')
+                        command_ref = f'{cmd_name}/{shell_block}' if cmd_name and shell_block else cmd_name or shell_block
+                        self.artifacts['commands_run'].append({
+                            'command': command_ref,
+                            'status': result.get('status', 'unknown') if isinstance(result, dict) else 'unknown'
+                        })
 
                 if not is_pre_output:
                     yield DTOInstruction(
@@ -209,16 +418,17 @@ class BaseAgent:
                         args=tool_call_description['args'],
                         result=result,
                         is_success=is_success,
+                        message_id=output['id']
                     )
 
                 if is_output_resul_of_tool_separate_msg:
                     _result = result.get('post_result', result['result'])
-                    yield DTOInstruction(type=EventType.MARKDOWN, message=_result)
+                    yield DTOInstruction(type=EventType.MARKDOWN, message=_result, message_id=response_message_id)
 
                 result_msg = {
                     'role': 'tool',
-                    'tool_call_id': current_tool_call.id,
-                    'name': current_tool_call.function.name,
+                    'tool_call_id': current_tool_call['id'],
+                    'name': current_tool_call['function']['name'],
                     'content': result['result'],
                 }
                 self.log("TOOL RESULT:", True)
@@ -226,16 +436,40 @@ class BaseAgent:
 
                 conversation.append(result_msg)
 
-    def log(self, data, to_file=False):
-        output = pretty_print_as_json(data)
-        output = f"[ {self.role} ] {output}"
+            if agent_step == MAX_ITERATION - 1:
+                self.log("MAX_ITERATION exceed workaround")
+                conversation.append({
+                    'role': 'user',
+                    'content': (
+                        'IMPORTANT: MAX_ITERATION exceed. Create report of the your work'
+                        'Use the `report` tool to provide a comprehensive structured summary of all work done so far. '
+                        'Dont continue your work - you lead to maximum interation step'
+                    )
+                })
+                _max_step_workaround = True
+                continue
 
-        if not to_file:
-            logger.info(output)
-            return
+            if total_context_size > MAX_CONTEXT_WINDOW_SIZE and not _context_overflow_summarize:
+                # TODO: summarization inf loop
+                conversation.append({
+                    'role': 'user',
+                    'content': (
+                        'IMPORTANT: The context window is almost full. '
+                        'Use the `summarize` tool to provide a comprehensive structured summary of all work done so far. '
+                        'Your summary MUST include these sections:\n'
+                        '## Files Read: (each file path and key findings)\n'
+                        '## Files Created/Modified: (each path and what was done)\n'
+                        '## Commands Run: (command name and result)\n'
+                        '## Key Findings: (important values, patterns, decisions)\n'
+                        '## Current Status: (what is completed)\n'
+                        '## What Remains: (what still needs to be done)\n'
+                        'Be thorough — target ~3000-4000 characters. Use `summarize` tool now!'
+                    )
+                })
+                _context_overflow_summarize = True
+                continue
 
-        with open(self.log_file, "a", encoding='utf8') as f:
-            f.write(output + "\n\n")
+
 
     def cache_file(self, file_name: str, source_file_content: str) -> str:
         source_file_content_path = os.path.join(self.storage_path, hashlib.sha256(file_name.encode()).hexdigest() + '.txt')
@@ -245,99 +479,17 @@ class BaseAgent:
 
         return os.path.abspath(source_file_content_path)
 
-def _merge_assistant_messages(conversation: list[dict]) -> list[dict]:
-    # merge multiply assistant messages to once
-    merged = True
-    while merged:
-        merged = False
-        if len(conversation) >= 2:
-            if conversation[-1]['role'] == 'assistant' and conversation[-2]['role'] == 'assistant':
-                conversation[-2]['content'] += "\n" + conversation[-1]['content']
-                conversation = conversation[:-1]
-                merged = True
-
-    return conversation
 
 class AnalyticAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
         if self.role == 'ANALYTIC':
-            return ANALYTIC_TOOLS
+            return get_analytic_tools(self.has_shell_commands)
         else:
-            return REVIEWER_TOOLS
-
-    def conversation_filter(self, conversation: list[dict]) -> list[dict]:
-        return _merge_assistant_messages(conversation)
+            return get_reviewer_tools(self.has_shell_commands)
 
 class CoderAgent(BaseAgent):
     def get_tools(self) -> list[dict]:
-        return CODER_TOOLS
-
-    def _create_log(self, conversation: list[dict]):
-        tools_list = [_ for _ in conversation if 'tool_calls' in _]
-        for tool in tools_list:
-            tool_call = tool['tool_calls'][0]
-            tool['args'] = list(_parse_tool_arguments(tool_call.function.arguments).values()) if tool_call.function.arguments else []
-
-        return "; ".join([f'{m['tool_calls'][0].function.name}:{m['args'][0]}' for m in tools_list])
-
-    def conversation_filter(self, conversation: list[dict]) -> list[dict]:
-        conversation = _merge_assistant_messages(conversation)
-
-        tools_map = {}
-        tools_answers = {}
-        is_convolution = False
-        for position, m in enumerate(conversation):
-            if 'tool_call_id' in m:
-                tools_answers[m['tool_call_id']] = m
-
-            if 'tool_calls' not in m:
-                continue
-
-            tool = m['tool_calls'][0]
-            if tool.function.name == 'report':
-                return conversation
-
-            args = list(_parse_tool_arguments(tool.function.arguments).values()) if tool.function.arguments else []
-            if not args:
-                return conversation
-
-            if tool.function.name == 'write_file':
-                tool_name = 'write'
-                js_obj_name = str(args[0])
-            elif tool.function.name == 'replace_code_in_file':
-                # lost write diff cause less quality
-                tool_name = f'replace_code_in_file:{position}'
-                js_obj_name = str(args[0])
-            else:
-                tool_name = 'read'
-                js_obj_name = ':'.join([str(_) for _ in args])
-
-            if tools_map.get(js_obj_name, {}).get(tool_name, None):
-                is_convolution = True
-
-            if js_obj_name not in tools_map:
-                tools_map[js_obj_name] = {}
-
-            tools_map[js_obj_name][tool_name] = [m, position]
-
-        if not is_convolution:
-            return conversation
-
-        modified_conversation = []
-        for _, obj_tools in tools_map.items():
-            for _, [m, position] in obj_tools.items():
-                modified_conversation.append([10*position, m])
-                if m['tool_calls'][0].id in tools_answers:
-                    modified_conversation.append([10*position + 5, tools_answers[ m['tool_calls'][0].id ] ])
-
-        modified_conversation = sorted(modified_conversation, key=lambda pos_m: pos_m[0])
-        modified_conversation = [_[1] for _ in modified_conversation]
-
-        logger.info(
-            "Conv context! Before: " + self._create_log(conversation) + " After: " + self._create_log(modified_conversation)
-        )
-
-        return conversation[:2] + modified_conversation
+        return get_coder_tools(self.has_shell_commands)
 
 
 class Agent:
@@ -345,20 +497,37 @@ class Agent:
         'ANALYTIC': './prompts/analytic_system.txt',
         'CODER': './prompts/coder_system.txt',
         'REVIEWER': './prompts/reviewer_system.txt',
+        'MCP': './prompts/mcp_system.txt',
     }
 
     STEP_PROMPT = './prompts/step.txt'
 
     @staticmethod
-    def setUp():
-        for cache_path in glob.glob(os.path.join(BaseAgent.STORAGE_PATH, '*')):
-            shutil.rmtree(cache_path)
+    def _get_role_agent_commands(role, agent_commands: list = None) -> list:
+        if role == 'MCP':
+            return []
+
+        filtered_commands = []
+        for cmd in agent_commands or []:
+            allowed_roles = cmd.get('config', {}).get('role')
+            if not allowed_roles or role in allowed_roles:
+                filtered_commands.append(cmd)
+
+        return filtered_commands
 
     @staticmethod
-    def fabric(role, agent_commands: list = None) -> BaseAgent:
+    def setUp():
+        for cache_path in glob.glob(os.path.join(BaseAgent.STORAGE_PATH, '*')):
+            if os.path.isdir(cache_path):
+                shutil.rmtree(cache_path)
+
+    @staticmethod
+    def create(role, agent_commands: list = None, mcp_commands: list = None) -> BaseAgent:
         assert role in Agent.PROMPTS, f'invalid role: {role}'
 
         thinking = role in DEEPTHINKING_AGENTS
+        role_agent_commands = Agent._get_role_agent_commands(role, agent_commands)
+        has_shell_commands = bool(role_agent_commands and len(role_agent_commands) > 0)
         system_prompt = Agent.PROMPTS[role]
         with open(system_prompt, 'r', encoding='utf8') as f:
             system_prompt = f.read()
@@ -366,13 +535,18 @@ class Agent:
             rtemplate = Environment(loader=BaseLoader).from_string(system_prompt)
             system_prompt = rtemplate.render(params={
                 'thinking': thinking,
-                'agent_commands': agent_commands or []
+                'agent_commands': role_agent_commands
             })
 
         with open(Agent.STEP_PROMPT, 'r', encoding='utf8') as f:
             step_prompt = f.read()
 
         if role == 'ANALYTIC' or role == 'REVIEWER':
-            return AnalyticAgent(role, system_prompt, step_prompt, thinking)
+            return AnalyticAgent(role, system_prompt, step_prompt, thinking, has_shell_commands)
         elif role == 'CODER':
-            return CoderAgent(role, system_prompt, step_prompt, False)
+            return CoderAgent(role, system_prompt, step_prompt, False, has_shell_commands)
+        elif role == 'MCP':
+            from mcp_agent import MCPAgent
+            return MCPAgent(role, system_prompt, step_prompt, False, mcp_commands or [])
+        else:
+            raise Exception("unknown agent")

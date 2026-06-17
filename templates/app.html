@@ -15,6 +15,8 @@
 
     <script>
         var SESSION_ID = "{{ app.session_id }}";
+        var AGENT_COMMAND = {{ app.commands | tojson }};
+        var MCP_COMMAND = {{ app.mcp_commands | tojson }};
     </script>
 </head>
 <body>
@@ -23,13 +25,22 @@
             <div id="chat-messages" class="chat-messages"></div>
 
             <div class="input-container">
+                <div id="image-preview-container"></div>
                 <textarea
                     id="message-input"
                     class="message-input"
                     placeholder="Type your message here... (Press Ctrl+Enter to send)"
                     rows="4"
                 ></textarea>
+                <div class="input-toolbar">
+                    <button id="upload-image-btn" class="default upload-image-btn" type="button">📎 Image</button>
+                </div>
             </div>
+        </div>
+
+        <div id="context-window-bar">
+            <div class="context-bar-fill"></div>
+            <span class="context-bar-label"></span>
         </div>
     </div>
 
@@ -38,6 +49,8 @@
         <span>STOP</span>
         <span class="dummy"></span>
     </button>
+
+    <input type="file" id="image-upload-input" accept="image/*" multiple style="display:none">
 
     <script>
         {% include 'assets/app.js' %}

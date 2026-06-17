@@ -3,9 +3,9 @@ import os
 import tempfile
 import shutil
 
-from mcp_helper import tool_call
+from ide_integration import tool_call
 
-class TestMCPHelperPure(unittest.TestCase):
+class TestIdeIntegrationPure(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.test_dir = tempfile.mkdtemp(prefix='test_mcp_pure_')
@@ -39,7 +39,6 @@ class TestMCPHelperPure(unittest.TestCase):
         
         # Read via tool_call
         result = tool_call(
-            'dummy_host',
             'get_file_text_by_path',
             {
                 'projectPath': self.test_dir,
@@ -58,7 +57,6 @@ class TestMCPHelperPure(unittest.TestCase):
         
         # Write via tool_call
         result = tool_call(
-            'dummy_host',
             'create_new_file',
             {
                 'projectPath': self.test_dir,
@@ -82,7 +80,6 @@ class TestMCPHelperPure(unittest.TestCase):
         """Test that unknown tool names raise an exception in pure mode."""
         with self.assertRaises(Exception) as context:
             tool_call(
-                'dummy_host',
                 'unknown_tool',
                 {
                     'projectPath': self.test_dir,

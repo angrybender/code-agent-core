@@ -4,18 +4,21 @@ from flask import Flask, render_template, request, Response
 import json
 import time
 import os
+import base64
+import mimetypes
+import threading
 from dotenv import load_dotenv
 import hashlib
 import signal
 
 import logging
 
-from dto.dto_instruction import DTOInstruction
-
 logger = logging.getLogger('APP')
 
 from algorythm import Copilot
-from conversation import get_terminal, agent_result_of_all_active_tpl, agent_tool_tpl
+from commands_helper import parse_agent_commands
+from conversation import get_terminal, agent_result_of_all_active_tpl, agent_tool_tpl, _agent_call_tpl
+from mcp_integration.mcp_helper import parse_mcp_commands
 
 app = Flask(__name__)
 
@@ -23,6 +26,7 @@ load_dotenv()
 HTTP_PORT = int(os.getenv('HTTP_PORT', 5000))
 MODEL = os.getenv('MODEL')
 IS_DEBUG = int(os.environ.get('DEBUG', 0)) == 1
+STREAM_PENDING_PERIOD = 1
 VERSION_TAG = 2
 
 if IS_DEBUG:
@@ -33,62 +37,66 @@ else:
 class SessionsManaged:
     def __init__(self):
         self.sessions = {}
+        self._lock = threading.Lock()
 
     def _init_session(self, session_id: str):
         self.sessions[session_id] = {'message': None, 'command': None, 'data': {}}
 
     def add_session_parameter(self, session_id: str, key: str, value):
-        if session_id in self.sessions:
-            self._init_session(session_id)
-
-        self.sessions[session_id]['data'][key] = value
+        with self._lock:
+            if session_id not in self.sessions:
+                self._init_session(session_id)
+            self.sessions[session_id]['data'][key] = value
 
     def get_session_data(self, session_id: str) -> dict:
-        return self.sessions.get(session_id, {}).get('data', {})
+        with self._lock:
+            return self.sessions.get(session_id, {}).get('data', {})
 
     def acquire(self, session_id: str):
-        if session_id in self.sessions:
-            return False
-
-        self._init_session(session_id)
-        return True
+        with self._lock:
+            if session_id in self.sessions:
+                return False
+            self._init_session(session_id)
+            return True
 
     def send_message(self, session_id: str, message: str):
-        self.sessions[session_id]['message'] = message
+        with self._lock:
+            self.sessions[session_id]['message'] = message
 
     def send_command(self, session_id: str, command: str):
-        if not session_id in self.sessions:
-            self._init_session(session_id)
-
-        self.sessions[session_id]['command'] = command
+        with self._lock:
+            if session_id not in self.sessions:
+                self._init_session(session_id)
+            self.sessions[session_id]['command'] = command
 
     def get_message(self, session_id: str):
-        if session_id not in self.sessions:
-            return None
-
-        return self.sessions[session_id]['message']
+        with self._lock:
+            if session_id not in self.sessions:
+                return None
+            return self.sessions[session_id]['message']
 
     def get_command(self, session_id: str):
-        if session_id not in self.sessions:
-            return None
-
-        return self.sessions[session_id]['command']
+        with self._lock:
+            if session_id not in self.sessions:
+                return None
+            return self.sessions[session_id]['command']
 
     def commit_command(self, session_id):
-        if session_id not in self.sessions:
-            return None
-
-        self.sessions[session_id]['command'] = None
+        with self._lock:
+            if session_id not in self.sessions:
+                return None
+            self.sessions[session_id]['command'] = None
 
     def commit_message(self, session_id):
-        if session_id not in self.sessions:
-            self._init_session(session_id)
-
-        self.sessions[session_id]['message'] = None
+        with self._lock:
+            if session_id not in self.sessions:
+                self._init_session(session_id)
+            self.sessions[session_id]['message'] = None
 
     def destroy(self, session_id: str):
-        if session_id in self.sessions:
-            del self.sessions[session_id]
+        with self._lock:
+            if session_id in self.sessions:
+                del self.sessions[session_id]
 
 SESSION_MANAGER_INSTANCE = SessionsManaged()
 
@@ -98,6 +106,7 @@ def process_task(user_request: str, session_id: str):
 
     active_responses = []
     force_stop = False
+    last_pending_sent = 0
     for message in session.run():
         command = SESSION_MANAGER_INSTANCE.get_command(session_id)
         if command == 'stop':
@@ -117,7 +126,15 @@ def process_task(user_request: str, session_id: str):
             active_responses.append({'type': 'files', 'message': message.copy()})
 
         if message.get('hidden', False):
-            message = {'type': 'nope'}
+            message = {'type': 'nope', 'is_final': True}
+
+        if not message['is_final'] and time.time() - last_pending_sent < STREAM_PENDING_PERIOD:
+            continue
+
+        if not message['is_final']:
+            last_pending_sent = time.time()
+        else:
+            last_pending_sent = 0
 
         yield f"data: {json.dumps(message)}\n\n"
 
@@ -150,8 +167,15 @@ def index():
         })
 
     session_id = hashlib.sha256(project_base_path.encode()).hexdigest()
+    shell_cmd_dir = os.getenv('SHELL_COMMAND_DIRECTORY', '.agent-commands')
+    full_cmd_dir = os.path.join(project_base_path, shell_cmd_dir)
+    commands = parse_agent_commands(full_cmd_dir)
+    mcp_commands = parse_mcp_commands(full_cmd_dir)
+
     template_app_data = {
         'session_id': session_id,
+        'commands': commands,
+        'mcp_commands': mcp_commands,
     }
 
     start_stop = time.time()
@@ -191,6 +215,41 @@ def control_action():
     return json.dumps({'status': 'success'})
 
 
+@app.route('/file_content', methods=['GET'])
+def file_content():
+    file_path = request.args.get('path', '').strip()
+
+    if not file_path:
+        return json.dumps({'error': 'path parameter is required'}), 400
+
+    if not os.path.isabs(file_path):
+        return json.dumps({'error': 'path must be absolute'}), 400
+
+    file_path = os.path.realpath(file_path)
+
+    if not os.path.isfile(file_path):
+        return json.dumps({'error': 'file not found'}), 404
+
+    mime_type, _ = mimetypes.guess_type(file_path)
+    if not mime_type or not mime_type.startswith('image/'):
+        return json.dumps({'error': 'file is not an image'}), 400
+
+    max_size = 5 * 1024 * 1024
+    if os.path.getsize(file_path) > max_size:
+        return json.dumps({'error': 'file exceeds 5 MB limit'}), 400
+
+    with open(file_path, 'rb') as f:
+        encoded = base64.b64encode(f.read()).decode('ascii')
+
+    data_url = f'data:{mime_type};base64,{encoded}'
+
+    return json.dumps({
+        'data_url': data_url,
+        'mime_type': mime_type,
+        'error': None
+    })
+
+
 @app.route('/api/agent', methods=['POST'])
 def agent_api():
     try:
@@ -204,6 +263,11 @@ def agent_api():
 
         if not os.path.exists(project_base_path):
             return json.dumps({'status': 'error', 'message': 'project_base_path is not exists'}), 400
+
+        if not os.path.isabs(project_base_path):
+            return json.dumps({'status': 'error', 'message': 'project_base_path must be an absolute path'}), 400
+
+        project_base_path = os.path.realpath(project_base_path)
 
         if not user_message:
             return json.dumps({'status': 'error', 'message': 'message is required and must be non-empty'}), 400
@@ -227,9 +291,7 @@ def agent_api():
                 timeout_occurred = True
                 break
 
-            if isinstance(message, DTOInstruction):
-                message = asdict(message)
-
+            message = asdict(message)
             results.append(message)
 
         return json.dumps({
@@ -253,10 +315,19 @@ def message_action():
         if not user_message:
             return json.dumps({'status': 'error', 'message': 'Empty message'}), 400
 
+        images = data.get('images')
+        if images is not None:
+            if not isinstance(images, list) or not all(
+                isinstance(img, str) and img.startswith('data:image/') for img in images
+            ):
+                return json.dumps({"status": "error", "message": "Invalid image format"}), 400
+
         if SESSION_MANAGER_INSTANCE.get_message(user_session_id):
             return json.dumps({'status': 'error', 'message': 'Session is locked'}), 400
 
         SESSION_MANAGER_INSTANCE.send_message(user_session_id, user_message)
+        if images:
+            SESSION_MANAGER_INSTANCE.add_session_parameter(user_session_id, 'pending_images', images)
 
         return json.dumps({'status': 'success'})
 
@@ -271,7 +342,7 @@ def _get_project_status(session: dict):
         session_id = session['id']
         project_path = SESSION_MANAGER_INSTANCE.get_session_data(session_id)['project_base_path']
         return f"data: {json.dumps({'role': 'system', 'type': 'status', 'message': project_path})}\n\n"
-    except:
+    except (KeyError, TypeError):
         return f"data: {json.dumps({'role': 'system', 'type': 'status', 'message': 'unknown project'})}\n\n"
 
 def event_stream(session: dict):
@@ -290,6 +361,7 @@ def event_stream(session: dict):
 
                 # finished work:
                 SESSION_MANAGER_INSTANCE.commit_message(session_id)
+                SESSION_MANAGER_INSTANCE.add_session_parameter(session_id, 'pending_images', [])
             else:
                 # Send heartbeat to keep connection alive
                 now = time.time()
@@ -302,6 +374,7 @@ def event_stream(session: dict):
 
         except Exception as e:
             SESSION_MANAGER_INSTANCE.commit_message(session_id)
+            SESSION_MANAGER_INSTANCE.add_session_parameter(session_id, 'pending_images', [])
 
             yield f"data: {json.dumps({'role': 'system', 'type': 'error', 'message': str(e)})}\n\n"
             logging.exception("message")

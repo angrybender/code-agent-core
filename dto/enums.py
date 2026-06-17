@@ -6,13 +6,16 @@ class AgentRole(str, Enum):
     ANALYTIC   = "ANALYTIC"
     CODER      = "CODER"
     REVIEWER   = "REVIEWER"
+    MCP        = "MCP"
 
 
 class EventType(str, Enum):
     NOPE     = "nope"
+    PENDING  = "pending"
     INFO     = "info"
     MARKDOWN = "markdown"
     TOOL     = "tool"
+    AGENT    = "agent"
     REPORT   = "report"
     ERROR    = "error"
     HTML     = "html"
@@ -20,3 +23,5 @@ class EventType(str, Enum):
     FILES    = "files"
     STATUS   = "status"
     WARNING  = "warning"
+    EXIT    = "exit"
+    CONTEXT = "context"

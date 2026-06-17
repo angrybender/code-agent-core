@@ -2,32 +2,36 @@ import json
 import os
 import glob
 import datetime
+import time
+import re
+
+from jinja2 import Environment, BaseLoader
 
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
-from log_helper import pretty_print_as_json
-from mcp_helper import tool_call
-from llm import llm_query
+from log_helper import pretty_format
+import ide_integration
+from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE
 from path_helper import get_relative_path
 from tools_interpreter import ToolsInterpreter
 from agents import Agent
 from tools.tools import SUPERVISOR_TOOLS
+from logger_mixin import LoggerMixin
 
 from commands_helper import parse_agent_commands
 from dotenv import load_dotenv
+from mcp_integration.mcp_helper import parse_mcp_commands
 
 load_dotenv()
 
-IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=os.getenv('MAX_ITERATION')
-AVOID_EMPTY_RESPONSE = int(os.getenv('AVOID_EMPTY_RESPONSE', 0)) == 1
 
 import logging
 logger = logging.getLogger('APP')
 logging.basicConfig(level=logging.INFO)
 
 
-class Copilot:
+class Copilot(LoggerMixin):
     PROJECT_DESCRIPTION = "./AGENTS.md"
     MAX_STEP = int(MAX_ITERATION)
     LOG_FILE = './conversations_log/log.log'
@@ -41,6 +45,8 @@ class Copilot:
         self.instruction = instruction
 
         self.interpreter = None
+        self.role = 'SUPERVISOR'
+        self.log_file = self.LOG_FILE
 
         self.system_prompt = ''
         self.prompt = ''
@@ -50,7 +56,7 @@ class Copilot:
         self.command_state = []
 
     def get_manifest(self, project_base_path: str):
-        content = tool_call(IDE_MCP_HOST, 'get_file_text_by_path', {
+        content = ide_integration.tool_call('get_file_text_by_path', {
             'pathInProject': self.PROJECT_DESCRIPTION,
             'projectPath': project_base_path
         })
@@ -64,10 +70,12 @@ class Copilot:
         assert 'project_base_path' in self.session, 'Session not contains `project_base_path`'
 
         if not self.system_prompt:
-            self.system_prompt = open('./prompts/supervisor_system.txt', 'r', encoding='utf8').read()
+            with open('./prompts/supervisor_system.txt', 'r', encoding='utf8') as f:
+                self.system_prompt = f.read()
 
         if not self.prompt:
-            self.prompt = open('./prompts/step.txt', 'r', encoding='utf8').read()
+            with open('./prompts/system_step.txt', 'r', encoding='utf8') as f:
+                self.prompt = f.read()
 
         assert self.instruction, 'Empty instruction'
 
@@ -81,13 +89,37 @@ class Copilot:
         full_cmd_dir = os.path.join(self.session['project_base_path'], shell_cmd_dir)
         self.agent_commands = parse_agent_commands(full_cmd_dir)
         self.manifest['agent_commands'] = self.agent_commands
+        self.mcp_commands = parse_mcp_commands(full_cmd_dir)
+        self.manifest['mcp_commands'] = self.mcp_commands
 
         self.output = []
 
         self.executed_commands = []
         self.command_state = []
         self.agent_step = 1
-        self.interpreter = ToolsInterpreter(IDE_MCP_HOST, self.session['project_base_path'])
+        self.interpreter = ToolsInterpreter(self.session['project_base_path'])
+
+    def _sanitize_supervisor_command_description(self, text: str) -> str:
+        text = re.sub(r"```.*?```", "", text or "", flags=re.DOTALL)
+        return text.strip()
+
+    def _get_commands_guidance(self) -> str:
+        if not self.agent_commands:
+            return ''
+
+        command_items = []
+        for command in self.agent_commands:
+            description = self._sanitize_supervisor_command_description(command.get('description', ''))
+            if not description or len(description.split("\n")) < 2:
+                continue
+
+            available_to = ",".join(command.get('config', {}).get('role', ['all']))
+            command_items.append(f"<Guidance command_name=\"{command['command']}\" available_to=\"{available_to}\">\n{description}\n</Guidance>")
+
+        if not command_items:
+            return ''
+
+        return "\n\n".join(command_items)
 
     def _read_project_structure(self, base_path) -> list:
         result = []
@@ -102,37 +134,64 @@ class Copilot:
             result.append(dir_object)
         return result
 
+    @staticmethod
+    def _full_log(conversation: list[dict]):
+        with open('./conversations_log/log.json.log', 'w', encoding='utf8') as f:
+            f.write(pretty_format(conversation, truncate=0, max_line_len=0))
+
     def run(self):
         specific_model = os.environ.get('MODEL:SUPERVISOR', None)
-        yield DTOInstruction(type=EventType.INFO, message="start SUPERVISOR...")
 
         self._init()
         Agent.setUp()
 
-        if self.agent_commands:
-            names = "\n".join(f"- **{c['command']}** `{c['cmd']}`" for c in self.agent_commands)
-            yield DTOInstruction(type=EventType.MARKDOWN, message=f"Available shell commands:\n{names}")
+        # ping IDE
+        start_msg_id = str(time.time())
+        yield DTOInstruction(type=EventType.AGENT, is_final=False, message_id=start_msg_id, function="SUPERVISOR")
+        ping_mcp = ide_integration.tool_call('__test__connection__', {"projectPath": self.session['project_base_path']})
+        if not ping_mcp['result']:
+            yield DTOInstruction(type=EventType.ERROR, message_id=start_msg_id, message=f"MCP ide integration error: {ping_mcp['error']}")
+            return []
+        yield DTOInstruction(type=EventType.AGENT, hidden=True, message_id=start_msg_id, function="SUPERVISOR")
 
-        with open(self.LOG_FILE, "w", encoding='utf8') as f:
-            f.write(str(datetime.datetime.now()) + "\n\n")
-
+        self.flush_log_file()
+        self.log(str(datetime.datetime.now()), True)
         self.log(f"RUN. Messages: `{self.instruction}`", False)
 
-        sub_prompt = self.prompt.format(
+        current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        supervisor_guidance = self._get_commands_guidance()
+        rtemplate = Environment(loader=BaseLoader).from_string(self.prompt)
+        sub_prompt = rtemplate.render(
             project_description=self.manifest['description'],
             project_structure="\n".join([f"- {path}" for path in self.manifest['files_structure']]),
+            current_datetime=current_datetime,
+            project_guidance=supervisor_guidance,
+            max_tools_cnt=self.MAX_STEP-1,
         )
+
+        pending_images = self.session.get('pending_images', []) if self.session else []
+
+        if pending_images:
+            user_content = [{"type": "text", "text": self.instruction}]
+            for img_url in pending_images:
+                user_content.append({"type": "image_url", "image_url": {"url": img_url}})
+        else:
+            user_content = self.instruction
 
         conversation_log = [
             {
                 'role': 'system',
-                'content': self.system_prompt + "\n" + sub_prompt + f"\nMaximum allowed tools calling: {self.MAX_STEP-1}; planing work with this restriction!"
+                'content': self.system_prompt + "\n" + sub_prompt
             },
             {
                 'role': 'user',
-                'content': self.instruction
+                'content': user_content
             }
         ]
+
+        self.log("============= SYSTEM PROMPT =============", True)
+        self.log(conversation_log[0]['content'], True)
 
         agent_step_counter = 1
         while True:
@@ -141,92 +200,131 @@ class Copilot:
                 yield DTOInstruction(type=EventType.ERROR, message="MAX_STEP exceed!")
                 break
 
-            is_empty_workaround = False
-            while True:
-                yield DTOInstruction(type=EventType.NOPE)
-                output = llm_query(conversation_log, tools=SUPERVISOR_TOOLS, model_name=specific_model)
-                if output:
+            if agent_step_counter > 1 and supervisor_guidance:
+                conversation_log.append({
+                    'role': 'user',
+                    'content': supervisor_guidance
+                })
+
+            output = None
+            message_id = None
+            for chunk in llm_query_stream(conversation_log, tools=SUPERVISOR_TOOLS, model_name=specific_model, force_tool=True):
+                message_id = chunk['id']
+                if chunk['type'] == 'final':
+                    output = chunk
                     break
+                elif chunk['type'] == 'tool':
+                    _tool_call = chunk['tool_calls'][0]
+                    tools_arguments_parsing = _tool_call['function']['arguments_parsed'] if _tool_call['function'].get('arguments_parsed') else {}
+                    agent_name = tools_arguments_parsing.get('agent_name', '')
+                    if agent_name:
+                        yield DTOInstruction(type=EventType.AGENT, is_final=False, message_id=chunk['id'], function=agent_name)
+                else:
+                    yield DTOInstruction(type=EventType.AGENT, is_final=False, message_id=chunk['id'], function="SUPERVISOR")
 
-                if not AVOID_EMPTY_RESPONSE:
-                    # == exit
-                    logger.info("Empty response. Stop working")
-                    return True
+            _prompt_tokens = output.get('tokens_usage', {}).get('prompt', 0)
+            if _prompt_tokens > 0:
+                yield DTOInstruction(
+                    type=EventType.CONTEXT,
+                    context_window={"used": _prompt_tokens + output['tokens_usage']['completion'], "limit": MAX_CONTEXT_WINDOW_SIZE}
+                )
 
-                logger.info("Empty response. Force to using tool")
-
-                if not is_empty_workaround:
-                    is_empty_workaround = True
-                    conversation_log.append({
-                        'role': 'user',
-                        'content': 'Dont answer with empty message. If you have finished the work - call `exit` tool!'
-                    })
+            if not output:
+                logger.info("Empty response. Stop working")
+                yield DTOInstruction(type=EventType.REPORT, message="", hidden=True, message_id=message_id)
+                return True
 
             tool_call_description = None
             current_tool_call = None
-            for tool_call in output['_tool_calls']:
+            for tool_call in output['tool_calls']:
+                function_name = tool_call['function']['name']
+
                 tool_call_description = {
-                    'function': tool_call.function.name,
-                    'id': tool_call.id,
+                    'function': function_name,
+                    'id': tool_call['id'],
                 }
 
-                arguments = json.loads(tool_call.function.arguments) if tool_call.function.arguments else []
+                arguments = json.loads(tool_call['function']['arguments']) if tool_call['function']['arguments'] else []
 
-                if tool_call.function.name == 'call_agent':
+                if function_name == 'call_agent':
                     instruction = arguments.get('instruction', None)
                     agent_name = arguments.get('agent_name', None)
-                    tool_call_description['args'] = [agent_name, instruction]
-                elif tool_call.function.name == 'message':
+                    agent_images = arguments.get('images', [])
+                    if not isinstance(agent_images, list):
+                        agent_images = []
+                    # Resolve integer image indices to real base64 Data URLs from pending_images
+                    resolved_images = []
+                    if agent_images and pending_images:
+                        for idx in agent_images:
+                            if isinstance(idx, int):
+                                real_idx = idx - 1  # convert 1-based to 0-based
+                                if 0 <= real_idx < len(pending_images):
+                                    resolved_images.append(pending_images[real_idx])
+                            # invalid or out-of-range indices are silently skipped
+                    tool_call_description['args'] = [agent_name, instruction, resolved_images]
+                elif function_name == 'message':
                     tool_call_description['args'] = [arguments.get('text', None)]
 
                 current_tool_call = tool_call
                 break
 
-            if not tool_call_description and output['_output']:
+            if not tool_call_description and output['output']:
                 conversation_log.append({
                     'role': 'assistant',
-                    'content': output['_output'],
+                    'content': output['output'],
                 })
-                self.log(output['_output'], True)
+                self.log(output['output'], True)
 
-                yield DTOInstruction(type=EventType.MARKDOWN, message=output['_output'])
+                yield DTOInstruction(type=EventType.MARKDOWN, message=output['output'])
 
                 agent_step_counter += 1
                 continue
 
-            if not tool_call_description and not output['_output']:
-                yield DTOInstruction(type=EventType.ERROR, message="Agent call error (empty)")
+            if not tool_call_description and not output['output']:
+                # cycle stop correct (modern LLM just stop generation if it has decided to finish)
                 break
 
             self.log(tool_call_description, True)
 
             agent_complete_report = None
+            last_agent_metadata = None
             if tool_call_description['function'] == 'exit':
+                yield DTOInstruction(type=EventType.EXIT, message_id=output['id'])
                 break
             elif tool_call_description['function'] == 'message':
-                yield DTOInstruction(type=EventType.MARKDOWN, message=tool_call_description['args'][0])
+                yield DTOInstruction(type=EventType.MARKDOWN, message=tool_call_description['args'][0], message_id=output['id'])
 
                 agent_complete_report = 'message print to user'
             elif tool_call_description['function'] == 'call_agent':
-                agent_name, agent_instruction = tool_call_description['args']
+                last_agent_metadata = None
+                agent_name, agent_instruction, agent_images = tool_call_description['args']
                 if agent_name not in Agent.PROMPTS:
-                    yield DTOInstruction(type=EventType.ERROR, message=f"Agent call error (name), name=`{agent_name}`")
+                    yield DTOInstruction(type=EventType.ERROR, message=f"Agent call error (name), name=`{agent_name}`", message_id=output['id'])
                     break
 
                 if not agent_instruction:
-                    yield DTOInstruction(type=EventType.ERROR, message=f"Agent call error (empty instruction)")
+                    yield DTOInstruction(type=EventType.ERROR, message=f"Agent call error (empty instruction)", message_id=output['id'])
                     break
 
-                agent = Agent.fabric(agent_name, self.agent_commands)
-                agent.init(agent_instruction, self.manifest, self.LOG_FILE)
+                yield DTOInstruction(
+                    type=EventType.AGENT,
+                    function=agent_name,
+                    message=agent_name,
+                    args=[agent_name, agent_instruction],
+                    message_id=output['id'],
+                )
+
+                agent = Agent.create(agent_name, self.agent_commands, mcp_commands=self.manifest.get('mcp_commands', []))
+                agent.init(agent_instruction, self.manifest, self.LOG_FILE, images=agent_images)
 
                 is_agent_completes_work = False
                 for agent_step in agent.run():
-                    if agent_step.type == 'report':
+                    if agent_step.type == EventType.REPORT:
                         is_agent_completes_work = True
                         agent_complete_report = agent_step.message
-                        agent_step.type = 'markdown'
-                    elif agent_step.type == 'error':
+                        last_agent_metadata = agent_step.metadata
+                        agent_step.type = EventType.MARKDOWN
+                    elif agent_step.type == EventType.ERROR:
                         agent_complete_report = 'Agent cant complete a work, try another approach: add more details, rewrite instruction for agent! Agent returns error: ' + agent_step.message
                         is_agent_completes_work = True
 
@@ -234,34 +332,45 @@ class Copilot:
 
                     if is_agent_completes_work:
                         break
+
+                del agent
             else:
-                yield DTOInstruction(type=EventType.ERROR, message="Agent call error (wrong tool)")
+                self.log("ERROR: \n" + pretty_format(output, truncate=0), True)
+
+                yield DTOInstruction(type=EventType.ERROR, message="Agent call error (wrong tool)", message_id=output['id'])
                 break
 
             if current_tool_call:
                 conversation_log.append({
                     'role': 'assistant',
-                    'content': output['_output'],
+                    'content': output['output'] if output['output'] else None,
                     'tool_calls': [current_tool_call]
                 })
 
                 if agent_complete_report:
+                    enriched_report = agent_complete_report
+                    if last_agent_metadata:
+                        summary_parts = []
+                        if last_agent_metadata.get('files_created'):
+                            summary_parts.append("Files created:\n" + "\n".join(f"- {f}" for f in last_agent_metadata['files_created']))
+                        if last_agent_metadata.get('files_modified'):
+                            summary_parts.append("Files modified:\n" + "\n".join(f"- {f}" for f in last_agent_metadata['files_modified']))
+                        if last_agent_metadata.get('commands_run'):
+                            summary_parts.append("Commands executed:\n" + "\n".join(
+                                f"- {c['command']} ({c['status']})" for c in last_agent_metadata['commands_run']
+                            ))
+                        if summary_parts:
+                            enriched_report += "\n\n---\n## Structured Artifacts\n" + "\n".join(summary_parts)
+
+                    self.log(f"Agent report: \n{pretty_format(enriched_report)}", True)
+
                     conversation_log.append({
                         'role': 'tool',
-                        'tool_call_id': current_tool_call.id,
-                        'name': current_tool_call.function.name,
-                        'content': agent_complete_report
+                        'tool_call_id': current_tool_call['id'],
+                        'name': current_tool_call['function']['name'],
+                        'content': enriched_report or 'Agent did not return a report.'
                     })
 
             agent_step_counter += 1
 
-    def log(self, data, to_file=False):
-        output = pretty_print_as_json(data)
-        output = f"[ SUPERVISOR ] {output}"
-
-        if not to_file:
-            logger.info(output)
-            return
-
-        with open(self.LOG_FILE, "a", encoding='utf8') as f:
-            f.write(output + "\n\n")
+        self._full_log(conversation_log)

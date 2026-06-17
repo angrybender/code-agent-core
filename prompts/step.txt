@@ -1,3 +1,5 @@
+Current date and time: {current_datetime}
+
 # Current project description:
 {project_description}
 
