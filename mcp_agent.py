@@ -11,12 +11,17 @@ from dto.enums import EventType
 from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE, LLMRequestFormat
 from mcp_tool_executor import MCPToolExecutor
 from project import Project
-from tools.tools import MCP_BASE_TOOLS, TOOL_SUMMARIZE, TOOL_REPORT
+from tools.app.tool_read_file import ToolReadFile
+from tools.system.tool_report import ToolReport
+from tools.system.tool_summarize import ToolSummarize
+from tools.tools import TOOL_SELECT_MCP, TOOL_ATTACH_IMAGE
 
 MAX_ITERATION = int(os.getenv('MAX_ITERATION'))
 
 
 class MCPAgent(BaseAgent):
+    BASE_TOOLS = [TOOL_SELECT_MCP, TOOL_ATTACH_IMAGE, ToolReadFile.get_description(), ToolReport.get_description()]
+
     """
     MCP sub-agent that executes tasks using external MCP (Model Context Protocol) servers.
 
@@ -74,8 +79,8 @@ class MCPAgent(BaseAgent):
 
     def get_tools(self) -> list:
         if self._selected_server_name is not None and self._selected_mcp_tools is not None:
-            return self._selected_mcp_tools + MCP_BASE_TOOLS
-        return MCP_BASE_TOOLS
+            return self._selected_mcp_tools + self.BASE_TOOLS
+        return self.BASE_TOOLS
 
     def run(self):
         assert self.instruction, 'init() is required'
@@ -210,11 +215,11 @@ class MCPAgent(BaseAgent):
             force_tool = False
 
             if _context_overflow_summarize or _max_step_workaround:
-                tools_for_model = [TOOL_SUMMARIZE]
+                tools_for_model = [ToolSummarize.get_description()]
                 force_tool = True
 
             if _max_step_workaround or _llm_format_error_workaround > 0:
-                tools_for_model = [TOOL_REPORT]
+                tools_for_model = [ToolReport.get_description()]
                 force_tool = True
 
             try:

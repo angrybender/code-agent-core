@@ -325,12 +325,12 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_too
         logger.debug(m)
 
     # waiting for a supports in the llama.cpp
-    if tools and len(tools) > 1 and force_tool:
-        tool_choice = 'required'
-    elif tools and len(tools) == 1 and force_tool:
-        tool_choice = {"type": "function", "name": tools[0]['function']['name']}
-    else:
-        tool_choice = 'auto'
+    # if tools and len(tools) > 1 and force_tool:
+    #     tool_choice = 'required'
+    # elif tools and len(tools) == 1 and force_tool:
+    #     tool_choice = {"type": "function", "name": tools[0]['function']['name']}
+    # else:
+    #     tool_choice = 'auto'
 
     tool_choice = 'auto'
 

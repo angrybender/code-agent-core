@@ -26,6 +26,11 @@ class ATool(ABC):
         real_path = os.path.realpath(os.path.join(self.project_root, normalized))
         return real_path.startswith(os.path.realpath(self.project_root) + os.sep)
 
+    @staticmethod
+    @abstractmethod
+    def get_description() -> dict:
+        pass
+
     @abstractmethod
     def exec(self, **kwargs) -> DTOTool:
         pass

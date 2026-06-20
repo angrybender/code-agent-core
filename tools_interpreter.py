@@ -7,6 +7,7 @@ from tools.ATool import ATool
 from tools.app.tool_shell import ToolShell
 from tools.errors import ToolError
 
+# TODO move to ./tools
 class ToolsInterpreter:
     def __init__(self, shell_tools: dict = None, project: Project = None):
         self._shell_tools = shell_tools

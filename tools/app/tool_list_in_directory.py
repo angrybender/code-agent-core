@@ -7,6 +7,22 @@ from tools.errors import ToolError
 
 
 class ToolListInDirectory(ATool):
+    @staticmethod
+    def get_description() -> dict:
+        return {
+            "description": "List files and directories from a path.\nResult contains a list of files and directories (only first level); directory names end with the symbol `/`.\nUse to discover project structure and find relevant files or directories. For searching code content across files, use `search_file` instead. For reading a known file, use `read_file` directly.",
+            "parameters": {
+                "type": "object",
+                "required": ["path"],
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "path, for the root of the project use `.`"
+                    }
+                }
+            }
+        }
+
     def exec(self, path) -> DTOTool:
         if not self._validate_path(path):
             raise ToolError('Invalid path')

@@ -4,6 +4,10 @@ from tools.errors import ToolError
 
 
 class ToolShell(ATool):
+    @staticmethod
+    def get_description() -> dict:
+        return {}
+
     def exec(self, tool_name: str, args: list = None) -> DTOTool:
         if tool_name not in self._shell_tools:
             available = ', '.join(self._shell_tools.keys()) or 'none'

@@ -8,6 +8,36 @@ from tools.errors import ToolError
 
 
 class ToolReplaceCodeInFile(ATool):
+    @staticmethod
+    def get_description() -> dict:
+        return {
+            "description": "Replace part of code in file. Function locates a specified substring (str_find) in the code and replaces it with the given target string (str_replace).",
+            "parameters": {
+                "type": "object",
+                "required": ["path", "str_find", "str_replace"],
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "path to file"
+                    },
+                    "str_find": {
+                        "type": "string",
+                        "description": """Code fragment to replace. For a deterministic search, include 1–2 lines before and after the fragment.
+- Must be as small as possible and unique.
+- Preserve all tabs, spaces, comments, block comments, etc.
+- Follow the format conventions of the programming language you are working with."""
+                    },
+                    "str_replace": {
+                        "type": "string",
+                        "description": """Replacement code fragment.
+- Preserve all tabs, spaces, comments, block comments, etc.
+- Follow the format conventions of the programming language you are working with.
+- Cannot be empty."""
+                    }
+                }
+            }
+        }
+
     def _correction_write_arg(self, value) -> str:
         if type(value) is dict or type(value) is list:
             value = json.dumps(value, ensure_ascii=False, indent=4)

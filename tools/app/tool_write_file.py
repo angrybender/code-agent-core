@@ -7,6 +7,26 @@ from tools.errors import ToolError
 
 
 class ToolWriteFile(ATool):
+    @staticmethod
+    def get_description() -> dict:
+        return {
+            "description": "Write full data to a file.\nUse this command ONLY if:\n1. You are editing a file with fewer than 100 lines.\n2. You are creating a new file.",
+            "parameters": {
+                "type": "object",
+                "required": ["path", "content"],
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "path to file"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Data to write to the file. Don't escape quotes (\") and brackets (< >)"
+                    }
+                }
+            }
+        }
+
     def _correction_write_arg(self, value) -> str:
         if type(value) is dict or type(value) is list:
             value = json.dumps(value, ensure_ascii=False, indent=4)

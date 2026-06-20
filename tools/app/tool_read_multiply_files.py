@@ -8,6 +8,27 @@ from tools.app.tool_read_file import ToolReadFile
 
 
 class ToolReadMultiplyFiles(ATool):
+    @staticmethod
+    def get_description() -> dict:
+        return {
+            "description": "Read the contents of multiple files from the same directory in a single operation. Returns each file's content with clear separation. Use this tool when you need to examine 2 or more files at once — it is more efficient than multiple individual read_file calls. All files must be in the same directory specified by root_path.",
+            "parameters": {
+                "type": "object",
+                "required": ["root_path", "file_name"],
+                "properties": {
+                    "root_path": {
+                        "type": "string",
+                        "description": "Parent directory of the files"
+                    },
+                    "file_name": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of file names to read"
+                    }
+                }
+            }
+        }
+
     def exec(self, root_path: str, file_name: list) -> DTOTool:
         results = []
         file_paths = []

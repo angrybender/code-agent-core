@@ -4,6 +4,26 @@ from tools.errors import ToolError
 
 
 class ToolSearchFile(ATool):
+    @staticmethod
+    def get_description() -> dict:
+        return {
+            "description": "Searches for `needle` across all project files using fuzzy token matching. Supports languages: PHP, JS, Java, Scala, C#, Go, Ruby, HTML, CSS, YML, bash. Returns the file path and lines that contain the most relevant match. Returns the first 10 results. Use when searching for code patterns, function names, class definitions, or usages across the project. For known file locations, use `read_file` directly. For broad file/directory discovery, use `list_in_directory` first.",
+            "parameters": {
+                "type": "object",
+                "required": ["needle", "extension"],
+                "properties": {
+                    "needle": {
+                        "type": "string",
+                        "description": "The string to search for"
+                    },
+                    "extension": {
+                        "type": "string",
+                        "description": "File extension for filtering files to search, example: 'py' (will filter only files like '*.py'), empty string for no filtering"
+                    }
+                }
+            }
+        }
+
     def exec(self, needle, extension=None) -> DTOTool:
         needle = str(needle).strip()
         if not needle:

@@ -14,3 +14,10 @@ class DTOTool:
     output: Optional[str] = None
 
     meta: dict = field(default_factory=dict)
+
+
+@dataclass
+class LLMToolDescription:
+    function: str
+    id: str
+    args: dict = field(default_factory=dict)

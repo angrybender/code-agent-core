@@ -12,6 +12,8 @@ import logging
 
 from logger_mixin import LoggerMixin
 from project import Project
+from tools.system.tool_report import ToolReport
+from tools.system.tool_summarize import ToolSummarize
 
 logger = logging.getLogger('APP')
 
@@ -20,12 +22,12 @@ load_dotenv()
 
 from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE, LLMRequestFormat
 from tools_interpreter import ToolsInterpreter
-from tools.tools import get_analytic_tools, get_coder_tools, get_reviewer_tools, TOOL_SUMMARIZE, TOOL_REPORT
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType, ToolOperation, ToolPrefixes
 from context_helper import compact_conversation_remove_redundant
 from agents_logic.tools_mixin import ToolsMixin
 from agents_logic.conversation_mixin import ConversationMixin
+from tools.fabric import ToolsFabric
 
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=int(os.getenv('MAX_ITERATION'))
@@ -156,6 +158,8 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
 
         self.log("============= SYSTEM PROMPT =============", True)
         self.log(conversation[0]['content'], True)
+        self.log("============= TOOLS =============", True)
+        self.log(self.get_tools(), True)
         self.log("============= USER PROMPT =============", True)
         self.log(conversation[1]['content'], True)
 
@@ -178,14 +182,14 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
 
             output = None
             message_id = None
-            tools_for_model = self.get_tools()
             force_tool = False
+            tools_for_model = self.get_tools()
             if _context_overflow_summarize or _max_step_workaround:
-                tools_for_model = [TOOL_SUMMARIZE]
+                tools_for_model = [ToolSummarize.get_description()]
                 force_tool = True
 
             if _max_step_workaround or _llm_format_error_workaround > 0:
-                tools_for_model = [TOOL_REPORT]
+                tools_for_model = [ToolReport.get_description()]
                 force_tool = True
 
             try:
@@ -481,15 +485,22 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
 
 
 class AnalyticAgent(BaseAgent):
+    AGENT_SUB_TYPE_TOOLS = {
+        'ANALYTIC' : ['read_file', 'read_multiply_files', 'list_in_directory', 'search_file', 'report'],
+        'REVIEWER': ['read_file', 'read_multiply_files', 'search_file', 'report']
+    }
+
     def get_tools(self) -> list[dict]:
-        if self.role == 'ANALYTIC':
-            return get_analytic_tools() + self.project.get_commandlets_tools(self.role)
-        else:
-            return get_reviewer_tools() + self.project.get_commandlets_tools(self.role)
+        all_tools = ToolsFabric().get_all_tools()
+        _tools = [_ for _ in all_tools if _['function']['name'] in self.AGENT_SUB_TYPE_TOOLS[self.role]]
+        return _tools + self.project.get_commandlets_tools(self.role)
 
 class CoderAgent(BaseAgent):
+    CODER_TOOLS = ['read_file', 'read_multiply_files', 'list_in_directory', 'write_file', 'replace_code_in_file', 'report']
     def get_tools(self) -> list[dict]:
-        return get_coder_tools() + self.project.get_commandlets_tools(self.role)
+        all_tools = ToolsFabric().get_all_tools()
+        _tools = [_ for _ in all_tools if _['function']['name'] in self.CODER_TOOLS]
+        return _tools + self.project.get_commandlets_tools(self.role)
 
 
 class Agent:
