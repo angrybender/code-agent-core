@@ -455,7 +455,8 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_too
         except BadRequestError as e:
             message = str(e)
 
-            if "Assistant response prefill is incompatible with enable_thinking" in message:
+            if "Assistant response prefill is incompatible with enable_thinking" in message \
+                    or "This model does not support assistant message prefill" in messages:
                 logger.error("Fix: Request ends with assistant prefill while enable_thinking=True, return empty")
 
                 # api caller must deside workaround own logic depends
