@@ -65,6 +65,28 @@ def _normalize_shell_block_name(cmd: str, index: int) -> str:
     return f'{tokens}_{index}'
 
 
+def _extract_alias(cmd: str) -> tuple[str | None, str]:
+    lines = cmd.split('\n')
+    alias = None
+    cleaned_lines = []
+    for line in lines:
+        if line.startswith('# '):
+            alias_text = line[2:].strip()
+            filtered = re.sub(r'[^a-zA-Zа-яА-ЯёЁ0-9 ]', '', alias_text).strip()
+            if filtered and alias is None:
+                alias = filtered
+        else:
+            cleaned_lines.append(line)
+    cleaned_cmd = '\n'.join(cleaned_lines).strip()
+    return alias, cleaned_cmd
+
+
+def _alias_to_block_name(alias: str, index: int) -> str:
+    name = alias.lower().replace(' ', '_')
+    name = name[:16].strip('_')
+    return f'{name}_{index}'
+
+
 def _parse_block_args(description: str, cmd: str) -> tuple[str, list[dict]]:
     description_lines = description.splitlines()
     recognized_arg_lines = set()
@@ -131,12 +153,18 @@ def parse_agent_commands(directory: str) -> list[dict]:
             if not cmd:
                 continue
 
+            alias, cleaned_cmd = _extract_alias(cmd)
+            if alias is not None:
+                block_name = _alias_to_block_name(alias, block_index)
+            else:
+                block_name = _normalize_shell_block_name(cmd, block_index)
+
             block_description = re.sub(r'```.*?```', '', raw_block, flags=re.DOTALL).strip()
-            block_description, block_args = _parse_block_args(block_description, cmd)
+            block_description, block_args = _parse_block_args(block_description, cleaned_cmd)
             shell_blocks.append({
-                'name': _normalize_shell_block_name(cmd, block_index),
+                'name': block_name,
                 'description': block_description,
-                'cmd': cmd,
+                'cmd': cleaned_cmd,
                 'args': block_args,
             })
 

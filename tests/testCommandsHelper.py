@@ -161,6 +161,132 @@ class TestParseAgentCommands(unittest.TestCase):
         result = parse_agent_commands(self.test_dir)
         self.assertEqual({'command', 'description', 'shell_blocks', 'config'}, set(result[0].keys()))
 
+    def test_alias_produces_block_name_from_alias(self):
+        content = (
+            'Run test command\n'
+            '---\n'
+            'Run test\n\n'
+            '```\n'
+            '# some name\n'
+            'python.exe .\\test_commandlet.py $1 $2\n'
+            '```\n'
+        )
+        self._write('test_commadlet.py.md', content)
+        result = parse_agent_commands(self.test_dir)
+
+        self.assertEqual(1, len(result))
+        self.assertEqual(1, len(result[0]['shell_blocks']))
+        self.assertEqual('some_name_1', result[0]['shell_blocks'][0]['name'])
+        self.assertEqual('python.exe .\\test_commandlet.py $1 $2', result[0]['shell_blocks'][0]['cmd'])
+
+    def test_alias_line_removed_from_stored_cmd(self):
+        content = (
+            'Desc\n'
+            '---\n'
+            'Run\n\n'
+            '```\n'
+            '# my alias\n'
+            'echo hello world\n'
+            '```\n'
+        )
+        self._write('run.md', content)
+        result = parse_agent_commands(self.test_dir)
+
+        self.assertNotIn('# my alias', result[0]['shell_blocks'][0]['cmd'])
+        self.assertEqual('echo hello world', result[0]['shell_blocks'][0]['cmd'])
+
+    def test_multiple_blocks_one_alias_one_not(self):
+        content = (
+            'Multi\n'
+            '---\n'
+            'First with alias\n\n'
+            '```\n'
+            '# custom name\n'
+            'python.exe script.py\n'
+            '```\n'
+            '---\n'
+            'Second without alias\n\n'
+            '```\n'
+            'git status\n'
+            '```\n'
+        )
+        self._write('multi.md', content)
+        result = parse_agent_commands(self.test_dir)
+
+        self.assertEqual(2, len(result[0]['shell_blocks']))
+        self.assertEqual('custom_name_1', result[0]['shell_blocks'][0]['name'])
+        self.assertEqual('python.exe script.py', result[0]['shell_blocks'][0]['cmd'])
+        self.assertEqual('git_status_2', result[0]['shell_blocks'][1]['name'])
+        self.assertEqual('git status', result[0]['shell_blocks'][1]['cmd'])
+
+    def test_alias_only_invalid_chars_falls_back(self):
+        content = (
+            'Desc\n'
+            '---\n'
+            'Run\n\n'
+            '```\n'
+            '# !!!@@@###\n'
+            'echo fallback\n'
+            '```\n'
+        )
+        self._write('fallback.md', content)
+        result = parse_agent_commands(self.test_dir)
+
+        self.assertEqual('echo_fallback_1', result[0]['shell_blocks'][0]['name'])
+        self.assertEqual('echo fallback', result[0]['shell_blocks'][0]['cmd'])
+
+    def test_full_tool_name_format_with_alias(self):
+        content = (
+            'Desc\n'
+            '---\n'
+            'Run\n\n'
+            '```\n'
+            '# deploy prod\n'
+            './deploy.sh\n'
+            '```\n'
+        )
+        self._write('release.md', content)
+        result = parse_agent_commands(self.test_dir)
+
+        command = result[0]['command']
+        block_name = result[0]['shell_blocks'][0]['name']
+        tool_name = f'shell__{command}_{block_name}'
+        self.assertEqual('shell__release_deploy_prod_1', tool_name)
+
+    def test_alias_without_space_not_treated_as_alias(self):
+        content = (
+            'Desc\n'
+            '---\n'
+            'Run\n\n'
+            '```\n'
+            '#comment\n'
+            'echo nospace\n'
+            '```\n'
+        )
+        self._write('nospace.md', content)
+        result = parse_agent_commands(self.test_dir)
+
+        self.assertIn('#comment', result[0]['shell_blocks'][0]['cmd'])
+        self.assertEqual('comment_echo_1', result[0]['shell_blocks'][0]['name'])
+
+    def test_alias_truncated_to_16_chars(self):
+        content = (
+            'Desc\n'
+            '---\n'
+            'Run\n\n'
+            '```\n'
+            '# this is a very long alias name\n'
+            'echo truncate\n'
+            '```\n'
+        )
+        self._write('trunc.md', content)
+        result = parse_agent_commands(self.test_dir)
+
+        block_name = result[0]['shell_blocks'][0]['name']
+        self.assertTrue(block_name.endswith('_1'))
+        name_part = block_name[:-2]
+        self.assertLessEqual(len(name_part), 16)
+
 
 class TestMCPHelper(unittest.TestCase):
 
