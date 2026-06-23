@@ -72,7 +72,7 @@ def _extract_alias(cmd: str) -> tuple[str | None, str]:
     for line in lines:
         if line.startswith('# '):
             alias_text = line[2:].strip()
-            filtered = re.sub(r'[^a-zA-Zа-яА-ЯёЁ0-9 ]', '', alias_text).strip()
+            filtered = re.sub(r'[^a-zA-Z0-9 ]', '', alias_text).strip()
             if filtered and alias is None:
                 alias = filtered
         else:
