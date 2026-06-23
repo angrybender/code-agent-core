@@ -453,10 +453,10 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_too
             yield final
             break
         except BadRequestError as e:
-            message = str(e)
+            error_message = str(e)
 
-            if "Assistant response prefill is incompatible with enable_thinking" in message \
-                    or "This model does not support assistant message prefill" in messages:
+            if "Assistant response prefill is incompatible with enable_thinking" in error_message \
+                    or "This model does not support assistant message prefill" in error_message:
                 logger.error("Fix: Request ends with assistant prefill while enable_thinking=True, return empty")
 
                 # api caller must deside workaround own logic depends
@@ -467,15 +467,15 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_too
                     "tool_calls": [],
                     "tokens_usage": {},
                 }
-            elif "System message must be at the beginning" in message and messages[-1]['role'] == 'system':
+            elif "System message must be at the beginning" in error_message and messages[-1]['role'] == 'system':
                 logger.error("Fix: Model doesnt support several system messages")
                 messages[-1]['role'] = 'user'
             else:
-                raise LLMRequestFormat(message) from e
+                raise LLMRequestFormat(error_message) from e
 
         except APIError as e:
-            message = str(e)
-            if message.find('Failed to parse input at pos ') > -1:
+            error_message = str(e)
+            if error_message.find('Failed to parse input at pos ') > -1:
                 # gpt oss, there are no plans to support gpt-oss, byt why not...
                 yield {
                     "id": message_id,
