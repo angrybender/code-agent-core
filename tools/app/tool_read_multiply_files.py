@@ -29,6 +29,10 @@ class ToolReadMultiplyFiles(ATool):
             }
         }
 
+    @staticmethod
+    def get_parameters() -> dict:
+        return {}
+
     def exec(self, root_path: str, file_name: list) -> DTOTool:
         results = []
         file_paths = []

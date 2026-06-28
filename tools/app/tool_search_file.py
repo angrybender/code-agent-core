@@ -24,6 +24,10 @@ class ToolSearchFile(ATool):
             }
         }
 
+    @staticmethod
+    def get_parameters() -> dict:
+        return {}
+
     def exec(self, needle, extension=None) -> DTOTool:
         needle = str(needle).strip()
         if not needle:

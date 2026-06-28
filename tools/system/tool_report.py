@@ -1,4 +1,5 @@
 from dto.dto_tools import DTOTool
+from dto.enums import ToolOperation
 from tools.ATool import ATool
 
 
@@ -22,5 +23,6 @@ class ToolReport(ATool):
     def exec(self, text) -> DTOTool:
         return DTOTool(
             result=text,
+            operation=ToolOperation.REPORT,
             tool_name="report"
         )

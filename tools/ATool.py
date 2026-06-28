@@ -31,6 +31,11 @@ class ATool(ABC):
     def get_description() -> dict:
         pass
 
+    @staticmethod
+    @abstractmethod
+    def get_parameters() -> dict:
+        pass
+
     @abstractmethod
     def exec(self, **kwargs) -> DTOTool:
         pass

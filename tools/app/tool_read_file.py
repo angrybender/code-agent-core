@@ -29,6 +29,10 @@ class ToolReadFile(ATool):
             }
     }
 
+    @staticmethod
+    def get_parameters() -> dict:
+        return {}
+
     def exec(self, path: str, offset: int = 0, limit: int = None) -> DTOTool:
         if not self._validate_path(path):
             raise ToolError('Invalid path')
