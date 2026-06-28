@@ -1,7 +1,6 @@
 import os
 import json
 import hashlib
-import re
 import shutil
 import glob
 import uuid
@@ -22,7 +21,7 @@ load_dotenv()
 from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE, LLMRequestFormat
 from tools_interpreter import ToolsInterpreter
 from dto.dto_instruction import DTOInstruction
-from dto.enums import EventType, ToolOperation, ToolPrefixes
+from dto.enums import EventType, ToolOperation
 from context_helper import compact_conversation_remove_redundant
 from agents_logic.tools_mixin import ToolsMixin
 from agents_logic.conversation_mixin import ConversationMixin

@@ -9,7 +9,7 @@ class TestToolsInterpreter(unittest.TestCase):
     def test_command_list1(self):
         root_path = os.path.join(os.path.dirname(__file__), '..')
         instance = ToolsInterpreter(project=Project(str(root_path)))
-        result = instance.execute('list_in_directory', {'path': '.'})
+        result = instance.execute('app__list_in_directory', {'path': '.'})
 
         result = result.result + '\n'
         self.assertTrue(re.search(r'- tests/ \(total \d+ files\)\n', result), 'dir check - should show file count')
@@ -18,14 +18,14 @@ class TestToolsInterpreter(unittest.TestCase):
     def test_command_list2(self):
         root_path = os.path.join(os.path.dirname(__file__), '..', '_invalid_dir')
         instance = ToolsInterpreter(project=Project(str(root_path)))
-        result = instance.execute('list_in_directory', {'path': '.'})
+        result = instance.execute('app__list_in_directory', {'path': '.'})
 
         self.assertIn('ERROR:', result.result)
 
     def test_read_multiply_files(self):
         root_path = os.path.join(os.path.dirname(__file__), '..')
         instance = ToolsInterpreter(project=Project(str(root_path)))
-        result = instance.execute('read_multiply_files', {'root_path': './', 'file_name': ['env.example', 'requirements.txt']})
+        result = instance.execute('app__read_multiply_files', {'root_path': './', 'file_name': ['env.example', 'requirements.txt']})
 
         self.assertEqual(result.tool_name, 'read_multiply_files')
         self.assertIn('--- file: ./env.example ---', result.result)
@@ -34,7 +34,7 @@ class TestToolsInterpreter(unittest.TestCase):
     def test_read_multiply_files_1(self):
         root_path = os.path.join(os.path.dirname(__file__), '..')
         instance = ToolsInterpreter(project=Project(str(root_path)))
-        result = instance.execute('read_multiply_files', {'root_path': './tests', 'file_name': ['__init__.py']})
+        result = instance.execute('app__read_multiply_files', {'root_path': './tests', 'file_name': ['__init__.py']})
 
         self.assertEqual(result.tool_name, 'read_multiply_files')
         _path = os.path.join('./tests', '__init__.py')
@@ -43,7 +43,7 @@ class TestToolsInterpreter(unittest.TestCase):
     def test_read_multiply_files_with_invalid_path_1(self):
         root_path = os.path.join(os.path.dirname(__file__), '..')
         instance = ToolsInterpreter(project=Project(str(root_path)))
-        result = instance.execute('read_multiply_files', {'root_path': '', 'file_name': ['env.example', 'nonexistent_file_xyz.txt']})
+        result = instance.execute('app__read_multiply_files', {'root_path': '', 'file_name': ['env.example', 'nonexistent_file_xyz.txt']})
 
         self.assertEqual(result.tool_name, 'read_multiply_files')
         self.assertIn('--- file: env.example ---', result.result)
@@ -52,7 +52,7 @@ class TestToolsInterpreter(unittest.TestCase):
     def test_read_multiply_files_with_invalid_path_2(self):
         root_path = os.path.join(os.path.dirname(__file__), '..')
         instance = ToolsInterpreter(project=Project(str(root_path)))
-        result = instance.execute('read_multiply_files', {'root_path': './tests', 'file_name': ['../env.example']})
+        result = instance.execute('app__read_multiply_files', {'root_path': './tests', 'file_name': ['../env.example']})
 
         self.assertEqual(result.tool_name, 'read_multiply_files')
         self.assertIn('invalid path of /../env.example', result.result)
@@ -60,7 +60,7 @@ class TestToolsInterpreter(unittest.TestCase):
     def test_read_multiply_files_empty_list(self):
         root_path = os.path.join(os.path.dirname(__file__), '..')
         instance = ToolsInterpreter(project=Project(str(root_path)))
-        result = instance.execute('read_multiply_files', {'root_path': '', 'file_name': []})
+        result = instance.execute('app__read_multiply_files', {'root_path': '', 'file_name': []})
 
         self.assertEqual(result.tool_name, 'read_multiply_files')
         self.assertEqual(result.result, '')
@@ -68,7 +68,7 @@ class TestToolsInterpreter(unittest.TestCase):
     def test_read_multiply_files_single_file(self):
         root_path = os.path.join(os.path.dirname(__file__), '..')
         instance = ToolsInterpreter(project=Project(str(root_path)))
-        result = instance.execute('read_multiply_files', {'root_path': '', 'file_name': ['env.example']})
+        result = instance.execute('app__read_multiply_files', {'root_path': '', 'file_name': ['env.example']})
 
         self.assertEqual(result.tool_name, 'read_multiply_files')
         self.assertIn('--- file: env.example ---', result.result)
@@ -79,7 +79,7 @@ class TestToolsInterpreter(unittest.TestCase):
         instance = ToolsInterpreter(project=Project(str(root_path)))
         # Search in tests directory with a needle that won't exist there
         # Using __init__.py extension and searching for a string that won't be in test files
-        result = instance.execute('search_file', {'needle': 'QUxyz987654321NONEXISTENTneedleABC', 'extension': '__init__.py'})
+        result = instance.execute('app__search_file', {'needle': 'QUxyz987654321NONEXISTENTneedleABC', 'extension': '__init__.py'})
 
         self.assertEqual(result.tool_name, 'search_file')
         self.assertFalse(result.error)
@@ -93,7 +93,7 @@ class TestToolsInterpreter(unittest.TestCase):
         """Test that blank/empty needle raises an error."""
         root_path = os.path.join(os.path.dirname(__file__), '..')
         instance = ToolsInterpreter(project=Project(str(root_path)))
-        result = instance.execute('search_file', {'needle': ''})
+        result = instance.execute('app__search_file', {'needle': ''})
 
         self.assertTrue(result.error)
         self.assertIn('ERROR:', result.result)
@@ -102,7 +102,7 @@ class TestToolsInterpreter(unittest.TestCase):
         """Test that whitespace-only needle raises an error."""
         root_path = os.path.join(os.path.dirname(__file__), '..')
         instance = ToolsInterpreter(project=Project(str(root_path)))
-        result = instance.execute('search_file', {'needle': '   '})
+        result = instance.execute('app__search_file', {'needle': '   '})
 
         self.assertTrue(result.error)
         self.assertIn('ERROR:', result.result)
