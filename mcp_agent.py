@@ -19,7 +19,7 @@ MAX_ITERATION = int(os.getenv('MAX_ITERATION'))
 
 class MCPAgent(BaseAgent):
     BASE_TOOLS = [TOOL_SELECT_MCP, TOOL_ATTACH_IMAGE]
-    AGENT_TOOLS = ['system__report'] # 'app__read_file',
+    AGENT_TOOLS = ['system__report', 'app__read_file']
 
     """
     MCP sub-agent that executes tasks using external MCP (Model Context Protocol) servers.
@@ -479,6 +479,42 @@ class MCPAgent(BaseAgent):
                         'tool_call_id': current_tool_call['id'],
                         'name': fn_name,
                         'content': str(tool_result),
+                    })
+
+            # ── standard built-in tools
+            elif fn_name.startswith('app__') or fn_name.startswith('system__'):
+                if self.interpreter is None:
+                    tool_result_content = "ERROR: ToolsInterpreter not initialized"
+                    conversation.append({
+                        'role': 'tool',
+                        'tool_call_id': current_tool_call['id'],
+                        'name': fn_name,
+                        'content': tool_result_content,
+                    })
+                else:
+                    tool_result = self.interpreter.execute(fn_name, fn_args)
+                    is_success = not tool_result.error
+
+                    if is_success:
+                        if fn_name == 'app__read_file':
+                            file_path = fn_args.get('path', '')
+                            if file_path:
+                                self.artifacts['files_read'].append(file_path)
+
+                    yield DTOInstruction(
+                        type=EventType.TOOL,
+                        function=fn_name,
+                        args=fn_args,
+                        result=tool_result.__dict__,
+                        is_success=is_success,
+                        message_id=output['id'],
+                    )
+
+                    conversation.append({
+                        'role': 'tool',
+                        'tool_call_id': current_tool_call['id'],
+                        'name': fn_name,
+                        'content': tool_result.result,
                     })
 
             # ── unknown tool ──
