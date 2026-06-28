@@ -11,16 +11,15 @@ from dto.enums import EventType
 from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE, LLMRequestFormat
 from mcp_tool_executor import MCPToolExecutor
 from project import Project
-from tools.app.tool_read_file import ToolReadFile
-from tools.system.tool_report import ToolReport
-from tools.system.tool_summarize import ToolSummarize
+from tools.fabric import ToolsFabric
 from tools.tools import TOOL_SELECT_MCP, TOOL_ATTACH_IMAGE
 
 MAX_ITERATION = int(os.getenv('MAX_ITERATION'))
 
 
 class MCPAgent(BaseAgent):
-    BASE_TOOLS = [TOOL_SELECT_MCP, TOOL_ATTACH_IMAGE, ToolReadFile.get_description(), ToolReport.get_description()]
+    BASE_TOOLS = [TOOL_SELECT_MCP, TOOL_ATTACH_IMAGE]
+    AGENT_TOOLS = ['system__report'] # 'app__read_file',
 
     """
     MCP sub-agent that executes tasks using external MCP (Model Context Protocol) servers.
@@ -78,9 +77,12 @@ class MCPAgent(BaseAgent):
         return f'data:{mime_type};base64,{encoded}', None
 
     def get_tools(self) -> list:
+        all_tools = ToolsFabric().get_all_tools()
+        base_tools = self.BASE_TOOLS + [_ for _ in all_tools if _['function']['name'] in self.AGENT_TOOLS]
+
         if self._selected_server_name is not None and self._selected_mcp_tools is not None:
-            return self._selected_mcp_tools + self.BASE_TOOLS
-        return self.BASE_TOOLS
+            return self._selected_mcp_tools + base_tools
+        return base_tools
 
     def run(self):
         assert self.instruction, 'init() is required'
@@ -211,16 +213,18 @@ class MCPAgent(BaseAgent):
 
             output = None
             message_id = None
-            tools_for_model = self.get_tools()
             force_tool = False
-
+            tools_for_model = self.get_tools()
             if _context_overflow_summarize or _max_step_workaround:
-                tools_for_model = [ToolSummarize.get_description()]
+                tools_for_model = [_ for _ in ToolsFabric().get_all_tools() if _['function']['name'] == 'system__summarize']
+                force_tool = True
+            elif _max_step_workaround or _llm_format_error_workaround > 0:
+                tools_for_model = [_ for _ in tools_for_model if _['function']['name'] == 'system__report']
                 force_tool = True
 
-            if _max_step_workaround or _llm_format_error_workaround > 0:
-                tools_for_model = [ToolReport.get_description()]
-                force_tool = True
+            for tool in tools_for_model:
+                if 'parameters' in tool:
+                    del tool['parameters']
 
             try:
                 for chunk in llm_query_stream(conversation, tools=tools_for_model, model_name=specific_model, force_tool=force_tool):
@@ -331,7 +335,7 @@ class MCPAgent(BaseAgent):
             fn_args = tool_call_description['args'] or {}
 
             # ── report ──
-            if fn_name == 'report':
+            if fn_name == 'system__report':
                 yield DTOInstruction(
                     type=EventType.REPORT,
                     message=fn_args.get('text', '') if fn_args else '',
@@ -342,7 +346,7 @@ class MCPAgent(BaseAgent):
                 break
 
             # ── summarize ──
-            elif fn_name == 'summarize':
+            elif fn_name == 'system__summarize':
                 _context_overflow_summarize = False
                 _summarize_count += 1
 

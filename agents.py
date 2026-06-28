@@ -185,11 +185,10 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
             tools_parameters = {}
 
             if _context_overflow_summarize or _max_step_workaround:
-                tools_for_model = [_ for _ in tools_for_model if _['function']['name'] == 'system__summarize']
+                tools_for_model = [_ for _ in ToolsFabric().get_all_tools() if _['function']['name'] == 'system__summarize']
                 force_tool = True
             elif _max_step_workaround or _llm_format_error_workaround > 0:
                 tools_for_model = [_ for _ in tools_for_model if _['function']['name'] == 'system__report']
-                tools_parameters[tools_for_model[0]['function']['name']] = {}
                 force_tool = True
 
             for tool in tools_for_model:
