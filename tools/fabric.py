@@ -8,15 +8,12 @@ class ToolsFabric:
     TOOL_PREFIX = 'tool_'
 
     @staticmethod
-    def get_all_tools(filter_module=None) -> list[dict]:
+    def get_all_tools() -> list[dict]:
         tools_classes = glob.glob(f'./tools/*/{ToolsFabric.TOOL_PREFIX}*.py')
         class_mapper = []
         for tool_class in tools_classes:
             path = Path(tool_class)
             _, module, tool_name = path.parts
-
-            if filter_module and module != filter_module:
-                continue
 
             tool_name = tool_name.split('.')[0]
             class_name = ''.join(word.capitalize() for word in tool_name.split('_'))
@@ -24,11 +21,12 @@ class ToolsFabric:
             tool_class = getattr(module_obj, class_name)
             tool_description = tool_class.get_description()
             if tool_description:
-                tool_description['name'] = re.sub(f'^{ToolsFabric.TOOL_PREFIX}', '', tool_name)
+                tool_description['name'] = module + '__' + re.sub(f'^{ToolsFabric.TOOL_PREFIX}', '', tool_name)
 
                 class_mapper.append({
                     "type": "function",
-                    "function": tool_description
+                    "function": tool_description,
+                    "parameters": tool_class.get_parameters()
                 })
 
         return class_mapper

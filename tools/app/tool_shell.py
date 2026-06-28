@@ -8,6 +8,12 @@ class ToolShell(ATool):
     def get_description() -> dict:
         return {}
 
+    @staticmethod
+    def get_parameters() -> dict:
+        return {
+            'pre_output': True
+        }
+
     def exec(self, tool_name: str, args: list = None) -> DTOTool:
         if tool_name not in self._shell_tools:
             available = ', '.join(self._shell_tools.keys()) or 'none'

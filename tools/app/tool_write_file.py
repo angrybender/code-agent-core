@@ -27,6 +27,10 @@ class ToolWriteFile(ATool):
             }
         }
 
+    @staticmethod
+    def get_parameters() -> dict:
+        return {}
+
     def _correction_write_arg(self, value) -> str:
         if type(value) is dict or type(value) is list:
             value = json.dumps(value, ensure_ascii=False, indent=4)

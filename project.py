@@ -186,6 +186,9 @@ class Project:
                         "name": f"{ToolPrefixes.SHELL}__{commandlet['command']}_{shell_blocks['name']}",
                         "description": shell_blocks['description'],
                         "parameters": parameters
+                    },
+                    "parameters": {
+                        "pre_output": True
                     }
                 })
 

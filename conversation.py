@@ -1,3 +1,4 @@
+import re
 import time
 import uuid
 
@@ -45,7 +46,7 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
         output['timestamp'] = time.time()
         return output
 
-    function_name = message.function
+    function_name = message.function.split('__', 1)[-1] if message.function else None
     result_message = message.message
     function_alias = _FUNCTION_NAME_TITLES.get(function_name, function_name)
     message_if_final = message.is_final

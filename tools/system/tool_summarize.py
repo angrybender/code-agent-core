@@ -31,6 +31,10 @@ class ToolSummarize(ATool):
             }
         }
 
+    @staticmethod
+    def get_parameters() -> dict:
+        return {}
+
     def exec(self, text) -> DTOTool:
         return DTOTool(
             result=text,

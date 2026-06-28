@@ -1,6 +1,7 @@
 import os
 import json
 import hashlib
+import re
 import shutil
 import glob
 import uuid
@@ -12,8 +13,6 @@ import logging
 
 from logger_mixin import LoggerMixin
 from project import Project
-from tools.system.tool_report import ToolReport
-from tools.system.tool_summarize import ToolSummarize
 
 logger = logging.getLogger('APP')
 
@@ -184,13 +183,19 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
             message_id = None
             force_tool = False
             tools_for_model = self.get_tools()
+            tools_parameters = {}
+
             if _context_overflow_summarize or _max_step_workaround:
-                tools_for_model = [ToolSummarize.get_description()]
+                tools_for_model = [_ for _ in tools_for_model if _['function']['name'] == 'system__summarize']
+                force_tool = True
+            elif _max_step_workaround or _llm_format_error_workaround > 0:
+                tools_for_model = [_ for _ in tools_for_model if _['function']['name'] == 'system__report']
+                tools_parameters[tools_for_model[0]['function']['name']] = {}
                 force_tool = True
 
-            if _max_step_workaround or _llm_format_error_workaround > 0:
-                tools_for_model = [ToolReport.get_description()]
-                force_tool = True
+            for tool in tools_for_model:
+                tools_parameters[tool['function']['name']] = tool['parameters']
+                del tool['parameters']
 
             try:
                 for chunk in llm_query_stream(conversation, tools=tools_for_model, model_name=specific_model, force_tool=force_tool):
@@ -302,7 +307,7 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                 'tool_calls': [current_tool_call]
             })
 
-            if tool_call_description['function'] == 'report':
+            if tool_call_description['function'] == 'system__report':
                 yield DTOInstruction(
                     type=EventType.REPORT,
                     message=tool_call_description['args'].get('text', '') if tool_call_description['args'] else '',
@@ -311,7 +316,7 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                     metadata=self.artifacts
                 )
                 break
-            elif tool_call_description['function'] == 'summarize':
+            elif tool_call_description['function'] == 'system__summarize':
                     _context_overflow_summarize = False
                     _summarize_count += 1
 
@@ -349,8 +354,7 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
             else:
                 yield DTOInstruction(type=EventType.NOPE)
 
-                tool_prefix =  tool_call_description['function'].split('__')[0]
-                is_pre_output = tool_call_description['function'] == 'search_file' or tool_prefix == ToolPrefixes.SHELL
+                is_pre_output = tools_parameters[tool_call_description['function']].get('pre_output', False)
                 response_message_id = output['id'] + ':response'
 
                 if is_pre_output:
@@ -379,11 +383,11 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                 if is_success:
                     fn = tool_call_description['function']
                     tool_args = tool_call_description.get('args', {}) if isinstance(tool_call_description.get('args'), dict) else {}
-                    if fn == 'read_file':
+                    if fn == 'app_read_file':
                         file_path = tool_args.get('path', '')
                         if file_path:
                             self.artifacts['files_read'].append(file_path)
-                    elif fn == 'read_multiply_files':
+                    elif fn == 'app_read_multiply_files':
                         root_path = tool_args.get('root_path', '')
                         file_names = tool_args.get('file_name', [])
                         if isinstance(file_names, list):
@@ -391,18 +395,18 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                                 if name:
                                     file_path = os.path.join(root_path, name) if root_path else name
                                     self.artifacts['files_read'].append(file_path)
-                    elif fn == 'write_file':
+                    elif fn == 'app_write_file':
                         file_path = tool_args.get('path', '')
                         if file_path:
                             if tool_result.operation == ToolOperation.CREATE:
                                 self.artifacts['files_created'].append(file_path)
                             elif tool_result.operation == ToolOperation.UPDATE:
                                 self.artifacts['files_modified'].append(file_path)
-                    elif fn == 'replace_code_in_file':
+                    elif fn == 'app_replace_code_in_file':
                         file_path = tool_args.get('path', '')
                         if file_path:
                             self.artifacts['files_modified'].append(file_path)
-                    elif fn == 'shell_command':
+                    elif fn == 'app_shell_command':
                         cmd_name = tool_args.get('command_name', '')
                         shell_block = tool_args.get('shell_block', '')
                         command_ref = f'{cmd_name}/{shell_block}' if cmd_name and shell_block else cmd_name or shell_block
@@ -486,8 +490,8 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
 
 class AnalyticAgent(BaseAgent):
     AGENT_SUB_TYPE_TOOLS = {
-        'ANALYTIC' : ['read_file', 'read_multiply_files', 'list_in_directory', 'search_file', 'report'],
-        'REVIEWER': ['read_file', 'read_multiply_files', 'search_file', 'report']
+        'ANALYTIC' : ['app__read_file', 'app__read_multiply_files', 'app__list_in_directory', 'app__search_file', 'system__report'],
+        'REVIEWER': ['app__read_file', 'app__read_multiply_files', 'app__search_file', 'system__report']
     }
 
     def get_tools(self) -> list[dict]:
@@ -496,7 +500,7 @@ class AnalyticAgent(BaseAgent):
         return _tools + self.project.get_commandlets_tools(self.role)
 
 class CoderAgent(BaseAgent):
-    CODER_TOOLS = ['read_file', 'read_multiply_files', 'list_in_directory', 'write_file', 'replace_code_in_file', 'report']
+    CODER_TOOLS = ['app__read_file', 'app__read_multiply_files', 'app__list_in_directory', 'app__write_file', 'app__replace_code_in_file', 'system__report']
     def get_tools(self) -> list[dict]:
         all_tools = ToolsFabric().get_all_tools()
         _tools = [_ for _ in all_tools if _['function']['name'] in self.CODER_TOOLS]
