@@ -352,7 +352,7 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
             else:
                 yield DTOInstruction(type=EventType.NOPE)
 
-                is_pre_output = tools_parameters[tool_call_description['function']].get('pre_output', False)
+                is_pre_output = tools_parameters.get(tool_call_description['function'], {}).get('pre_output', False)
                 response_message_id = output['id'] + ':response'
 
                 if is_pre_output:
