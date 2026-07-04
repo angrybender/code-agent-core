@@ -14,10 +14,19 @@ class ToolsInterpreter:
         self.project = project
 
     def _load(self, tool_name) -> ATool:
-        module, tool_name = tool_name.split('__', 1)
+        try:
+            module, tool_name = tool_name.split('__', 1)
+        except:
+            raise ToolError(f"wrong tool name: `{tool_name}`, check tools list and call correct")
+
         python_tool_name = f"tool_{tool_name}"
         class_name = ''.join(word.capitalize() for word in python_tool_name.split('_'))
-        module_obj = import_module(f"tools.{module}.{python_tool_name}")
+
+        try:
+            module_obj = import_module(f"tools.{module}.{python_tool_name}")
+        except ModuleNotFoundError:
+            raise ToolError(f"wrong tool name: `{tool_name}`, check tools list and call correct")
+
         tool_class = getattr(module_obj, class_name)
 
         if not tool_class:
