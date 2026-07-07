@@ -253,6 +253,10 @@ class SimpleChat {
         // Uses the 'scroll' event on window so ALL input methods are covered
         // (mouse wheel, keyboard, touch, scrollbar drag, etc.).
         window.addEventListener('scroll', () => {
+            if (this.IS_ON_END_CONVERSATION) {
+                return;
+            }
+
             const scrollTop = window.scrollY;
             const windowHeight = window.innerHeight;
             const documentHeight = document.documentElement.scrollHeight;
