@@ -255,6 +255,8 @@ Commandlets are defined as Markdown files (`.md`) in the `.agent-commands/` dire
 role: CODER,REVIEWER,ANALYTIC   # Comma-separated list of agent roles that can use this commandlet (optional)
 enabled: true                    # If false, the file is skipped entirely (default: true)
 mcp: false                       # If true, treated as MCP server config (NOT a shell commandlet) — excluded from shell commandlets (default: false)
+description: My skill            # Short description of the skill (REQUIRED) — injected into SUPERVISOR guidance and agent tool awareness
+when: Use when...                # Optional guidance on when to use this skill
 ---
 ```
 
@@ -263,12 +265,14 @@ mcp: false                       # If true, treated as MCP server config (NOT a 
 | `role` | string (comma-separated) | `[]` (all roles) | Agent roles allowed to use this commandlet. Valid values: `SUPERVISOR`, `ANALYTIC`, `CODER`, `REVIEWER` (`MCP` is not valid). If omitted, all roles get access. |
 | `enabled` | boolean | `true` | If `false`, the file is skipped entirely during parsing. |
 | `mcp` | boolean | `false` | If `true`, the file is treated as an MCP server configuration and excluded from shell commandlet parsing. |
+| `description` | string | *(required)* | Short description of the skill. Injected into the SUPERVISOR guidance and agent tool awareness. **Required** — a commandlet without `description` is invalid and raises a parsing error. |
+| `when` | string | *(none)* | Optional guidance on when to use this skill. When present, combined into the description as: `{description}\n**WHEN USE**{when}`. |
 
 #### Body Structure
 
 The body is split by `---` separators into sections:
 
-- **Section 1 (before the first `---`)**: Overall commandlet description — a human-readable summary of what the commandlet does. This is used for guidance injection (see below).
+- **Section 1 (before the first `---`)**: Extended description — detailed information about the skill, retrievable on-demand via the `skill_description` tool. Not injected into prompts automatically.
 - **Sections 2+ (after each `---`)**: Individual **shell blocks**, each containing:
   - A text description of the block (markdown, excluding code fences)
   - A fenced code block (`` ``` ``) containing the actual shell command
@@ -280,6 +284,8 @@ The body is split by `---` separators into sections:
 ```markdown
 ---
 role: ANALYTIC,CODER
+description: Git commands
+when: Use for interaction with git
 ---
 
 Git commands
@@ -330,6 +336,7 @@ Each shell block becomes an LLM tool named `shell__{command}_{block}`, where:
 
 - **`mcp: true` files**: Excluded from shell commandlets — treated as MCP server configs instead.
 - **`enabled: false` files**: Skipped entirely.
+- **Missing `description` frontmatter**: Raises a `ValueError` (commandlet is invalid without it).
 - **Files with fewer than 2 sections**: Skipped (a commandlet must have at least a description and one shell block).
 - **Shell blocks without a valid code fence**: Skipped.
 - **Commandlets with zero valid shell blocks**: The entire commandlet is excluded.
@@ -391,9 +398,10 @@ At `Copilot._init()` time, a `Project` instance is created. The constructor call
 2. Parses each file's YAML frontmatter via `python-frontmatter`.
 3. Validates and normalizes the `role` field (comma-separated string → list; rejects `MCP` as a valid role).
 4. Skips files where `enabled: false` or `mcp: true`.
-5. Splits the body on `---` separators into sections.
-6. Extracts each shell block: fenced code block (the command), optional `# alias` for naming, and `$N` argument descriptions.
-7. Returns a list of commandlet definitions, each containing `command`, `description`, `shell_blocks[]`, and `config`.
+5. Validates that `description` is present in frontmatter (raises `ValueError` if missing).
+6. Splits the body on `---` separators into sections.
+7. Extracts each shell block: fenced code block (the command), optional `# alias` for naming, and `$N` argument descriptions.
+8. Returns a list of commandlet definitions, each containing `command`, `description` (from frontmatter, with `when` combined if present), `extended_description` (body section[0]), `shell_blocks[]`, and `config`.
 
 #### Tool Registration
 
@@ -437,6 +445,10 @@ When an agent calls a `shell__*` tool:
    - Returns a dict with `stdout`, `stderr`, `status` (`ok`/`error`/`timeout`), and the final `cmd` string.
 4. **Timeout handling**: Commands are capped at `SHELL_COMMAND_TIMEOUT` (default: 30s). On timeout, partial output is returned with an `error_code: 'timeout'`.
 5. The result is formatted by `ToolShell` into a readable output (`$ {cmd}` + stdout/stderr) and returned to the agent.
+
+#### Skill Description Tool
+
+- Agents can call `system__skill_description` with a skill name to retrieve the extended description on-demand.
 
 ### Whitelist & Argument Safety Model
 

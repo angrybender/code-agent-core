@@ -142,11 +142,18 @@ def parse_agent_commands(directory: str) -> list[dict]:
         if not is_shell:
             continue
 
+        description = config.get('description')
+        if not description:
+            raise ValueError(f"Command `{command}` is missing required `description` field in frontmatter")
+
+        when = config.get('when')
+        if when:
+            description = f"{description}\n**WHEN USE**{when}"
+
         sections = _split_command_sections(body)
         if len(sections) < 2:
             continue
 
-        command_description = sections[0].strip()
         shell_blocks = []
         for block_index, raw_block in enumerate(sections[1:], start=1):
             cmd = _extract_shell_command(raw_block)
@@ -173,7 +180,8 @@ def parse_agent_commands(directory: str) -> list[dict]:
 
         results.append({
             'command': command,
-            'description': command_description,
+            'description': description,
+            'extended_description': sections[0].strip(),
             'shell_blocks': shell_blocks,
             'config': config,
         })

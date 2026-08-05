@@ -17,6 +17,7 @@ _FUNCTION_NAME_TITLES = {
     'read_multiply_files': 'read  ',
     'search_file': 'search',
     'select_mcp': 'select',
+    'skill_description': 'skill ',
 }
 
 _FUNCTION_ARG_PRINT = {
@@ -27,6 +28,7 @@ _FUNCTION_ARG_PRINT = {
     'attach_image': 'path',
     'read_multiply_files': 'root_path',
     'select_mcp': 'server_name',
+    'skill_description': 'name',
 }
 
 def get_message(message: str, role: str, message_type: str=None) -> dict:

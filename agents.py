@@ -488,8 +488,8 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
 
 class AnalyticAgent(BaseAgent):
     AGENT_SUB_TYPE_TOOLS = {
-        'ANALYTIC' : ['app__read_file', 'app__read_multiply_files', 'app__list_in_directory', 'app__search_file', 'system__report'],
-        'REVIEWER': ['app__read_file', 'app__read_multiply_files', 'app__search_file', 'system__report']
+        'ANALYTIC' : ['app__read_file', 'app__read_multiply_files', 'app__list_in_directory', 'app__search_file', 'system__report', 'system__skill_description'],
+        'REVIEWER': ['app__read_file', 'app__read_multiply_files', 'app__search_file', 'system__report', 'system__skill_description']
     }
 
     def get_tools(self) -> list[dict]:
@@ -498,7 +498,7 @@ class AnalyticAgent(BaseAgent):
         return _tools + self.project.get_commandlets_tools(self.role)
 
 class CoderAgent(BaseAgent):
-    CODER_TOOLS = ['app__read_file', 'app__read_multiply_files', 'app__list_in_directory', 'app__write_file', 'app__replace_code_in_file', 'system__report']
+    CODER_TOOLS = ['app__read_file', 'app__read_multiply_files', 'app__list_in_directory', 'app__write_file', 'app__replace_code_in_file', 'system__report', 'system__skill_description']
     def get_tools(self) -> list[dict]:
         all_tools = ToolsFabric().get_all_tools()
         _tools = [_ for _ in all_tools if _['function']['name'] in self.CODER_TOOLS]

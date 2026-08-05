@@ -194,6 +194,12 @@ class Project:
 
         return commands_tools
 
+    def get_commandlets_description(self, name: str) -> str:
+        for commandlet in self.shell_commands:
+            if commandlet['command'] == name:
+                return commandlet.get('extended_description', '')
+        return f"Skill `{name}` not found"
+
     def get_mcp(self):
         return self.mcp_servers
 

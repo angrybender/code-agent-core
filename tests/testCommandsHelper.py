@@ -40,18 +40,18 @@ class TestParseAgentCommands(unittest.TestCase):
         self.assertEqual([], result)
 
     def test_md_file_without_separator_is_skipped(self):
-        self._write('deploy.md', 'Just some plain text\n```bash\necho hi\n```')
+        self._write('deploy.md', '---\ndescription: Some desc\n---\nJust some plain text\n```bash\necho hi\n```')
         result = parse_agent_commands(self.test_dir)
         self.assertEqual([], result)
 
     def test_single_command_with_single_shell_block(self):
-        content = "Run the build workflow.\n---\nBuild app\n\n```bash\nmake build\n```"
+        content = "---\ndescription: Run the build workflow\n---\nRun the build workflow.\n---\nBuild app\n\n```bash\nmake build\n```"
         self._write('build.md', content)
         result = parse_agent_commands(self.test_dir)
 
         self.assertEqual(1, len(result))
         self.assertEqual('build', result[0]['command'])
-        self.assertEqual('Run the build workflow.', result[0]['description'])
+        self.assertEqual('Run the build workflow', result[0]['description'])
         self.assertEqual(1, len(result[0]['shell_blocks']))
         self.assertEqual('make_build_1', result[0]['shell_blocks'][0]['name'])
         self.assertEqual('Build app', result[0]['shell_blocks'][0]['description'])
@@ -60,6 +60,7 @@ class TestParseAgentCommands(unittest.TestCase):
 
     def test_multi_block_command_parses_all_blocks(self):
         content = (
+            '---\ndescription: Git helpers\n---\n'
             'Git helpers\n'
             '---\n'
             'Git diff\n\n'
@@ -86,6 +87,7 @@ class TestParseAgentCommands(unittest.TestCase):
 
     def test_block_name_generation_normalizes_and_truncates(self):
         content = (
+            '---\ndescription: Desc\n---\n'
             'Desc\n'
             '---\n'
             'Run container\n\n'
@@ -106,6 +108,7 @@ class TestParseAgentCommands(unittest.TestCase):
 
     def test_block_args_are_parsed_per_block_only(self):
         content = (
+            '---\ndescription: Desc\n---\n'
             'Desc\n'
             '---\n'
             'First\n\n'
@@ -128,7 +131,7 @@ class TestParseAgentCommands(unittest.TestCase):
     def test_frontmatter_filtered_and_roles_preserved(self):
         self._write(
             'deploy.md',
-            '---\nrole: CODER\nenabled: true\n---\nDeploy workflow\n---\nDeploy app\n\n$1 - env\n\n```bash\n./deploy.sh $1\n```'
+            '---\nrole: CODER\nenabled: true\ndescription: Deploy workflow\n---\nDeploy workflow\n---\nDeploy app\n\n$1 - env\n\n```bash\n./deploy.sh $1\n```'
         )
         result = parse_agent_commands(self.test_dir)
 
@@ -137,32 +140,53 @@ class TestParseAgentCommands(unittest.TestCase):
         self.assertEqual('deploy_sh_1', result[0]['shell_blocks'][0]['name'])
 
     def test_enabled_false_skips_command(self):
-        self._write('skip.md', '---\nenabled: false\n---\nDesc\n---\n```\necho skip\n```')
+        self._write('skip.md', '---\nenabled: false\ndescription: Skip\n---\nDesc\n---\n```\necho skip\n```')
         result = parse_agent_commands(self.test_dir)
         self.assertEqual([], result)
 
     def test_mcp_commands_excluded_for_shell_type(self):
-        self._write('test_server.md', '---\nmcp: true\ntype: cli\n---\nMCP helpers\n---\nRun\n\n```\ndocker run test\n```\n')
+        self._write('test_server.md', '---\nmcp: true\ntype: cli\ndescription: MCP helpers\n---\nMCP helpers\n---\nRun\n\n```\ndocker run test\n```\n')
         result = parse_agent_commands(self.test_dir)
         self.assertEqual(0, len(result))
 
     def test_non_sequential_args_raises_exception(self):
-        self._write('cmd.md', 'Desc\n---\nBroken\n\n```\nfoo $1 $3\n```\n')
+        self._write('cmd.md', '---\ndescription: Desc\n---\nDesc\n---\nBroken\n\n```\nfoo $1 $3\n```\n')
         with self.assertRaises(ValueError):
             parse_agent_commands(self.test_dir)
 
     def test_role_invalid_value_raises(self):
-        self._write('bad.md', '---\nrole: INVALID\n---\nDesc\n---\n```\necho bad\n```')
+        self._write('bad.md', '---\nrole: INVALID\ndescription: Desc\n---\nDesc\n---\n```\necho bad\n```')
         with self.assertRaises(ValueError):
             parse_agent_commands(self.test_dir)
 
     def test_result_dict_has_correct_keys(self):
-        self._write('check.md', 'Some desc\n---\nBlock desc\n\n```\nsome cmd\n```')
+        self._write('check.md', '---\ndescription: Some desc\n---\nSome desc\n---\nBlock desc\n\n```\nsome cmd\n```')
         result = parse_agent_commands(self.test_dir)
-        self.assertEqual({'command', 'description', 'shell_blocks', 'config'}, set(result[0].keys()))
+        self.assertEqual({'command', 'description', 'extended_description', 'shell_blocks', 'config'}, set(result[0].keys()))
+
+    def test_missing_description_raises_error(self):
+        self._write('nodesc.md', '---\n---\nSome body\n---\nBlock desc\n\n```\nsome cmd\n```')
+        with self.assertRaises(ValueError):
+            parse_agent_commands(self.test_dir)
+
+    def test_description_from_frontmatter_not_body(self):
+        self._write('desc.md', '---\ndescription: Frontmatter description\n---\nThis body text is different\n---\nBlock\n\n```\necho ok\n```')
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual('Frontmatter description', result[0]['description'])
+
+    def test_when_field_combined_into_description(self):
+        self._write('when.md', '---\ndescription: Git commands\nwhen: Use for interaction with git\n---\nGit commands\n---\nRun\n\n```\ngit status\n```')
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual('Git commands\n**WHEN USE**Use for interaction with git', result[0]['description'])
+
+    def test_extended_description_from_body_section0(self):
+        self._write('ext.md', '---\ndescription: Short\n---\nDetailed extended description about the skill.\n---\nBlock\n\n```\necho ok\n```')
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual('Detailed extended description about the skill.', result[0]['extended_description'])
 
     def test_alias_produces_block_name_from_alias(self):
         content = (
+            '---\ndescription: Run test command\n---\n'
             'Run test command\n'
             '---\n'
             'Run test\n\n'
@@ -181,6 +205,7 @@ class TestParseAgentCommands(unittest.TestCase):
 
     def test_alias_line_removed_from_stored_cmd(self):
         content = (
+            '---\ndescription: Desc\n---\n'
             'Desc\n'
             '---\n'
             'Run\n\n'
@@ -197,6 +222,7 @@ class TestParseAgentCommands(unittest.TestCase):
 
     def test_multiple_blocks_one_alias_one_not(self):
         content = (
+            '---\ndescription: Multi\n---\n'
             'Multi\n'
             '---\n'
             'First with alias\n\n'
@@ -221,6 +247,7 @@ class TestParseAgentCommands(unittest.TestCase):
 
     def test_alias_only_invalid_chars_falls_back(self):
         content = (
+            '---\ndescription: Desc\n---\n'
             'Desc\n'
             '---\n'
             'Run\n\n'
@@ -237,6 +264,7 @@ class TestParseAgentCommands(unittest.TestCase):
 
     def test_full_tool_name_format_with_alias(self):
         content = (
+            '---\ndescription: Desc\n---\n'
             'Desc\n'
             '---\n'
             'Run\n\n'
@@ -255,6 +283,7 @@ class TestParseAgentCommands(unittest.TestCase):
 
     def test_alias_without_space_not_treated_as_alias(self):
         content = (
+            '---\ndescription: Desc\n---\n'
             'Desc\n'
             '---\n'
             'Run\n\n'
@@ -271,6 +300,7 @@ class TestParseAgentCommands(unittest.TestCase):
 
     def test_alias_truncated_to_16_chars(self):
         content = (
+            '---\ndescription: Desc\n---\n'
             'Desc\n'
             '---\n'
             'Run\n\n'
