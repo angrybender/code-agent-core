@@ -1,3 +1,4 @@
+import re
 import time
 import uuid
 
@@ -5,18 +6,18 @@ from dataclasses import asdict
 from markupsafe import escape
 
 from dto.dto_instruction import DTOInstruction
-from dto.enums import EventType
+from dto.enums import EventType, ToolOperation, ToolPrefixes
 
 _FUNCTION_NAME_TITLES = {
     'list_in_directory': 'list  ',
     'write_file': 'write ',
     'replace_code_in_file': 'patch ',
-    'shell_command': 'shell ',
     'read_file': 'read  ',
     'attach_image': 'attach',
     'read_multiply_files': 'read  ',
     'search_file': 'search',
     'select_mcp': 'select',
+    'skill_description': 'skill ',
 }
 
 _FUNCTION_ARG_PRINT = {
@@ -27,6 +28,7 @@ _FUNCTION_ARG_PRINT = {
     'attach_image': 'path',
     'read_multiply_files': 'root_path',
     'select_mcp': 'server_name',
+    'skill_description': 'name',
 }
 
 def get_message(message: str, role: str, message_type: str=None) -> dict:
@@ -46,7 +48,7 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
         output['timestamp'] = time.time()
         return output
 
-    function_name = message.function
+    function_name = message.function.split('__', 1)[-1] if message.function else None
     result_message = message.message
     function_alias = _FUNCTION_NAME_TITLES.get(function_name, function_name)
     message_if_final = message.is_final
@@ -98,13 +100,12 @@ def agent_tool_tpl(message: DTOInstruction) -> dict:
         ext = f"*.{ext}" if ext else '*.*'
         result_message = f'<cite>{function_alias}</cite> <dfn>{ext}</dfn> <dfn>{needle}</dfn>'
 
-    elif function_name == 'shell_command' and message.is_final:
-        command_ref = f"{message.args['command_name']}/{message.args['shell_block']}"
-        command_name = [f"<dfn>{command_ref}</dfn>"]
+    elif function_name and function_name[:len(ToolPrefixes.SHELL) + 2] == f'{ToolPrefixes.SHELL}__' and message.is_final:
+        command_name = [f"<dfn>{function_name[len(ToolPrefixes.SHELL) + 2:]}</dfn>"]
 
         if 'args' in message.args:
             command_name += [f"<dfn>{_}</dfn>" for _ in message.args['args']]
-        result_message = f'<cite>{function_alias}</cite> {" ".join(command_name)}'
+        result_message = f'<cite>shell </cite> {" ".join(command_name)}'
 
     elif function_name in ['write_file', 'replace_code_in_file'] and message.is_final:
         file_link = _file_processing_tpl(message.result)
@@ -172,15 +173,15 @@ def _agent_call_tpl(message: DTOInstruction) -> dict:
 def _file_processing_tpl(result: dict) -> str:
     css_class = ''
     a_href = '#'
-    if 'file_edit' in result:
+    if result['operation'] == ToolOperation.UPDATE:
         css_class = 'file_edit'
-        a_href = f"#call:jide_open_file//{result['file_path']}//{result['source_file_path']}"
-    elif 'file_create' in result:
+        a_href = f"#call:jide_open_file//{result['file_path']}//{result['meta']['source_file_path']}"
+    elif result['operation'] == ToolOperation.CREATE:
         css_class = 'file_create'
         a_href = f"#call:jide_open_file//{result['file_path']}"
 
-    if 'file_name' in result:
-        return f"<a class='jide_open_file {css_class}' href='{a_href}'>{result['file_name']}</a>"
+    if 'file_name' in result['meta']:
+        return f"<a class='jide_open_file {css_class}' href='{a_href}'>{result['meta']['file_name']}</a>"
     else:
         return '-'
 

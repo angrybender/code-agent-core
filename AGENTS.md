@@ -44,7 +44,7 @@ BaseAgent(LoggerMixin)         # Abstract base — main run() loop, LLM query, t
   └── CoderAgent(BaseAgent)    # Handles the CODER role
 Agent                          # Static factory: Agent.create(role), Agent.setUp()
 ```
-Note: The REVIEWER role is implemented by `AnalyticAgent` (not a separate class). `AnalyticAgent.get_tools()` returns `ANALYTIC_TOOLS` for ANALYTIC role, or `get_reviewer_tools(has_shell_commands)` for REVIEWER role. `CoderAgent.get_tools()` returns `get_coder_tools(has_shell_commands)`. These factory functions in `tools/tools.py` conditionally include the `shell_command` tool based on whether shell commands are configured for the project.
+Note: The REVIEWER role is implemented by `AnalyticAgent` (not a separate class). `AnalyticAgent` has a class dict `AGENT_SUB_TYPE_TOOLS` with both `'ANALYTIC'` and `'REVIEWER'` keys; `AnalyticAgent.get_tools()` does `self.AGENT_SUB_TYPE_TOOLS[self.role]` to get the tool list for the current role — so both the ANALYTIC and REVIEWER roles use `AGENT_SUB_TYPE_TOOLS` (not `CODER_TOOLS`). It filters `ToolsFabric().get_all_tools()` by that list and appends `project.get_commandlets_tools(role)`. `CODER_TOOLS` is a separate constant belonging only to `CoderAgent`; `CoderAgent.get_tools()` returns tools from `ToolsFabric().get_all_tools()` filtered by `CODER_TOOLS` and appends `project.get_commandlets_tools(role)`. Commandlet tools (prefixed `shell__`) are generated dynamically from `.agent-commands/` files.
 
 1. **SUPERVISOR** (implemented in `algorythm.py`)
    - Orchestrates the entire workflow
@@ -215,11 +215,14 @@ Agent tool call → ToolsInterpreter → mcp_helper
 ```
 
 ### 5. Shell Commands System
+
+> **Commandlets** are the mechanism behind the shell command system. A commandlet is a "skill" that bundles a human-readable description with a whitelist of shell commands an agent can execute. See **[Commandlets (Skills) Architecture](#commandlets-skills-architecture)** for the full specification.
+
 ```
 .agent-commands/my-command.md  →  parse_agent_commands()
-→ whitelist of named commands loaded at startup
-→ Agent calls shell_command("my-command")
-→ ToolsInterpreter executes the command via subprocess
+→ whitelist of named commandlets loaded at startup
+→ Agent calls shell__{command}_{block}("my-command", args)
+→ ToolsInterpreter → ToolShell → run_commandlet() → subprocess with $N arg substitution
 → Output returned to agent
 ```
 
@@ -228,6 +231,237 @@ Agent tool call → ToolsInterpreter → mcp_helper
 Browser SSE connection → GET /events → Incremental messages streamed
 → Progress updates → [DONE] signal on completion
 ```
+
+## Commandlets (Skills) Architecture
+
+### Concept & Ideology
+
+A **commandlet** is a **"skill"** — it bundles a human-readable description with a whitelist of shell commands that an agent can execute. Commandlets bridge the gap between free-form AI tool use and controlled, safe command execution. Rather than giving an agent unrestricted shell access, each commandlet defines:
+
+1. **What the skill does** — a natural-language description injected into the agent's system prompt so the AI can decide when it's relevant.
+2. **What commands it runs** — one or more shell blocks, each becoming a discrete LLM-callable tool.
+3. **Who can use it** — per-role filtering (e.g., only `CODER`, or `CODER,REVIEWER,ANALYTIC`).
+
+This design ensures agents can only invoke commands that have been explicitly defined and reviewed by the developer — there is no mechanism to execute arbitrary shell commands.
+
+### File Format
+
+Commandlets are defined as Markdown files (`.md`) in the `.agent-commands/` directory (configurable via `SHELL_COMMAND_DIRECTORY`). Each file has the following structure:
+
+#### YAML Frontmatter
+
+```yaml
+---
+role: CODER,REVIEWER,ANALYTIC   # Comma-separated list of agent roles that can use this commandlet (optional)
+enabled: true                    # If false, the file is skipped entirely (default: true)
+mcp: false                       # If true, treated as MCP server config (NOT a shell commandlet) — excluded from shell commandlets (default: false)
+description: My skill            # Short description of the skill (REQUIRED) — injected into SUPERVISOR guidance and agent tool awareness
+when: Use when...                # Optional guidance on when to use this skill
+---
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `role` | string (comma-separated) | `[]` (all roles) | Agent roles allowed to use this commandlet. Valid values: `SUPERVISOR`, `ANALYTIC`, `CODER`, `REVIEWER` (`MCP` is not valid). If omitted, all roles get access. |
+| `enabled` | boolean | `true` | If `false`, the file is skipped entirely during parsing. |
+| `mcp` | boolean | `false` | If `true`, the file is treated as an MCP server configuration and excluded from shell commandlet parsing. |
+| `description` | string | *(required)* | Short description of the skill. Injected into the SUPERVISOR guidance and agent tool awareness. **Required** — a commandlet without `description` is invalid and raises a parsing error. |
+| `when` | string | *(none)* | Optional guidance on when to use this skill. When present, combined into the description as: `{description}\n**WHEN USE**{when}`. |
+
+#### Body Structure
+
+The body is split by `---` separators into sections:
+
+- **Section 1 (before the first `---`)**: Extended description — detailed information about the skill, retrievable on-demand via the `skill_description` tool. Not injected into prompts automatically.
+- **Sections 2+ (after each `---`)**: Individual **shell blocks**, each containing:
+  - A text description of the block (markdown, excluding code fences)
+  - A fenced code block (`` ``` ``) containing the actual shell command
+  - Optional `$N` argument description lines (e.g., `$1 - description of first argument`)
+  - Optional `# alias` comment on the first line of the code block to override the auto-generated tool name
+
+#### Example Commandlet File
+
+```markdown
+---
+role: ANALYTIC,CODER
+description: Git commands
+when: Use for interaction with git
+---
+
+Git commands
+Use for interaction with git
+
+**Rules**
+- DONT add to git file, if you hasnt created it!
+
+---
+
+Add file to repository
+If you created new file - use this tool for adding to repository
+
+$1 - path to file
+
+```
+git add "$1"
+```
+
+---
+
+Show all git branches
+
+```
+git branch
+```
+```
+
+#### `$N` Positional Argument Substitution
+
+Shell commands can reference positional arguments using `$1`, `$2`, `$3`, etc. Placeholders must be a **contiguous sequence starting at `$1`** (e.g., `$1`, `$2`, `$3` — not `$1`, `$3`). At parse time:
+
+- Each `$N` placeholder is detected and its description extracted from lines like `$1 - description`.
+- At execution time, the agent-supplied `args` array values are substituted into the command in **reverse order** (highest index first) to avoid partial replacements (e.g., `$11` being replaced by `$1`'s value).
+- The argument count is **validated** — if the number of provided arguments doesn't match the number of `$N` placeholders, the execution returns an error.
+
+#### Auto-Naming Convention for Tools
+
+Each shell block becomes an LLM tool named `shell__{command}_{block}`, where:
+
+- `{command}` is the filename without `.md` extension (e.g., `git`, `run_tests`)
+- `{block}` is derived from the shell command text itself:
+  - If the code block starts with `# alias`, the alias text (lowercased, spaces → underscores, truncated to 16 chars) is used, suffixed with `_N` (block index).
+  - Otherwise, the first words of the command are normalized (lowercased, non-alphanumeric → spaces → underscores, max 16 chars), suffixed with `_N` (block index).
+- Example: `git.md` with a block running `git add "$1"` produces the tool `shell__git_git_add_1`.
+
+#### Parsing Exclusions
+
+- **`mcp: true` files**: Excluded from shell commandlets — treated as MCP server configs instead.
+- **`enabled: false` files**: Skipped entirely.
+- **Missing `description` frontmatter**: Raises a `ValueError` (commandlet is invalid without it).
+- **Files with fewer than 2 sections**: Skipped (a commandlet must have at least a description and one shell block).
+- **Shell blocks without a valid code fence**: Skipped.
+- **Commandlets with zero valid shell blocks**: The entire commandlet is excluded.
+
+### Calling Algorithm / Pipeline
+
+The full lifecycle of a commandlet from definition to execution:
+
+```
+                        ┌─────────────────────────────────────────────────┐
+                        │  1. STARTUP                                       │
+                        │  .agent-commands/*.md files parsed                │
+                        │  via parse_agent_commands() in commands_helper.py │
+                        │  → produces list of commandlet definitions        │
+                        └──────────────────────┬──────────────────────────┘
+                                               │
+                                               ▼
+                        ┌─────────────────────────────────────────────────┐
+                        │  2. TOOL REGISTRATION                             │
+                        │  Project.get_commandlets_tools(role) builds       │
+                        │  LLM tool schemas (shell__{command}_{block})      │
+                        │  for each agent role, filtered by `role` config   │
+                        │  → tools appended to agent's get_tools()          │
+                        └──────────────────────┬──────────────────────────┘
+                                               │
+                                               ▼
+                        ┌─────────────────────────────────────────────────┐
+                        │  3. GUIDANCE INJECTION                            │
+                        │  Copilot._get_commands_guidance() generates       │
+                        │  <Guidance command_name="..." available_to="..."> │
+                        │  XML blocks from commandlet descriptions          │
+                        │  → injected into SUPERVISOR system prompt         │
+                        └──────────────────────┬──────────────────────────┘
+                                               │
+                                               ▼
+                        ┌─────────────────────────────────────────────────┐
+                        │  4. AI DECISION                                   │
+                        │  Agent reads descriptions in its tool list /      │
+                        │  guidance and decides which commandlet tool       │
+                        │  to call (with appropriate arguments)             │
+                        └──────────────────────┬──────────────────────────┘
+                                               │
+                                               ▼
+                        ┌─────────────────────────────────────────────────┐
+                        │  5. EXECUTION                                     │
+                        │  shell__* tool call → ToolsInterpreter detects    │
+                        │  SHELL prefix → ToolShell.exec() →                │
+                        │  Project.run_commandlet() validates args,         │
+                        │  substitutes $N, executes via subprocess          │
+                        │  → output returned to agent                       │
+                        └───────────────────────────────────────────────────┘
+```
+
+#### Startup — Parsing
+
+At `Copilot._init()` time, a `Project` instance is created. The constructor calls `parse_agent_commands(directory)` from `commands_helper.py`, which:
+
+1. Globs all `*.md` files in the `SHELL_COMMAND_DIRECTORY` (default: `.agent-commands/`), sorted alphabetically.
+2. Parses each file's YAML frontmatter via `python-frontmatter`.
+3. Validates and normalizes the `role` field (comma-separated string → list; rejects `MCP` as a valid role).
+4. Skips files where `enabled: false` or `mcp: true`.
+5. Validates that `description` is present in frontmatter (raises `ValueError` if missing).
+6. Splits the body on `---` separators into sections.
+7. Extracts each shell block: fenced code block (the command), optional `# alias` for naming, and `$N` argument descriptions.
+8. Returns a list of commandlet definitions, each containing `command`, `description` (from frontmatter, with `when` combined if present), `extended_description` (body section[0]), `shell_blocks[]`, and `config`.
+
+#### Tool Registration
+
+Both `AnalyticAgent.get_tools()` and `CoderAgent.get_tools()` call `self.project.get_commandlets_tools(self.role)`, which:
+
+- Iterates over all parsed commandlets.
+- Filters by role: if a commandlet's `role` config is set and the agent's role is not in that list, the commandlet is excluded.
+- For each remaining shell block, builds an LLM tool schema:
+  - **Name**: `shell__{command}_{block_name}` (e.g., `shell__git_git_add_1`)
+  - **Description**: The block's description text
+  - **Parameters**: If the block has `$N` args, an `args` array parameter with `minItems`/`maxItems` enforcing exact arg count; otherwise an empty parameter object.
+  - **`pre_output: true`**: Set on each tool so the UI shows the command before execution.
+
+#### Guidance Injection
+
+`Copilot._get_commands_guidance()` (in `algorythm.py`) generates `<Guidance>` XML blocks that are injected into the SUPERVISOR's system prompt:
+
+```
+<Guidance command_name="git" available_to="ANALYTIC,CODER">
+Git commands
+Use for interaction with git
+...
+</Guidance>
+```
+
+- The guidance is rendered into the shared step prompt (`system_step.txt`) via Jinja2 (`project_guidance` variable).
+- **Short descriptions** (fewer than 2 lines after sanitizing) are **excluded** from guidance — only multi-line descriptions provide enough context for the SUPERVISOR to make delegation decisions.
+- Code fences are stripped from descriptions.
+
+#### Execution
+
+When an agent calls a `shell__*` tool:
+
+1. **`ToolsInterpreter.execute()`** detects the `shell` prefix (`ToolPrefixes.SHELL`) and routes to `ToolShell.exec()` instead of loading a standard tool module.
+2. **`ToolShell.exec()`** validates that the tool name is in the agent's registered `shell_tools` set; if not, raises `ToolError` listing available commands.
+3. **`Project.run_commandlet(tool_name, args)`**:
+   - Finds the matching commandlet definition by tool name.
+   - **Validates argument count**: must match the number of `$N` placeholders exactly.
+   - **Substitutes `$N` placeholders**: iterates args in reverse order (highest index first) and replaces `$1`, `$2`, etc.
+   - **Executes via `execute_terminal_command()`**: runs the command via `subprocess.run()` with `shell=True` (on non-Windows) or `shell=False` (on Windows), using the project root as the working directory.
+   - Returns a dict with `stdout`, `stderr`, `status` (`ok`/`error`/`timeout`), and the final `cmd` string.
+4. **Timeout handling**: Commands are capped at `SHELL_COMMAND_TIMEOUT` (default: 30s). On timeout, partial output is returned with an `error_code: 'timeout'`.
+5. The result is formatted by `ToolShell` into a readable output (`$ {cmd}` + stdout/stderr) and returned to the agent.
+
+#### Skill Description Tool
+
+- Agents can call `system__skill_description` with a skill name to retrieve the extended description on-demand.
+
+### Whitelist & Argument Safety Model
+
+The commandlet system enforces strict safety boundaries:
+
+- **Whitelist-only execution**: Agents can **only** execute commands defined in `.agent-commands/*.md` files. There is no mechanism to run arbitrary shell commands. Any tool call with a `shell__` prefix that doesn't match a registered commandlet raises `ToolError`.
+- **Argument validation**: Each commandlet declares its expected `$N` arguments at parse time. At execution time:
+  - The argument count is validated — a mismatch returns an `error_code: 'arguments'` error.
+  - Arguments are substituted as positional `$N` parameters (reverse-order replacement prevents cascading replacements).
+  - Arguments are typed as strings in the LLM tool schema (`type: array, items: {type: string}`).
+- **Per-role filtering**: Commandlets are only registered as tools for roles specified in their `role` frontmatter. An agent that doesn't have a commandlet in its tool list cannot call it.
+- **Timeout enforcement**: All commands are subject to `SHELL_COMMAND_TIMEOUT`, preventing long-running or hung processes.
+- **Working directory**: Commands execute with the project root as `cwd`, ensuring consistent paths.
 
 ## Key Patterns and Conventions
 
@@ -260,7 +494,7 @@ Browser SSE connection → GET /events → Incremental messages streamed
 - **REVIEWER**: Verification and testing (read + shell)
 
 ### Safety Features
-- Agents can only execute shell commands from a predefined whitelist
+- Agents can only execute shell commands from a predefined whitelist (commandlets — see **[Commandlets (Skills) Architecture](#commandlets-skills-architecture)**)
 - `MAX_ITERATION` prevents runaway execution
 
 ### Agent Artifacts Tracking
@@ -277,7 +511,7 @@ Browser SSE connection → GET /events → Incremental messages streamed
 - When total context size exceeds `MAX_CONTEXT_WINDOW_SIZE`, agents inject a user message prompting the use of the `summarize` tool
 - The `summarize` tool collapses the conversation to 4 messages: the original system prompt and first user message, plus a new assistant summary message (covering files read/written, commands run, key findings, current status, and remaining work) and a new system continuation prompt
 - Summarization is tracked by `_summarize_count` and can be triggered multiple times per agent run
-- `TOOL_SUMMARIZE` is defined in `tools/tools.py` and is injected only when context overflow is detected
+- There is no `TOOL_SUMMARIZE` constant in `tools/tools.py`; the summarize tool is the `ToolSummarize` class in `tools/system/tool_summarize.py`, discovered dynamically by `ToolsFabric`, and is injected only when context overflow is detected
 
 ## Project Configuration
 
@@ -297,7 +531,6 @@ Browser SSE connection → GET /events → Incremental messages streamed
 | `SHELL_COMMAND_TIMEOUT` | 30 | Timeout for shell commands in seconds |
 | `SHELL_COMMAND_DIRECTORY` | .agent-commands | Directory with predefined shell commands |
 | `DEBUG` | 0 | Enable verbose LLM logging to `full_log.log` |
-| `DEEPTHINKING_AGENTS` | — | Comma-separated agent names for deep thinking mode (does **not** affect CODER — CODER always runs with `thinking=False`) |
 | `MAX_CONTEXT_WINDOW_SIZE` | 100000 | Maximum context window size in tokens for prompt usage tracking |
 
 ## Directory Structure
@@ -314,8 +547,6 @@ project_root/
 ├── dto/
 │   ├── dto_instruction.py       # DTOInstruction dataclass (universal message object)
 │   └── enums.py                 # AgentRole and EventType enumerations
-├── env.example                  # Example environment configuration
-├── LICENSE                      # Project license
 ├── llm.py                       # OpenAI-compatible LLM client; errors logged to conversations_log/llm.error and llm.error.log
 ├── llm_api_server.py            # Flask HTTP server (Web UI + REST API)
 ├── llm_parser.py                # XML tag parsing from LLM responses
@@ -324,30 +555,14 @@ project_root/
 ├── mcp_helper.py                # File operations abstraction (reads always pure; writes: mcp or pure mode)
 ├── path_helper.py               # Path normalization utilities
 ├── prompts/                     # Prompts for agent and sub-agents
-│   ├── analytic_system.txt      # System prompt for ANALYTIC agent
-│   ├── coder_system.txt         # System prompt for CODER agent (Jinja2 templated)
-│   ├── reviewer_system.txt      # System prompt for REVIEWER agent (Jinja2 templated)
-│   ├── supervisor_system.txt    # System prompt for SUPERVISOR agent
-│   └── step.txt                 # Shared project-context sub-prompt (injected into all agents)
-├── requirements.txt             # Python dependencies
-├── run_tests.sh                 # Test runner: sets AGENT_FILE_TOOLS=pure, runs unittest discover on tests/
 ├── search_code.py               # In-project code search engine (SearchCode)
 ├── storage/                     # Temp file cache (not in git)
 ├── templates/                   # Web UI (SSE client, markdown rendering)
-│   ├── app.html                 # Main Jinja2 template for web UI
-│   ├── error.html               # Version mismatch error page
-│   └── assets/
-│       ├── app.js               # SSE client, message rendering, UI interaction logic
-│       ├── main.css             # Chat interface styles
-│       └── markdown.js          # Markdown rendering library
 ├── tests/                       # Unit tests
-├── tasks/                       # Task files directory
 ├── tools/
-│   └── tools.py                 # Agent tool schema definitions and factory functions get_coder_tools() / get_reviewer_tools() for conditional shell command inclusion
+│   ├── fabric.py                # Tool factory (ToolsFabric) — discovers and instantiates all tool classes
+│   └── tools.py                 # SUPERVISOR tool schema definitions (TOOL_CALL_AGENT, TOOL_MESSAGE, TOOL_EXIT)
 ├── tools_interpreter.py         # Agent tool executor (ToolsInterpreter)
-├── utils/                       # Utility modules
-├── vision/                      # Vision/image utilities
-├── AGENTS.md                    # This file — project reference for AI agents
 ```
 
 ## Logging and Observability
@@ -363,12 +578,9 @@ project_root/
 - **Add new agent**: Add a new class in `agents.py`, define prompt files in `prompts/`, register the new role in `agents.py` and `dto/enums.py`
 - **Add new agent role**: Add to `AgentRole` enum in `dto/enums.py`, create prompt files in `prompts/`, register the role in `agents.py`
 - **Add new event type**: Add value to `EventType` in `dto/enums.py` and handle rendering in `conversation.py`. Note: `EventType.CONTEXT` is used for token usage tracking, emitting context window usage information (`used` and `limit` values)
-- **Add shell command**: Create a `.md` file in `.agent-commands/` with a fenced code block containing the shell command
+- **Add shell command (commandlet)**: Create a `.md` file in `.agent-commands/` with YAML frontmatter (`role`, `enabled`, `mcp`), a description section, and `---`-separated shell blocks each containing a fenced code block. Use `$N` for positional arguments with `$N - description` lines. See **[Commandlets (Skills) Architecture](#commandlets-skills-architecture)** for the full file format specification
 - **Modify prompts**: Edit templates in `prompts/` directory (Jinja2 syntax for CODER/REVIEWER)
-- **Change LLM provider**: Update `OPENAI_API_URL` and `OPENAI_API_KEY` in `.env`
-- **Switch to pure file mode**: Set `AGENT_FILE_TOOLS=pure` in `.env` (no IDE required)
 - **Adjust iteration limits**: Set `MAX_ITERATION` in `.env`
-- **Enable deep thinking**: Add agent name(s) to `DEEPTHINKING_AGENTS` in `.env`
 
 ## Testing
 

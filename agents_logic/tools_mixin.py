@@ -1,4 +1,6 @@
 import json
+
+from dto.dto_tools import LLMToolDescription
 from llm import llm_query
 
 class ToolsMixin:
@@ -17,3 +19,7 @@ class ToolsMixin:
                 return json.loads(json_data)
             except json.decoder.JSONDecodeError as e:
                 return {}
+
+
+    #@staticmethod
+    #def parse_tool(tool_call: dict) -> LLMToolDescription:

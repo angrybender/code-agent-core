@@ -11,6 +11,7 @@ from jinja2 import Environment, BaseLoader
 import logging
 
 from logger_mixin import LoggerMixin
+from project import Project
 
 logger = logging.getLogger('APP')
 
@@ -19,39 +20,34 @@ load_dotenv()
 
 from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE, LLMRequestFormat
 from tools_interpreter import ToolsInterpreter
-from tools.tools import get_analytic_tools, get_coder_tools, get_reviewer_tools, TOOL_SUMMARIZE, TOOL_REPORT
-from search_code import SearchCode
 from dto.dto_instruction import DTOInstruction
-from dto.enums import EventType
+from dto.enums import EventType, ToolOperation
 from context_helper import compact_conversation_remove_redundant
 from agents_logic.tools_mixin import ToolsMixin
 from agents_logic.conversation_mixin import ConversationMixin
+from tools.fabric import ToolsFabric
 
 IDE_MCP_HOST=os.getenv('IDE_MCP_HOST')
 MAX_ITERATION=int(os.getenv('MAX_ITERATION'))
-DEEPTHINKING_AGENTS=os.getenv('DEEPTHINKING_AGENTS', '').split(',')
 
 
 class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
-    DEEP_THINK_TAG = 'work_plan'
     STORAGE_PATH = './storage'
 
-    def __init__(self, role: str, system_prompt: str, step_prompt: str, thinking: bool, has_shell_commands: bool = True):
-        self.system_prompt = system_prompt
-        self.step_prompt = step_prompt
-
+    def __init__(self, role: str, system_prompt: str, step_prompt: str, project: Project):
+        self.interpreter: ToolsInterpreter | None = None
         self.instruction = None
         self.images = []
         self.project_description = None
         self.project_structure = None
         self.current_open_file = None
-        self.interpreter = None
+        self.storage_path = None
+
+        self.system_prompt = system_prompt
+        self.step_prompt = step_prompt
+        self.project = project
         self.role = role
         self.log_file = role
-        self.thinking = thinking
-        self.storage_path = None
-        self.search_service = SearchCode()
-        self.has_shell_commands = has_shell_commands
         self.artifacts = {
             'files_read': [],
             'files_created': [],
@@ -77,7 +73,7 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                     tool['args'] = list(self.parse_tool_arguments(tool_call['function']['arguments']).values()) if \
                     tool_call['function']['arguments'] else []
 
-                return "; ".join([f'{m['tool_calls'][0]['function']['name']}:{m['args'][0]}' for m in tools_list])
+                return "; ".join([f'{m['tool_calls'][0]['function']['name']}:{m['args'][0] if m['args'] else ''}' for m in tools_list])
 
             logger.info(
                 "Conv context! Before: " + _create_log(conversation) + " After: " + _create_log(
@@ -94,7 +90,12 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
         self.images = images if isinstance(images, list) else []
         self.project_description = manifest['description']
         self.project_structure = manifest['files_structure']
-        self.interpreter = ToolsInterpreter(manifest['base_path'], self.search_service, commands=manifest.get('agent_commands', []))
+
+        tools = self.project.get_commandlets_tools(self.role)
+        self.interpreter = ToolsInterpreter(
+            shell_tools={tool['function']['name']: True for tool in tools},
+            project=self.project,
+        )
         self.log_file = log_file
 
         self.storage_path = os.path.join(self.STORAGE_PATH, hashlib.sha256(manifest['base_path'].encode()).hexdigest())
@@ -129,13 +130,11 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
     def run(self):
         assert self.instruction, 'Init() s required'
         specific_model = os.environ.get(f'MODEL:{self.role}', None)
-        self.search_service.reset()
 
-        current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         sub_prompt = self.step_prompt.format(
             project_description=self.project_description,
-            project_structure="\n".join([f"- {path}" for path in self.project_structure]),
-            current_datetime=current_datetime,
+            project_structure=self.project_structure,
+            current_datetime=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
         )
 
         user_content = self.instruction
@@ -157,6 +156,8 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
 
         self.log("============= SYSTEM PROMPT =============", True)
         self.log(conversation[0]['content'], True)
+        self.log("============= TOOLS =============", True)
+        self.log(self.get_tools(), True)
         self.log("============= USER PROMPT =============", True)
         self.log(conversation[1]['content'], True)
 
@@ -179,15 +180,20 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
 
             output = None
             message_id = None
-            tools_for_model = self.get_tools()
             force_tool = False
+            tools_for_model = self.get_tools()
+            tools_parameters = {}
+
             if _context_overflow_summarize or _max_step_workaround:
-                tools_for_model = [TOOL_SUMMARIZE]
+                tools_for_model = [_ for _ in ToolsFabric().get_all_tools() if _['function']['name'] == 'system__summarize']
+                force_tool = True
+            elif _max_step_workaround or _llm_format_error_workaround > 0:
+                tools_for_model = [_ for _ in tools_for_model if _['function']['name'] == 'system__report']
                 force_tool = True
 
-            if _max_step_workaround or _llm_format_error_workaround > 0:
-                tools_for_model = [TOOL_REPORT]
-                force_tool = True
+            for tool in tools_for_model:
+                tools_parameters[tool['function']['name']] = tool['parameters']
+                del tool['parameters']
 
             try:
                 for chunk in llm_query_stream(conversation, tools=tools_for_model, model_name=specific_model, force_tool=force_tool):
@@ -299,7 +305,7 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                 'tool_calls': [current_tool_call]
             })
 
-            if tool_call_description['function'] == 'report':
+            if tool_call_description['function'] == 'system__report':
                 yield DTOInstruction(
                     type=EventType.REPORT,
                     message=tool_call_description['args'].get('text', '') if tool_call_description['args'] else '',
@@ -308,7 +314,7 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                     metadata=self.artifacts
                 )
                 break
-            elif tool_call_description['function'] == 'summarize':
+            elif tool_call_description['function'] == 'system__summarize':
                     _context_overflow_summarize = False
                     _summarize_count += 1
 
@@ -346,8 +352,7 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
             else:
                 yield DTOInstruction(type=EventType.NOPE)
 
-                is_pre_output = tool_call_description['function'] in ['shell_command', 'search_file']
-                is_output_resul_of_tool_separate_msg = tool_call_description['function'] in ['shell_command', 'search_file']
+                is_pre_output = tools_parameters.get(tool_call_description['function'], {}).get('pre_output', False)
                 response_message_id = output['id'] + ':response'
 
                 if is_pre_output:
@@ -364,14 +369,11 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                         is_final=False
                     )
 
-                result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
-                is_success = not result.get('error', False)
+                tool_result = self.interpreter.execute(tool_call_description['function'], tool_call_description['args'])
+                is_success = not tool_result.error
 
-                if 'error' in result:
-                    del result['error']
-
-                if is_success and 'file_edit' in result:
-                    result['source_file_path'] = self.cache_file(result['file_name'], result['source_file_content'])
+                if tool_result.operation == ToolOperation.UPDATE:
+                    tool_result.meta['source_file_path'] = self.cache_file(tool_result.file_path)
 
                 if not tool_call_description['args']:
                     tool_call_description['args'] = {}
@@ -379,11 +381,11 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                 if is_success:
                     fn = tool_call_description['function']
                     tool_args = tool_call_description.get('args', {}) if isinstance(tool_call_description.get('args'), dict) else {}
-                    if fn == 'read_file':
+                    if fn == 'app_read_file':
                         file_path = tool_args.get('path', '')
                         if file_path:
                             self.artifacts['files_read'].append(file_path)
-                    elif fn == 'read_multiply_files':
+                    elif fn == 'app_read_multiply_files':
                         root_path = tool_args.get('root_path', '')
                         file_names = tool_args.get('file_name', [])
                         if isinstance(file_names, list):
@@ -391,24 +393,24 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                                 if name:
                                     file_path = os.path.join(root_path, name) if root_path else name
                                     self.artifacts['files_read'].append(file_path)
-                    elif fn == 'write_file':
+                    elif fn == 'app_write_file':
                         file_path = tool_args.get('path', '')
                         if file_path:
-                            if result.get('file_create'):
+                            if tool_result.operation == ToolOperation.CREATE:
                                 self.artifacts['files_created'].append(file_path)
-                            elif result.get('file_edit'):
+                            elif tool_result.operation == ToolOperation.UPDATE:
                                 self.artifacts['files_modified'].append(file_path)
-                    elif fn == 'replace_code_in_file':
+                    elif fn == 'app_replace_code_in_file':
                         file_path = tool_args.get('path', '')
                         if file_path:
                             self.artifacts['files_modified'].append(file_path)
-                    elif fn == 'shell_command':
+                    elif fn == 'app_shell_command':
                         cmd_name = tool_args.get('command_name', '')
                         shell_block = tool_args.get('shell_block', '')
                         command_ref = f'{cmd_name}/{shell_block}' if cmd_name and shell_block else cmd_name or shell_block
                         self.artifacts['commands_run'].append({
                             'command': command_ref,
-                            'status': result.get('status', 'unknown') if isinstance(result, dict) else 'unknown'
+                            'status': tool_result.meta.get('status', 'unknown')
                         })
 
                 if not is_pre_output:
@@ -416,20 +418,20 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
                         type=EventType.TOOL,
                         function=tool_call_description['function'],
                         args=tool_call_description['args'],
-                        result=result,
+                        result=tool_result.__dict__,
                         is_success=is_success,
                         message_id=output['id']
                     )
 
-                if is_output_resul_of_tool_separate_msg:
-                    _result = result.get('post_result', result['result'])
-                    yield DTOInstruction(type=EventType.MARKDOWN, message=_result, message_id=response_message_id)
+                if is_pre_output:
+                    _result = tool_result.output
+                    yield DTOInstruction(type=EventType.MARKDOWN, message=_result, message_id=response_message_id, hidden=not is_success)
 
                 result_msg = {
                     'role': 'tool',
                     'tool_call_id': current_tool_call['id'],
                     'name': current_tool_call['function']['name'],
-                    'content': result['result'],
+                    'content': tool_result.result
                 }
                 self.log("TOOL RESULT:", True)
                 self.log(result_msg, True)
@@ -471,25 +473,36 @@ class BaseAgent(LoggerMixin, ToolsMixin, ConversationMixin):
 
 
 
-    def cache_file(self, file_name: str, source_file_content: str) -> str:
+    def cache_file(self, file_name: str) -> str:
+        file_history = self.project.get_file_history(file_name)
+        assert len(file_history) > 1, f"For file `{file_name}` where are no history of changes"
+
+        prev_version = file_history[0]['content'] # TODO diff between versions
         source_file_content_path = os.path.join(self.storage_path, hashlib.sha256(file_name.encode()).hexdigest() + '.txt')
         if not os.path.exists(source_file_content_path):
             with open(source_file_content_path, 'w', encoding='utf8') as f:
-                f.write(source_file_content)
+                f.write(prev_version)
 
         return os.path.abspath(source_file_content_path)
 
 
 class AnalyticAgent(BaseAgent):
+    AGENT_SUB_TYPE_TOOLS = {
+        'ANALYTIC' : ['app__read_file', 'app__read_multiply_files', 'app__list_in_directory', 'app__search_file', 'system__report', 'system__skill_description'],
+        'REVIEWER': ['app__read_file', 'app__read_multiply_files', 'app__search_file', 'system__report', 'system__skill_description']
+    }
+
     def get_tools(self) -> list[dict]:
-        if self.role == 'ANALYTIC':
-            return get_analytic_tools(self.has_shell_commands)
-        else:
-            return get_reviewer_tools(self.has_shell_commands)
+        all_tools = ToolsFabric().get_all_tools()
+        _tools = [_ for _ in all_tools if _['function']['name'] in self.AGENT_SUB_TYPE_TOOLS[self.role]]
+        return _tools + self.project.get_commandlets_tools(self.role)
 
 class CoderAgent(BaseAgent):
+    CODER_TOOLS = ['app__read_file', 'app__read_multiply_files', 'app__list_in_directory', 'app__write_file', 'app__replace_code_in_file', 'system__report', 'system__skill_description']
     def get_tools(self) -> list[dict]:
-        return get_coder_tools(self.has_shell_commands)
+        all_tools = ToolsFabric().get_all_tools()
+        _tools = [_ for _ in all_tools if _['function']['name'] in self.CODER_TOOLS]
+        return _tools + self.project.get_commandlets_tools(self.role)
 
 
 class Agent:
@@ -522,31 +535,25 @@ class Agent:
                 shutil.rmtree(cache_path)
 
     @staticmethod
-    def create(role, agent_commands: list = None, mcp_commands: list = None) -> BaseAgent:
+    def create(role, project: Project) -> BaseAgent:
         assert role in Agent.PROMPTS, f'invalid role: {role}'
 
-        thinking = role in DEEPTHINKING_AGENTS
-        role_agent_commands = Agent._get_role_agent_commands(role, agent_commands)
-        has_shell_commands = bool(role_agent_commands and len(role_agent_commands) > 0)
         system_prompt = Agent.PROMPTS[role]
         with open(system_prompt, 'r', encoding='utf8') as f:
             system_prompt = f.read()
 
             rtemplate = Environment(loader=BaseLoader).from_string(system_prompt)
-            system_prompt = rtemplate.render(params={
-                'thinking': thinking,
-                'agent_commands': role_agent_commands
-            })
+            system_prompt = rtemplate.render(params={})
 
         with open(Agent.STEP_PROMPT, 'r', encoding='utf8') as f:
             step_prompt = f.read()
 
         if role == 'ANALYTIC' or role == 'REVIEWER':
-            return AnalyticAgent(role, system_prompt, step_prompt, thinking, has_shell_commands)
+            return AnalyticAgent(role, system_prompt, step_prompt, project=project)
         elif role == 'CODER':
-            return CoderAgent(role, system_prompt, step_prompt, False, has_shell_commands)
+            return CoderAgent(role, system_prompt, step_prompt, project=project)
         elif role == 'MCP':
             from mcp_agent import MCPAgent
-            return MCPAgent(role, system_prompt, step_prompt, False, mcp_commands or [])
+            return MCPAgent(role, system_prompt, step_prompt, project=project)
         else:
             raise Exception("unknown agent")

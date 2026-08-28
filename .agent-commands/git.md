@@ -1,9 +1,8 @@
 ---
 role: ANALYTIC,CODER
+description: Git commands
+when: Use for interaction with git
 ---
-
-Git commands
-Use for interaction with git
 
 **Rules**
 - DONT add to git file, if you hasnt created it!

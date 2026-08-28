@@ -65,6 +65,28 @@ def _normalize_shell_block_name(cmd: str, index: int) -> str:
     return f'{tokens}_{index}'
 
 
+def _extract_alias(cmd: str) -> tuple[str | None, str]:
+    lines = cmd.split('\n')
+    alias = None
+    cleaned_lines = []
+    for line in lines:
+        if line.startswith('# '):
+            alias_text = line[2:].strip()
+            filtered = re.sub(r'[^a-zA-Z0-9 ]', '', alias_text).strip()
+            if filtered and alias is None:
+                alias = filtered
+        else:
+            cleaned_lines.append(line)
+    cleaned_cmd = '\n'.join(cleaned_lines).strip()
+    return alias, cleaned_cmd
+
+
+def _alias_to_block_name(alias: str, index: int) -> str:
+    name = alias.lower().replace(' ', '_')
+    name = name[:16].strip('_')
+    return f'{name}_{index}'
+
+
 def _parse_block_args(description: str, cmd: str) -> tuple[str, list[dict]]:
     description_lines = description.splitlines()
     recognized_arg_lines = set()
@@ -96,9 +118,7 @@ def _parse_block_args(description: str, cmd: str) -> tuple[str, list[dict]]:
     return cleaned_description, args
 
 
-def parse_agent_commands(directory: str, type_command: str = 'shell') -> list[dict]:
-    assert type_command in ['shell', 'mcp'], f'Unknown type={type_command}'
-
+def parse_agent_commands(directory: str) -> list[dict]:
     if not os.path.isdir(directory):
         return []
 
@@ -118,29 +138,40 @@ def parse_agent_commands(directory: str, type_command: str = 'shell') -> list[di
         if config.get('enabled', True) is False:
             continue
 
-        is_mcp = config.get('mcp', False) is True
-        if type_command == 'mcp' and not is_mcp:
+        is_shell = config.get('mcp', False) is False
+        if not is_shell:
             continue
-        if type_command == 'shell' and is_mcp:
-            continue
+
+        description = config.get('description')
+        if not description:
+            raise ValueError(f"Command `{command}` is missing required `description` field in frontmatter")
+
+        when = config.get('when')
+        if when:
+            description = f"{description}\n**WHEN USE**{when}"
 
         sections = _split_command_sections(body)
         if len(sections) < 2:
             continue
 
-        command_description = sections[0].strip()
         shell_blocks = []
         for block_index, raw_block in enumerate(sections[1:], start=1):
             cmd = _extract_shell_command(raw_block)
             if not cmd:
                 continue
 
+            alias, cleaned_cmd = _extract_alias(cmd)
+            if alias is not None:
+                block_name = _alias_to_block_name(alias, block_index)
+            else:
+                block_name = _normalize_shell_block_name(cmd, block_index)
+
             block_description = re.sub(r'```.*?```', '', raw_block, flags=re.DOTALL).strip()
-            block_description, block_args = _parse_block_args(block_description, cmd)
+            block_description, block_args = _parse_block_args(block_description, cleaned_cmd)
             shell_blocks.append({
-                'name': _normalize_shell_block_name(cmd, block_index),
+                'name': block_name,
                 'description': block_description,
-                'cmd': cmd,
+                'cmd': cleaned_cmd,
                 'args': block_args,
             })
 
@@ -149,7 +180,8 @@ def parse_agent_commands(directory: str, type_command: str = 'shell') -> list[di
 
         results.append({
             'command': command,
-            'description': command_description,
+            'description': description,
+            'extended_description': sections[0].strip(),
             'shell_blocks': shell_blocks,
             'config': config,
         })

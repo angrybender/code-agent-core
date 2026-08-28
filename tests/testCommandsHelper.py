@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from commands_helper import parse_agent_commands, execute_terminal_command
 from mcp_integration.mcp_helper import parse_mcp_commands
+from project import Project
 from tools_interpreter import ToolsInterpreter
 from agents import Agent
 
@@ -39,18 +40,18 @@ class TestParseAgentCommands(unittest.TestCase):
         self.assertEqual([], result)
 
     def test_md_file_without_separator_is_skipped(self):
-        self._write('deploy.md', 'Just some plain text\n```bash\necho hi\n```')
+        self._write('deploy.md', '---\ndescription: Some desc\n---\nJust some plain text\n```bash\necho hi\n```')
         result = parse_agent_commands(self.test_dir)
         self.assertEqual([], result)
 
     def test_single_command_with_single_shell_block(self):
-        content = "Run the build workflow.\n---\nBuild app\n\n```bash\nmake build\n```"
+        content = "---\ndescription: Run the build workflow\n---\nRun the build workflow.\n---\nBuild app\n\n```bash\nmake build\n```"
         self._write('build.md', content)
         result = parse_agent_commands(self.test_dir)
 
         self.assertEqual(1, len(result))
         self.assertEqual('build', result[0]['command'])
-        self.assertEqual('Run the build workflow.', result[0]['description'])
+        self.assertEqual('Run the build workflow', result[0]['description'])
         self.assertEqual(1, len(result[0]['shell_blocks']))
         self.assertEqual('make_build_1', result[0]['shell_blocks'][0]['name'])
         self.assertEqual('Build app', result[0]['shell_blocks'][0]['description'])
@@ -59,6 +60,7 @@ class TestParseAgentCommands(unittest.TestCase):
 
     def test_multi_block_command_parses_all_blocks(self):
         content = (
+            '---\ndescription: Git helpers\n---\n'
             'Git helpers\n'
             '---\n'
             'Git diff\n\n'
@@ -85,6 +87,7 @@ class TestParseAgentCommands(unittest.TestCase):
 
     def test_block_name_generation_normalizes_and_truncates(self):
         content = (
+            '---\ndescription: Desc\n---\n'
             'Desc\n'
             '---\n'
             'Run container\n\n'
@@ -105,6 +108,7 @@ class TestParseAgentCommands(unittest.TestCase):
 
     def test_block_args_are_parsed_per_block_only(self):
         content = (
+            '---\ndescription: Desc\n---\n'
             'Desc\n'
             '---\n'
             'First\n\n'
@@ -127,7 +131,7 @@ class TestParseAgentCommands(unittest.TestCase):
     def test_frontmatter_filtered_and_roles_preserved(self):
         self._write(
             'deploy.md',
-            '---\nrole: CODER\nenabled: true\n---\nDeploy workflow\n---\nDeploy app\n\n$1 - env\n\n```bash\n./deploy.sh $1\n```'
+            '---\nrole: CODER\nenabled: true\ndescription: Deploy workflow\n---\nDeploy workflow\n---\nDeploy app\n\n$1 - env\n\n```bash\n./deploy.sh $1\n```'
         )
         result = parse_agent_commands(self.test_dir)
 
@@ -136,29 +140,182 @@ class TestParseAgentCommands(unittest.TestCase):
         self.assertEqual('deploy_sh_1', result[0]['shell_blocks'][0]['name'])
 
     def test_enabled_false_skips_command(self):
-        self._write('skip.md', '---\nenabled: false\n---\nDesc\n---\n```\necho skip\n```')
+        self._write('skip.md', '---\nenabled: false\ndescription: Skip\n---\nDesc\n---\n```\necho skip\n```')
         result = parse_agent_commands(self.test_dir)
         self.assertEqual([], result)
 
     def test_mcp_commands_excluded_for_shell_type(self):
-        self._write('test_server.md', '---\nmcp: true\ntype: cli\n---\nMCP helpers\n---\nRun\n\n```\ndocker run test\n```\n')
+        self._write('test_server.md', '---\nmcp: true\ntype: cli\ndescription: MCP helpers\n---\nMCP helpers\n---\nRun\n\n```\ndocker run test\n```\n')
         result = parse_agent_commands(self.test_dir)
         self.assertEqual(0, len(result))
 
     def test_non_sequential_args_raises_exception(self):
-        self._write('cmd.md', 'Desc\n---\nBroken\n\n```\nfoo $1 $3\n```\n')
+        self._write('cmd.md', '---\ndescription: Desc\n---\nDesc\n---\nBroken\n\n```\nfoo $1 $3\n```\n')
         with self.assertRaises(ValueError):
             parse_agent_commands(self.test_dir)
 
     def test_role_invalid_value_raises(self):
-        self._write('bad.md', '---\nrole: INVALID\n---\nDesc\n---\n```\necho bad\n```')
+        self._write('bad.md', '---\nrole: INVALID\ndescription: Desc\n---\nDesc\n---\n```\necho bad\n```')
         with self.assertRaises(ValueError):
             parse_agent_commands(self.test_dir)
 
     def test_result_dict_has_correct_keys(self):
-        self._write('check.md', 'Some desc\n---\nBlock desc\n\n```\nsome cmd\n```')
+        self._write('check.md', '---\ndescription: Some desc\n---\nSome desc\n---\nBlock desc\n\n```\nsome cmd\n```')
         result = parse_agent_commands(self.test_dir)
-        self.assertEqual({'command', 'description', 'shell_blocks', 'config'}, set(result[0].keys()))
+        self.assertEqual({'command', 'description', 'extended_description', 'shell_blocks', 'config'}, set(result[0].keys()))
+
+    def test_missing_description_raises_error(self):
+        self._write('nodesc.md', '---\n---\nSome body\n---\nBlock desc\n\n```\nsome cmd\n```')
+        with self.assertRaises(ValueError):
+            parse_agent_commands(self.test_dir)
+
+    def test_description_from_frontmatter_not_body(self):
+        self._write('desc.md', '---\ndescription: Frontmatter description\n---\nThis body text is different\n---\nBlock\n\n```\necho ok\n```')
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual('Frontmatter description', result[0]['description'])
+
+    def test_when_field_combined_into_description(self):
+        self._write('when.md', '---\ndescription: Git commands\nwhen: Use for interaction with git\n---\nGit commands\n---\nRun\n\n```\ngit status\n```')
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual('Git commands\n**WHEN USE**Use for interaction with git', result[0]['description'])
+
+    def test_extended_description_from_body_section0(self):
+        self._write('ext.md', '---\ndescription: Short\n---\nDetailed extended description about the skill.\n---\nBlock\n\n```\necho ok\n```')
+        result = parse_agent_commands(self.test_dir)
+        self.assertEqual('Detailed extended description about the skill.', result[0]['extended_description'])
+
+    def test_alias_produces_block_name_from_alias(self):
+        content = (
+            '---\ndescription: Run test command\n---\n'
+            'Run test command\n'
+            '---\n'
+            'Run test\n\n'
+            '```\n'
+            '# some name\n'
+            'python.exe .\\test_commandlet.py $1 $2\n'
+            '```\n'
+        )
+        self._write('test_commadlet.py.md', content)
+        result = parse_agent_commands(self.test_dir)
+
+        self.assertEqual(1, len(result))
+        self.assertEqual(1, len(result[0]['shell_blocks']))
+        self.assertEqual('some_name_1', result[0]['shell_blocks'][0]['name'])
+        self.assertEqual('python.exe .\\test_commandlet.py $1 $2', result[0]['shell_blocks'][0]['cmd'])
+
+    def test_alias_line_removed_from_stored_cmd(self):
+        content = (
+            '---\ndescription: Desc\n---\n'
+            'Desc\n'
+            '---\n'
+            'Run\n\n'
+            '```\n'
+            '# my alias\n'
+            'echo hello world\n'
+            '```\n'
+        )
+        self._write('run.md', content)
+        result = parse_agent_commands(self.test_dir)
+
+        self.assertNotIn('# my alias', result[0]['shell_blocks'][0]['cmd'])
+        self.assertEqual('echo hello world', result[0]['shell_blocks'][0]['cmd'])
+
+    def test_multiple_blocks_one_alias_one_not(self):
+        content = (
+            '---\ndescription: Multi\n---\n'
+            'Multi\n'
+            '---\n'
+            'First with alias\n\n'
+            '```\n'
+            '# custom name\n'
+            'python.exe script.py\n'
+            '```\n'
+            '---\n'
+            'Second without alias\n\n'
+            '```\n'
+            'git status\n'
+            '```\n'
+        )
+        self._write('multi.md', content)
+        result = parse_agent_commands(self.test_dir)
+
+        self.assertEqual(2, len(result[0]['shell_blocks']))
+        self.assertEqual('custom_name_1', result[0]['shell_blocks'][0]['name'])
+        self.assertEqual('python.exe script.py', result[0]['shell_blocks'][0]['cmd'])
+        self.assertEqual('git_status_2', result[0]['shell_blocks'][1]['name'])
+        self.assertEqual('git status', result[0]['shell_blocks'][1]['cmd'])
+
+    def test_alias_only_invalid_chars_falls_back(self):
+        content = (
+            '---\ndescription: Desc\n---\n'
+            'Desc\n'
+            '---\n'
+            'Run\n\n'
+            '```\n'
+            '# !!!@@@###\n'
+            'echo fallback\n'
+            '```\n'
+        )
+        self._write('fallback.md', content)
+        result = parse_agent_commands(self.test_dir)
+
+        self.assertEqual('echo_fallback_1', result[0]['shell_blocks'][0]['name'])
+        self.assertEqual('echo fallback', result[0]['shell_blocks'][0]['cmd'])
+
+    def test_full_tool_name_format_with_alias(self):
+        content = (
+            '---\ndescription: Desc\n---\n'
+            'Desc\n'
+            '---\n'
+            'Run\n\n'
+            '```\n'
+            '# deploy prod\n'
+            './deploy.sh\n'
+            '```\n'
+        )
+        self._write('release.md', content)
+        result = parse_agent_commands(self.test_dir)
+
+        command = result[0]['command']
+        block_name = result[0]['shell_blocks'][0]['name']
+        tool_name = f'shell__{command}_{block_name}'
+        self.assertEqual('shell__release_deploy_prod_1', tool_name)
+
+    def test_alias_without_space_not_treated_as_alias(self):
+        content = (
+            '---\ndescription: Desc\n---\n'
+            'Desc\n'
+            '---\n'
+            'Run\n\n'
+            '```\n'
+            '#comment\n'
+            'echo nospace\n'
+            '```\n'
+        )
+        self._write('nospace.md', content)
+        result = parse_agent_commands(self.test_dir)
+
+        self.assertIn('#comment', result[0]['shell_blocks'][0]['cmd'])
+        self.assertEqual('comment_echo_1', result[0]['shell_blocks'][0]['name'])
+
+    def test_alias_truncated_to_16_chars(self):
+        content = (
+            '---\ndescription: Desc\n---\n'
+            'Desc\n'
+            '---\n'
+            'Run\n\n'
+            '```\n'
+            '# this is a very long alias name\n'
+            'echo truncate\n'
+            '```\n'
+        )
+        self._write('trunc.md', content)
+        result = parse_agent_commands(self.test_dir)
+
+        block_name = result[0]['shell_blocks'][0]['name']
+        self.assertTrue(block_name.endswith('_1'))
+        name_part = block_name[:-2]
+        self.assertLessEqual(len(name_part), 16)
 
 
 class TestMCPHelper(unittest.TestCase):
@@ -206,15 +363,23 @@ class TestMCPHelper(unittest.TestCase):
 class TestShellCommandInterpreter(unittest.TestCase):
 
     def _make_ti(self, commands=None):
-        return ToolsInterpreter('', '/tmp', commands=commands or [])
+        project = Project('/tmp')
+        commands = commands or []
+        project.shell_commands = commands
+        shell_tool_map = {}
+        for cmd in commands:
+            for block in cmd.get('shell_blocks', []):
+                tool_name = f"shell__{cmd['command']}_{block['name']}"
+                shell_tool_map[tool_name] = {}
+        return ToolsInterpreter(project=project, shell_tools=shell_tool_map)
 
     def test_unknown_command_empty_commands_map(self):
         ti = self._make_ti()
-        result = ti.execute('shell_command', {'command_name': 'nonexistent', 'shell_block': 'x_1'})
-        self.assertTrue(result.get('error'))
-        self.assertEqual('shell_command', result['tool_name'])
-        self.assertIn("Unknown command 'nonexistent'", result['result'])
-        self.assertIn('none', result['result'])
+        result = ti.execute('shell__nonexistent_x_1', {'args': []})
+        self.assertTrue(result.error)
+        self.assertEqual('shell__nonexistent_x_1', result.tool_name)
+        self.assertIn('Unknown command `shell__nonexistent_x_1`', result.result)
+        self.assertIn('none', result.result)
 
     def test_unknown_shell_block_shows_available_names(self):
         commands = [{
@@ -227,13 +392,13 @@ class TestShellCommandInterpreter(unittest.TestCase):
             ]
         }]
         ti = self._make_ti(commands)
-        result = ti.execute('shell_command', {'command_name': 'build', 'shell_block': 'deploy_1'})
-        self.assertTrue(result.get('error'))
-        self.assertIn("Unknown shell_block 'deploy_1'", result['result'])
-        self.assertIn('make_build_1', result['result'])
-        self.assertIn('make_test_2', result['result'])
+        result = ti.execute('shell__build_deploy_1', {'args': []})
+        self.assertTrue(result.error)
+        self.assertIn('shell__build_deploy_1', result.result)
+        self.assertIn('shell__build_make_build_1', result.result)
+        self.assertIn('shell__build_make_test_2', result.result)
 
-    @patch('tools_interpreter.execute_terminal_command')
+    @patch('project.execute_terminal_command')
     def test_executes_selected_block_with_args(self, execute_mock):
         execute_mock.return_value = {'stdout': 'ok', 'stderr': '', 'status': 'ok'}
         commands = [{
@@ -247,13 +412,42 @@ class TestShellCommandInterpreter(unittest.TestCase):
         }]
         ti = self._make_ti(commands)
 
-        result = ti.execute('shell_command', {'command_name': 'git', 'shell_block': 'git_add_1', 'args': ['tests/test.py']})
+        result = ti.execute('shell__git_git_add_1', {'args': ['tests/test.py']})
 
         execute_mock.assert_called_once()
-        self.assertIn('git add', execute_mock.call_args.kwargs['cmd'])
-        self.assertEqual('git_add_1', result['shell_block'])
-        self.assertEqual('git', result['command_name'])
-        self.assertEqual('ok', result['status'])
+        self.assertEqual('git add tests/test.py', execute_mock.call_args.kwargs['cmd'])
+        self.assertEqual('shell_command', result.tool_name)
+        self.assertFalse(result.error)
+        self.assertIn('ok', result.result)
+        self.assertEqual('ok', result.meta['status'])
+
+    @patch('project.execute_terminal_command')
+    def test_executes_selected_block_with_multiple_args(self, execute_mock):
+        execute_mock.return_value = {'stdout': 'ok', 'stderr': '', 'status': 'ok'}
+        commands = [{
+            'command': 'git',
+            'description': 'Git helpers',
+            'config': {},
+            'shell_blocks': [
+                {
+                    'name': 'git_diff_1',
+                    'cmd': 'git diff $1 -- $2',
+                    'description': 'Diff file in branch',
+                    'args': [
+                        {'placeholder': '$1', 'description': 'branch'},
+                        {'placeholder': '$2', 'description': 'file'},
+                    ]
+                },
+            ]
+        }]
+        ti = self._make_ti(commands)
+
+        result = ti.execute('shell__git_git_diff_1', {'args': ['main', 'tests/test.py']})
+
+        execute_mock.assert_called_once()
+        self.assertEqual('git diff main -- tests/test.py', execute_mock.call_args.kwargs['cmd'])
+        self.assertFalse(result.error)
+        self.assertEqual('ok', result.meta['status'])
 
     def test_argument_validation_is_per_block(self):
         commands = [{
@@ -267,15 +461,13 @@ class TestShellCommandInterpreter(unittest.TestCase):
         }]
         ti = self._make_ti(commands)
 
-        wrong = ti.execute('shell_command', {'command_name': 'git', 'shell_block': 'git_status_2', 'args': ['extra']})
-        self.assertTrue(wrong.get('error'))
-        self.assertIn("git/git_status_2", wrong['result'])
+        wrong = ti.execute('shell__git_git_status_2', {'args': ['extra']})
+        self.assertTrue(wrong.error)
+        self.assertIn("Wrongs `shell__git_git_status_2` argument list", wrong.result)
 
-    def test_missing_shell_block_argument_fails(self):
-        ti = self._make_ti([])
-        result = ti.execute('shell_command', {'command_name': 'build'})
-        self.assertTrue(result.get('error'))
-        self.assertIn('wrong command code/arguments', result['result'])
+        missing = ti.execute('shell__git_git_add_1', {})
+        self.assertTrue(missing.error)
+        self.assertIn("Wrongs `shell__git_git_add_1` argument list", missing.result)
 
 
 class TestAgentCommandFiltering(unittest.TestCase):
@@ -297,16 +489,20 @@ class TestAgentCommandFiltering(unittest.TestCase):
             {'command': 'coder_only', 'description': 'Coder', 'shell_blocks': [{'name': 'echo_coder_1', 'description': 'Coder', 'cmd': 'echo coder', 'args': []}], 'config': {'role': ['CODER']}},
             {'command': 'reviewer_only', 'description': 'Reviewer', 'shell_blocks': [{'name': 'echo_reviewer_1', 'description': 'Reviewer', 'cmd': 'echo reviewer', 'args': []}], 'config': {'role': ['REVIEWER']}},
         ]
-        with patch('agents.AnalyticAgent') as analytic_agent_cls:
-            analytic_agent_cls.return_value = object()
-            agent = Agent.create('REVIEWER', commands)
-            self.assertIsNotNone(agent)
-            args = analytic_agent_cls.call_args[0]
-            self.assertTrue(args[4])
-            self.assertIn('all', args[1])
-            self.assertIn('reviewer_only', args[1])
-            self.assertNotIn('coder_only', args[1])
-            self.assertIn('echo_reviewer_1', args[1])
+        project = Project('')
+        project.shell_commands = commands
+
+        reviewer_tools = project.get_commandlets_tools('REVIEWER')
+        tool_names = [t['function']['name'] for t in reviewer_tools]
+
+        self.assertIn('shell__all_echo_all_1', tool_names)
+        self.assertIn('shell__reviewer_only_echo_reviewer_1', tool_names)
+        self.assertNotIn('shell__coder_only_echo_coder_1', tool_names)
+
+        coder_tools = project.get_commandlets_tools('CODER')
+        coder_tool_names = [t['function']['name'] for t in coder_tools]
+        self.assertIn('shell__coder_only_echo_coder_1', coder_tool_names)
+        self.assertNotIn('shell__reviewer_only_echo_reviewer_1', coder_tool_names)
 
 
 class TestExecuteTerminalCommand(unittest.TestCase):

@@ -10,12 +10,17 @@ from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
 from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE, LLMRequestFormat
 from mcp_tool_executor import MCPToolExecutor
-from tools.tools import MCP_BASE_TOOLS, TOOL_SUMMARIZE, TOOL_REPORT
+from project import Project
+from tools.fabric import ToolsFabric
+from tools.tools import TOOL_SELECT_MCP, TOOL_ATTACH_IMAGE
 
 MAX_ITERATION = int(os.getenv('MAX_ITERATION'))
 
 
 class MCPAgent(BaseAgent):
+    BASE_TOOLS = [TOOL_SELECT_MCP, TOOL_ATTACH_IMAGE]
+    AGENT_TOOLS = ['system__report', 'app__read_file']
+
     """
     MCP sub-agent that executes tasks using external MCP (Model Context Protocol) servers.
 
@@ -24,17 +29,15 @@ class MCPAgent(BaseAgent):
     2. Execution: LLM selects a server via select_mcp, then calls MCP tools to complete the task.
     """
 
-    def __init__(self, role: str, system_prompt: str, step_prompt: str, thinking: bool, mcp_commands: list):
+    def __init__(self, role: str, system_prompt: str, step_prompt: str, project: Project):
         """
         :param role: Agent role string (e.g. 'MCP')
         :param system_prompt: System prompt text
         :param step_prompt: Shared project context sub-prompt
-        :param thinking: Whether deep thinking mode is enabled
-        :param mcp_commands: List of legacy MCP command configs loaded via the dedicated helper in mcp_integration/mcp_helper.py
         """
-        super().__init__(role, system_prompt, step_prompt, thinking)
-        self.mcp_commands = mcp_commands
-        self._mcp_commands_map = {cmd['command']: cmd for cmd in mcp_commands}
+        super().__init__(role, system_prompt, step_prompt, project=project)
+        self.mcp_commands = project.get_mcp()
+        self._mcp_commands_map = {cmd['command']: cmd for cmd in self.mcp_commands}
         self._selected_server_name = None
         self._selected_mcp_tools = None
         self._mcp_executor = None
@@ -43,35 +46,43 @@ class MCPAgent(BaseAgent):
     @staticmethod
     def _encode_image_to_data_url(file_path: str, project_root: str | None = None) -> tuple[str, str | None]:
         if not file_path or not isinstance(file_path, str):
-            raise Exception("Invalid path")
+            return '', 'Invalid path'
         if '\x00' in file_path:
-            raise Exception("Invalid path")
+            return '', 'Invalid path'
 
         file_path = os.path.normpath(file_path)
         if file_path.startswith('..') or file_path.startswith('/'):
-            raise Exception("Invalid path")
+            return '', 'Invalid path'
 
         real_path = os.path.realpath(os.path.join(project_root, file_path))
         if not os.path.exists(real_path):
-            raise Exception("File not exists")
+            return '', 'File not exists'
 
         mime_type, _ = mimetypes.guess_type(real_path)
         if not mime_type or not mime_type.startswith('image/'):
             return '', 'file is not an image'
 
         max_size = 5 * 1024 * 1024  # 5 MB
-        if os.path.getsize(real_path) > max_size:
-            return '', 'file exceeds 5 MB limit'
+        try:
+            if os.path.getsize(real_path) > max_size:
+                return '', 'file exceeds 5 MB limit'
 
-        with open(real_path, 'rb') as f:
-            encoded = base64.b64encode(f.read()).decode('ascii')
+            with open(real_path, 'rb') as f:
+                encoded = base64.b64encode(f.read()).decode('ascii')
+        except OSError as e:
+            return '', f'failed to read file: {e}'
+        except Exception as e:
+            return '', f'failed to encode file: {e}'
 
         return f'data:{mime_type};base64,{encoded}', None
 
     def get_tools(self) -> list:
+        all_tools = ToolsFabric().get_all_tools()
+        base_tools = self.BASE_TOOLS + [_ for _ in all_tools if _['function']['name'] in self.AGENT_TOOLS]
+
         if self._selected_server_name is not None and self._selected_mcp_tools is not None:
-            return self._selected_mcp_tools + MCP_BASE_TOOLS
-        return MCP_BASE_TOOLS
+            return self._selected_mcp_tools + base_tools
+        return base_tools
 
     def run(self):
         assert self.instruction, 'init() is required'
@@ -81,7 +92,7 @@ class MCPAgent(BaseAgent):
         current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         sub_prompt = self.step_prompt.format(
             project_description=self.project_description,
-            project_structure="\n".join([f"- {path}" for path in self.project_structure]),
+            project_structure=self.project_structure,
             current_datetime=current_datetime,
         )
 
@@ -202,16 +213,18 @@ class MCPAgent(BaseAgent):
 
             output = None
             message_id = None
-            tools_for_model = self.get_tools()
             force_tool = False
-
+            tools_for_model = self.get_tools()
             if _context_overflow_summarize or _max_step_workaround:
-                tools_for_model = [TOOL_SUMMARIZE]
+                tools_for_model = [_ for _ in ToolsFabric().get_all_tools() if _['function']['name'] == 'system__summarize']
+                force_tool = True
+            elif _max_step_workaround or _llm_format_error_workaround > 0:
+                tools_for_model = [_ for _ in tools_for_model if _['function']['name'] == 'system__report']
                 force_tool = True
 
-            if _max_step_workaround or _llm_format_error_workaround > 0:
-                tools_for_model = [TOOL_REPORT]
-                force_tool = True
+            for tool in tools_for_model:
+                if 'parameters' in tool:
+                    del tool['parameters']
 
             try:
                 for chunk in llm_query_stream(conversation, tools=tools_for_model, model_name=specific_model, force_tool=force_tool):
@@ -322,7 +335,7 @@ class MCPAgent(BaseAgent):
             fn_args = tool_call_description['args'] or {}
 
             # ── report ──
-            if fn_name == 'report':
+            if fn_name == 'system__report':
                 yield DTOInstruction(
                     type=EventType.REPORT,
                     message=fn_args.get('text', '') if fn_args else '',
@@ -333,7 +346,7 @@ class MCPAgent(BaseAgent):
                 break
 
             # ── summarize ──
-            elif fn_name == 'summarize':
+            elif fn_name == 'system__summarize':
                 _context_overflow_summarize = False
                 _summarize_count += 1
 
@@ -401,7 +414,7 @@ class MCPAgent(BaseAgent):
             # ── attach_image ──
             elif fn_name == 'attach_image':
                 path = fn_args.get('path', '')
-                data_url, error = self._encode_image_to_data_url(path, self.interpreter.project_root)
+                data_url, error = self._encode_image_to_data_url(path, self.project.get_project_root())
                 if error:
                     tool_result = f"ERROR: {error}"
                     conversation.append({
@@ -466,6 +479,42 @@ class MCPAgent(BaseAgent):
                         'tool_call_id': current_tool_call['id'],
                         'name': fn_name,
                         'content': str(tool_result),
+                    })
+
+            # ── standard built-in tools
+            elif fn_name.startswith('app__') or fn_name.startswith('system__'):
+                if self.interpreter is None:
+                    tool_result_content = "ERROR: ToolsInterpreter not initialized"
+                    conversation.append({
+                        'role': 'tool',
+                        'tool_call_id': current_tool_call['id'],
+                        'name': fn_name,
+                        'content': tool_result_content,
+                    })
+                else:
+                    tool_result = self.interpreter.execute(fn_name, fn_args)
+                    is_success = not tool_result.error
+
+                    if is_success:
+                        if fn_name == 'app__read_file':
+                            file_path = fn_args.get('path', '')
+                            if file_path:
+                                self.artifacts['files_read'].append(file_path)
+
+                    yield DTOInstruction(
+                        type=EventType.TOOL,
+                        function=fn_name,
+                        args=fn_args,
+                        result=tool_result.__dict__,
+                        is_success=is_success,
+                        message_id=output['id'],
+                    )
+
+                    conversation.append({
+                        'role': 'tool',
+                        'tool_call_id': current_tool_call['id'],
+                        'name': fn_name,
+                        'content': tool_result.result,
                     })
 
             # ── unknown tool ──

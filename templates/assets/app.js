@@ -253,6 +253,10 @@ class SimpleChat {
         // Uses the 'scroll' event on window so ALL input methods are covered
         // (mouse wheel, keyboard, touch, scrollbar drag, etc.).
         window.addEventListener('scroll', () => {
+            if (this.IS_ON_END_CONVERSATION) {
+                return;
+            }
+
             const scrollTop = window.scrollY;
             const windowHeight = window.innerHeight;
             const documentHeight = document.documentElement.scrollHeight;
@@ -452,8 +456,9 @@ class SimpleChat {
 
         const messageContent = document.createElement('div');
         if (type === 'markdown') {
-            messageContent.innerHTML = marked.parse(message.message);
-            this.setupMarkdownCopyButton(messageDiv, message.message);
+            const markdownText = message.message ?? '';
+            messageContent.innerHTML = marked.parse(markdownText);
+            this.setupMarkdownCopyButton(messageDiv, markdownText);
         }
         else if (type === 'html') {
             messageContent.innerHTML = message.message;
@@ -671,7 +676,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const commandName = escapeHtml(String(c && c.command ? c.command : ''));
                 const shellBlockName = escapeHtml(String(shellBlock && shellBlock.name ? shellBlock.name : ''));
                 const commandLabel = shellBlockName
-                    ? `${commandName}/${shellBlockName}`
+                    ? `${commandName}_${shellBlockName}`
                     : commandName;
                 const shellCmd = escapeHtml(String(shellBlock && shellBlock.cmd ? shellBlock.cmd : ''));
 

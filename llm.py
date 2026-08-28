@@ -6,6 +6,8 @@ import logging
 import json
 import copy
 
+from functools import wraps
+
 from openai import OpenAI, BadRequestError, APIError
 from dotenv import load_dotenv
 
@@ -16,6 +18,10 @@ from log_helper import pretty_format
 load_dotenv()
 
 # setup logger
+IS_RECORD_LLM_REQUESTS = int(os.environ.get('RECORD_LLM_REQUESTS', 0)) == 1
+IS_FAKE_LLM_REQUESTS = int(os.environ.get('FAKE_LLM_REQUESTS', 0)) == 1
+LLM_REQUESTS_RECORD_FILE = './storage/RECORD_LLM_REQUESTS.jsonl'
+
 IS_DEBUG = int(os.environ.get('DEBUG', 0)) == 1
 if IS_DEBUG:
     logger = logging.getLogger('llm_api')
@@ -119,8 +125,39 @@ def _parse_json(json_str: str):
 
     return None
 
+def _fake_llm_request_fabric():
+    if not os.path.exists(LLM_REQUESTS_RECORD_FILE):
+        raise Exception(f"File with requests record not exists: {LLM_REQUESTS_RECORD_FILE}")
 
-def llm_query(messages, tags=None, tools=None, model_name=None, max_tokens=None) -> dict|None:
+    with open(LLM_REQUESTS_RECORD_FILE, 'r', encoding='utf8') as f:
+        jsonl = f.read().split("\n")
+
+    for line in jsonl:
+        if line:
+            yield json.loads(line)
+
+if IS_FAKE_LLM_REQUESTS:
+    _fake_llm_request_iterator = _fake_llm_request_fabric()
+
+def record_decorator(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if IS_FAKE_LLM_REQUESTS:
+            for value in _fake_llm_request_iterator:
+                yield value
+        else:
+            gen = func(*args, **kwargs)
+            for value in gen:
+                if IS_RECORD_LLM_REQUESTS:
+                    with open(LLM_REQUESTS_RECORD_FILE, 'a', encoding='utf8') as f:
+                        f.write(json.dumps(value) + "\n")
+
+                yield value
+
+    return wrapper
+
+
+def llm_query(messages, tags=None, tools=None, model_name=None, max_tokens=None, c_api_key=None, c_api_url=None) -> dict|None:
     """
     :param messages:
     :param tags:
@@ -128,9 +165,15 @@ def llm_query(messages, tags=None, tools=None, model_name=None, max_tokens=None)
     :param model_name:
     :return:
     """
+    if not c_api_key:
+        c_api_key = API_KEY
+
+    if not c_api_url:
+        c_api_url = API_URL
+
     client = OpenAI(
-        api_key=API_KEY,
-        base_url=API_URL,
+        api_key=c_api_key,
+        base_url=c_api_url,
         timeout=API_TIMEOUT,
     )
 
@@ -214,7 +257,7 @@ def _filter_messages(messages: list[dict]) -> list[dict]:
         result.append(m)
     return result
 
-def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str) -> int:
+def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str, c_api_key=None, c_api_url=None) -> int:
     cache_model_name = re.sub(r'[^a-z\d\-]+', '_', model_name, flags=re.IGNORECASE)
     assert messages, 'Empty messages'
     stat_cache = f'./storage/calculate_tokens_usage_workaround_{cache_model_name}.json'
@@ -233,7 +276,7 @@ def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str) ->
 
         _messages[0]['role'] = 'user' # models required at least once users' message
         char_size = len(json.dumps(_messages))
-        test_response = llm_query(_messages, model_name=model_name, max_tokens=1)
+        test_response = llm_query(_messages, model_name=model_name, max_tokens=1, c_api_key=c_api_key, c_api_url=c_api_url)
         assert '_usage' in test_response, 'Wrong response or empty response'
         tokens_usage = test_response['_usage'].prompt_tokens
         tokens_per_char = round(tokens_usage/char_size, 3)
@@ -246,36 +289,58 @@ def _calculate_tokens_usage_workaround(messages: list[dict], model_name: str) ->
 
     return int(round(char_size*tokens_per_char))
 
+@record_decorator
 def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_tool=False):
+    model_name = model_name if model_name else MODEL
+    c_api_key = os.environ.get(f"MODEL:{model_name}:OPENAI_API_KEY", API_KEY)
+    c_api_url = os.environ.get(f"MODEL:{model_name}:OPENAI_API_URL", API_URL)
     client = OpenAI(
-        api_key=API_KEY,
-        base_url=API_URL,
+        api_key=c_api_key,
+        base_url=c_api_url,
         timeout=API_TIMEOUT,
     )
 
     if type(messages) is str:
         messages = [{'role': 'user', 'content': messages}]
 
+    ## token cache {
+    if os.environ.get(f"CACHED_TOKENS_FAMILY:{model_name}") == 'anthropic':
+        cache_control_cnt = 0
+        for m in messages:
+            if type(m['content']) is list and 'cache_control' and type(m['content'][0]) is dict and 'cache_control' in m['content'][0]:
+                cache_control_cnt += 1
+
+        if cache_control_cnt < 4 and len(messages)//2 >= 2**cache_control_cnt and 'content' in messages[-1] and type(messages[-1]['content']) is str:
+            messages[-1]['content'] = [{
+                 "type": "text",
+                 "text": messages[-1]['content'],
+                 "cache_control": {"type": "ephemeral", "ttl": "1h"},
+             }]
+
+            logger.info(f"cache_control_activate, cache_control_cnt: {cache_control_cnt}, messages: {len(messages)}")
+    ## token cache }
+
     logger.debug(f"INPUT (with tools: {'Y' if tools else 'N'}):")
     for m in messages:
         logger.debug(m)
 
     # waiting for a supports in the llama.cpp
-    if tools and len(tools) > 1 and force_tool:
-        tool_choice = 'required'
-    elif tools and len(tools) == 1 and force_tool:
-        tool_choice = {"type": "function", "name": tools[0]['function']['name']}
-    else:
-        tool_choice = 'auto'
+    # if tools and len(tools) > 1 and force_tool:
+    #     tool_choice = 'required'
+    # elif tools and len(tools) == 1 and force_tool:
+    #     tool_choice = {"type": "function", "name": tools[0]['function']['name']}
+    # else:
+    #     tool_choice = 'auto'
 
     tool_choice = 'auto'
 
     options = {
         'messages': messages,
-        'model': model_name if model_name else MODEL,
+        'model': model_name,
         'tools': tools,
         'stream': True,
-        'tool_choice': tool_choice
+        'tool_choice': tool_choice,
+        'stream_options': {'include_usage': True},
     }
 
     if REASONING_EFFORT:
@@ -363,9 +428,15 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_too
                 if chunk.usage:
                     _tokens_usage = {"prompt": chunk.usage.prompt_tokens, "completion": chunk.usage.completion_tokens}
 
+                    try:
+                        logger.info('cached_tokens: ' + str(chunk.usage.prompt_tokens_details.cached_tokens))
+                        _tokens_usage["cached_tokens"] = chunk.usage.prompt_tokens_details.cached_tokens
+                    except:
+                        pass
+
             if not _tokens_usage:
                 _tokens_usage = {
-                    "prompt": _calculate_tokens_usage_workaround(messages, options['model']),
+                    "prompt": _calculate_tokens_usage_workaround(messages, options['model'], c_api_key, c_api_url),
                     "completion": _calculate_tokens_usage_workaround([{"content": _output, "tool_calls": _tool_calls}], options['model']),
                 }
 
@@ -382,9 +453,10 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_too
             yield final
             break
         except BadRequestError as e:
-            message = str(e)
+            error_message = str(e)
 
-            if "Assistant response prefill is incompatible with enable_thinking" in message:
+            if "Assistant response prefill is incompatible with enable_thinking" in error_message \
+                    or "This model does not support assistant message prefill" in error_message:
                 logger.error("Fix: Request ends with assistant prefill while enable_thinking=True, return empty")
 
                 # api caller must deside workaround own logic depends
@@ -395,15 +467,15 @@ def llm_query_stream(messages, tags=None, tools=None, model_name=None, force_too
                     "tool_calls": [],
                     "tokens_usage": {},
                 }
-            elif "System message must be at the beginning" in message and messages[-1]['role'] == 'system':
+            elif "System message must be at the beginning" in error_message and messages[-1]['role'] == 'system':
                 logger.error("Fix: Model doesnt support several system messages")
                 messages[-1]['role'] = 'user'
             else:
-                raise LLMRequestFormat(message) from e
+                raise LLMRequestFormat(error_message) from e
 
         except APIError as e:
-            message = str(e)
-            if message.find('Failed to parse input at pos ') > -1:
+            error_message = str(e)
+            if error_message.find('Failed to parse input at pos ') > -1:
                 # gpt oss, there are no plans to support gpt-oss, byt why not...
                 yield {
                     "id": message_id,

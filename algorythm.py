@@ -1,6 +1,5 @@
 import json
 import os
-import glob
 import datetime
 import time
 import re
@@ -10,21 +9,18 @@ from jinja2 import Environment, BaseLoader
 from dto.dto_instruction import DTOInstruction
 from dto.enums import EventType
 from log_helper import pretty_format
-import ide_integration
 from llm import llm_query_stream, MAX_CONTEXT_WINDOW_SIZE
-from path_helper import get_relative_path
-from tools_interpreter import ToolsInterpreter
+from project import Project
 from agents import Agent
 from tools.tools import SUPERVISOR_TOOLS
 from logger_mixin import LoggerMixin
+from path_helper import ls_la
 
-from commands_helper import parse_agent_commands
 from dotenv import load_dotenv
-from mcp_integration.mcp_helper import parse_mcp_commands
-
 load_dotenv()
 
 MAX_ITERATION=os.getenv('MAX_ITERATION')
+SUPERVISORD_COMMANDLET_GUIDANCE_AGGRESSIVE=int(os.getenv('SUPERVISORD_COMMANDLET_GUIDANCE_AGGRESSIVE', 1)) == 1
 
 import logging
 logger = logging.getLogger('APP')
@@ -32,7 +28,6 @@ logging.basicConfig(level=logging.INFO)
 
 
 class Copilot(LoggerMixin):
-    PROJECT_DESCRIPTION = "./AGENTS.md"
     MAX_STEP = int(MAX_ITERATION)
     LOG_FILE = './conversations_log/log.log'
 
@@ -43,8 +38,8 @@ class Copilot(LoggerMixin):
         self.manifest = {}
         self.session = session
         self.instruction = instruction
+        self.project = None
 
-        self.interpreter = None
         self.role = 'SUPERVISOR'
         self.log_file = self.LOG_FILE
 
@@ -55,19 +50,9 @@ class Copilot(LoggerMixin):
 
         self.command_state = []
 
-    def get_manifest(self, project_base_path: str):
-        content = ide_integration.tool_call('get_file_text_by_path', {
-            'pathInProject': self.PROJECT_DESCRIPTION,
-            'projectPath': project_base_path
-        })
-
-        if 'error' in content or 'status' not in content:
-            return ''
-        else:
-            return content['status']
-
     def _init(self):
         assert 'project_base_path' in self.session, 'Session not contains `project_base_path`'
+        self.project = Project(self.session['project_base_path'])
 
         if not self.system_prompt:
             with open('./prompts/supervisor_system.txt', 'r', encoding='utf8') as f:
@@ -81,23 +66,16 @@ class Copilot(LoggerMixin):
 
         self.manifest = {
             'base_path': self.session['project_base_path'],
-            'description': self.get_manifest(self.session['project_base_path']).strip(),
+            'description': self.project.get_project_rules(),
             'files_structure': self._read_project_structure(self.session['project_base_path']),
         }
-
-        shell_cmd_dir = os.getenv('SHELL_COMMAND_DIRECTORY', '.agent-commands')
-        full_cmd_dir = os.path.join(self.session['project_base_path'], shell_cmd_dir)
-        self.agent_commands = parse_agent_commands(full_cmd_dir)
-        self.manifest['agent_commands'] = self.agent_commands
-        self.mcp_commands = parse_mcp_commands(full_cmd_dir)
-        self.manifest['mcp_commands'] = self.mcp_commands
 
         self.output = []
 
         self.executed_commands = []
         self.command_state = []
         self.agent_step = 1
-        self.interpreter = ToolsInterpreter(self.session['project_base_path'])
+        self.agent_commands = self.project.get_commandlets()
 
     def _sanitize_supervisor_command_description(self, text: str) -> str:
         text = re.sub(r"```.*?```", "", text or "", flags=re.DOTALL)
@@ -121,18 +99,10 @@ class Copilot(LoggerMixin):
 
         return "\n\n".join(command_items)
 
-    def _read_project_structure(self, base_path) -> list:
-        result = []
-        for dir_object in glob.glob(base_path + "/*"):
-            is_dir = os.path.isdir(dir_object)
-
-            dir_object = get_relative_path(base_path, dir_object)
-
-            if is_dir:
-                dir_object = dir_object + "/"
-
-            result.append(dir_object)
-        return result
+    @staticmethod
+    def _read_project_structure(base_path) -> str:
+        result = ls_la(base_path)
+        return "\n".join([_['line'] for _ in result])
 
     @staticmethod
     def _full_log(conversation: list[dict]):
@@ -148,7 +118,7 @@ class Copilot(LoggerMixin):
         # ping IDE
         start_msg_id = str(time.time())
         yield DTOInstruction(type=EventType.AGENT, is_final=False, message_id=start_msg_id, function="SUPERVISOR")
-        ping_mcp = ide_integration.tool_call('__test__connection__', {"projectPath": self.session['project_base_path']})
+        ping_mcp = self.project.ping_mcp()
         if not ping_mcp['result']:
             yield DTOInstruction(type=EventType.ERROR, message_id=start_msg_id, message=f"MCP ide integration error: {ping_mcp['error']}")
             return []
@@ -158,14 +128,12 @@ class Copilot(LoggerMixin):
         self.log(str(datetime.datetime.now()), True)
         self.log(f"RUN. Messages: `{self.instruction}`", False)
 
-        current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-
         supervisor_guidance = self._get_commands_guidance()
         rtemplate = Environment(loader=BaseLoader).from_string(self.prompt)
         sub_prompt = rtemplate.render(
             project_description=self.manifest['description'],
-            project_structure="\n".join([f"- {path}" for path in self.manifest['files_structure']]),
-            current_datetime=current_datetime,
+            project_structure=self.manifest['files_structure'],
+            current_datetime=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
             project_guidance=supervisor_guidance,
             max_tools_cnt=self.MAX_STEP-1,
         )
@@ -200,7 +168,7 @@ class Copilot(LoggerMixin):
                 yield DTOInstruction(type=EventType.ERROR, message="MAX_STEP exceed!")
                 break
 
-            if agent_step_counter > 1 and supervisor_guidance:
+            if SUPERVISORD_COMMANDLET_GUIDANCE_AGGRESSIVE and agent_step_counter > 1 and supervisor_guidance and conversation_log[-1].get('name') == 'call_agent':
                 conversation_log.append({
                     'role': 'user',
                     'content': supervisor_guidance
@@ -314,7 +282,7 @@ class Copilot(LoggerMixin):
                     message_id=output['id'],
                 )
 
-                agent = Agent.create(agent_name, self.agent_commands, mcp_commands=self.manifest.get('mcp_commands', []))
+                agent = Agent.create(agent_name, project=self.project)
                 agent.init(agent_instruction, self.manifest, self.LOG_FILE, images=agent_images)
 
                 is_agent_completes_work = False
